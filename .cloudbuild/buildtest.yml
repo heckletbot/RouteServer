@@ -1,0 +1,24 @@
+version: 2.0
+env:
+  resource:
+    type: docker
+    image: kweecr05.his.huawei.com:80/ecr-build-green202/cbu_cloudbuild_hce2.0_arm_cs8.0_go_1_26_1:v0.8
+    pool: cloudbuild-docker-public-cloud-gz-green-service-arm-32u128g
+steps:
+  PRE_BUILD:
+    - sh:
+        command: ls ./
+    - checkout:
+        depth: 0
+        path: .
+  BUILD:
+    - build_execute:
+        command: sh .cloudbuild/coverage.sh
+  POST_BUILD:
+    - sh:
+        command: |-
+          echo "will exec test and upload to codeCov ENV_SERVICE_NAME is ${ENV_SERVICE_NAME}"
+          cd ${WORKSPACE}/
+          ls
+          curl -k "https://codecov.rnd.huawei.com/rest/codecov/freeExecShell/getShContent/1752229246039752705" -o codecov.sh #通用解析脚本，不要轻易改动
+          bash -x ./codecov.sh

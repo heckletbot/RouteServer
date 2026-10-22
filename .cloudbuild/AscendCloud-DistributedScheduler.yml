@@ -1,0 +1,45 @@
+version: '2.0'
+env:
+  resource:
+    type: docker
+    image: kweecr05.his.huawei.com:80/ecr-build-green202/cbu_cloudbuild_hce2.0_arm_cs8.0_go_1_26_1:v0.8
+    pool: cloudbuild-docker-public-cloud-gz-green-service-arm-32u128g
+params:
+  - name: CID_credible_repo       # 切换公司仓默认参数
+    value: true
+  - name: CB_AUTO_CHECK_VERSION   # 必配项
+    value: 2.0
+  - name: BC_NEXT3RD_VERSION      # 指定版本 推荐配置
+    value: 1.1.98 # 请根据ReleaseNote选择最新版本 https://wiki.huawei.com/domains/848/wiki/18897/WIKI202409044504250
+
+steps:                    # 构建步骤，必选，执行业务出包过程
+  PRE_BUILD:              # 构建准备，必选加载业务代码，使用云捷插件执行产物获取动作
+    - codehub:            # 添加依赖的codehub代码仓库下载，可配置多库
+        path: .           # 下载子库的存放路径
+        url: ${{ CID_REPO_URL }}
+        branch: ${{ CID_REPO_BRANCH }}
+        submodule: true
+        submodule_with_remote: true
+    - hwcloud_artifact:       # 云捷插件加载，必选，数字签名配置
+        action: download
+        resourceType: private
+  BUILD:                      # 构建执行，必选，执行业务编译脚本
+    - build_execute:
+        # ！！！！ 请修改为业务自身构建脚本 ！！！！
+        command: sh .cloudbuild/build.sh  # 编译脚本文件路径
+        check:
+          auto: true          # auto必须配置为true,否则流水线会失败
+          mode: sync
+          buildcheck: true
+          dangerouscmd:       # 违规命令检测
+            command: set proxy,git clone,bin/scp,bin/curl,bin/wget,bin/ssh,bin/mount,bin/rsync
+  POST_BUILD:                 # 构建出包后产物传递获取阶段
+    # ！！！！ 请修改为业务自身构建产物 ！！！！
+    - hwcloud_artifact:       # 云捷产物专属插件，必填，伏羲流水线获取产物的插件
+        version: '1.0'        # 对应伏羲构建中yaml的version
+        package:
+          - ${PKG_NAME}-${PKG_VERSION}-${CID_BUILD_TIME}.zip
+        artget_option:
+            cmc_sync: true
+            version_output_path: .
+            artget_version: 1.4.8

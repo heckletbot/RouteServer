@@ -1,0 +1,9 @@
+metrics:
+  guage:
+    - "vllm:num_requests_running"
+    - "vllm:num_requests_waiting"
+  counter:
+    - "vllm:generation_tokens_total"
+    - "vllm:prompt_tokens_total"
+batch-size: 3
+max-concurrency: 100

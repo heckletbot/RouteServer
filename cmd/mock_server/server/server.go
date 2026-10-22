@@ -1,0 +1,935 @@
+/*
+ * Copyright 2026 The vLLM-Cloud Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package server
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"infer-dp-scheduler/pkg/common/constant"
+	"infer-dp-scheduler/pkg/common/logger"
+	"infer-dp-scheduler/pkg/common/utils"
+
+	"github.com/gin-gonic/gin"
+
+	"infer-dp-scheduler/pkg/common/openai"
+)
+
+const (
+	MockContent = "test"
+	Model       = "deepseek-r1"
+)
+
+type MMChatCompletionRequest struct {
+	Model               string                               `json:"model"`
+	Messages            []openai.MMChatCompletionMessage     `json:"messages"`
+	MaxTokens           int                                  `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int                                  `json:"max_completion_tokens,omitempty"`
+	Temperature         float32                              `json:"temperature,omitempty"`
+	TopP                float32                              `json:"top_p,omitempty"`
+	N                   int                                  `json:"n,omitempty"`
+	Stream              bool                                 `json:"stream,omitempty"`
+	Stop                []string                             `json:"stop,omitempty"`
+	PresencePenalty     float32                              `json:"presence_penalty,omitempty"`
+	ResponseFormat      *openai.ChatCompletionResponseFormat `json:"response_format,omitempty"`
+	Seed                *int                                 `json:"seed,omitempty"`
+	FrequencyPenalty    float32                              `json:"frequency_penalty,omitempty"`
+	LogitBias           map[string]int                       `json:"logit_bias,omitempty"`
+	LogProbs            bool                                 `json:"logprobs,omitempty"`
+	TopLogProbs         int                                  `json:"top_logprobs,omitempty"`
+	User                string                               `json:"user,omitempty"`
+	Functions           []openai.FunctionDefinition          `json:"functions,omitempty"`
+	FunctionCall        any                                  `json:"function_call,omitempty"`
+	Tools               []openai.Tool                        `json:"tools,omitempty"`
+	ToolChoice          any                                  `json:"tool_choice,omitempty"`
+	StreamOptions       *openai.StreamOptions                `json:"stream_options,omitempty"`
+	ParallelToolCalls   any                                  `json:"parallel_tool_calls,omitempty"`
+	Store               bool                                 `json:"store,omitempty"`
+	ReasoningEffort     string                               `json:"reasoning_effort,omitempty"`
+	Metadata            map[string]string                    `json:"metadata,omitempty"`
+	Prediction          *openai.Prediction                   `json:"prediction,omitempty"`
+	ChatTemplateKwargs  map[string]any                       `json:"chat_template_kwargs,omitempty"`
+	KvTransferParams    map[string]any                       `json:"kv_transfer_params,omitempty"`
+	IgnoreEos           bool                                 `json:"ignore_eos"`
+}
+
+type InferPara struct {
+	TTFT         uint
+	TPOT         uint
+	Addr         string
+	Port         string
+	Collector    *Collector
+	IsError      bool
+	ErrorCode    int
+	IsHang       bool
+	IsHealth     bool
+	IsLinkDown   bool
+	LinkDownList map[string]struct{}
+	IsEncoder    bool
+	IsHybrid     bool
+	// Support for hanging specific request_id
+	HangRequestIds   map[string]struct{}
+	HangRequestIdsMu sync.Mutex
+}
+
+type StreamError struct {
+	StreamErrorBody *StreamErrorBody `json:"error,omitempty"`
+}
+
+type StreamErrorBody struct {
+	Object  string  `json:"object"`
+	Message string  `json:"message"`
+	Type    string  `json:"type"`
+	Param   *string `json:"param,omitempty"`
+	Code    int     `json:"code"`
+}
+
+type UnhealthBody struct {
+	FaultMessage string `json:"fault-message"`
+}
+
+type Data struct {
+	Id     string `json:"id"`
+	Object string `json:"object"`
+	Owned  string `json:"owned_by"`
+}
+
+type ModelNameBody struct {
+	Data []*Data `json:"data"`
+}
+
+type KVMetaData struct {
+	Address string `json:"address"`
+	Port    string `json:"port"`
+}
+
+type LinkDownBody struct {
+	MetaDataList []KVMetaData `json:"meta_data_list"`
+}
+
+type MockErrorBody struct {
+	RetCode int `json:"code"`
+}
+
+func (i *InferPara) ChatCompletionsInfer(ctx *gin.Context) {
+	if i.IsEncoder {
+		i.dealMMChatCompletion(ctx)
+	} else {
+		i.dealChatCompletion(ctx)
+	}
+}
+
+func (i *InferPara) dealChatCompletion(ctx *gin.Context) {
+	bodyBytes, err := io.ReadAll(ctx.Request.Body)
+	if err != nil {
+		fmt.Printf("failed to parse req err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusBadRequest, err)
+		return
+	}
+	request := &openai.ChatCompletionRequestV1{}
+	if err = utils.SonicApi.Unmarshal(bodyBytes, request); err != nil {
+		fmt.Printf("failed to parse req err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusBadRequest, err)
+		return
+	}
+	var requestId = ctx.Request.Header.Get("X-Request-Id")
+
+	// layerwise behavior
+	if request.KvTransferParams != nil {
+		if metaserverURL, exists := request.KvTransferParams["metaserver"]; exists {
+			if urlStr, ok := metaserverURL.(string); ok && urlStr != "" {
+				fmt.Printf("Detected metaserver URL: %s, sending request...\n", urlStr)
+				// Send request to metaserver and wait for response
+				if err := i.sendMetaserverRequest(urlStr, request.KvTransferParams, false); err != nil {
+					fmt.Printf("Failed to send metaserver request: %v\n", err)
+					ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Metaserver request failed: %v", err)})
+					return
+				}
+				fmt.Printf("Metaserver request completed successfully\n")
+			}
+		}
+	}
+
+	if !request.Stream {
+		ctx.Writer.Header().Set("Content-Type", "application/json")
+		if i.IsError {
+			streamErr := StreamError{
+				StreamErrorBody: &StreamErrorBody{
+					Object: "error",
+					Message: fmt.Sprintf("mock error happened in instance [%s:%s] with code %v",
+						i.Addr, i.Port, i.ErrorCode),
+					Type: "err",
+					Code: i.ErrorCode,
+				},
+			}
+			bytes, err := utils.SonicApi.Marshal(streamErr)
+			if err != nil {
+				fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+				ctx.JSON(http.StatusInternalServerError, err)
+				return
+			}
+			ctx.Writer.WriteHeader(i.ErrorCode)
+			_, err = ctx.Writer.Write(bytes)
+			ctx.Writer.Flush()
+			return
+		}
+		if i.shouldHang(requestId) {
+			i.hangingWithRequestId(requestId)
+		}
+
+		if i.IsLinkDown {
+			response := openai.ChatCompletionResponse{
+				ID:      requestId,
+				Object:  "chat.completion",
+				Created: 1,
+				Model:   Model,
+				Choices: []openai.ChatCompletionChoice{
+					{
+						Index: 0,
+						Message: openai.ChatCompletionMessage{
+							Role: "assistant",
+						},
+						FinishReason: "abort",
+						StopReason:   "Abort for KV loading failure",
+					},
+				},
+				KvTransferParams: map[string]any{
+					"address": i.Addr,
+					"port":    i.Port,
+				},
+				Usage: openai.Usage{
+					PromptTokens:            2000,
+					CompletionTokens:        request.MaxTokens,
+					TotalTokens:             2000 + request.MaxTokens,
+					PromptTokensDetails:     &openai.PromptTokensDetails{CachedTokens: 1000},
+					CompletionTokensDetails: nil,
+				},
+			}
+			ctx.JSON(200, response)
+			return
+		}
+
+		response := openai.ChatCompletionResponse{
+			ID:      ctx.Request.Header.Get("X-Request-Id"),
+			Object:  "test",
+			Created: 1,
+			Model:   Model,
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Index: 0,
+					Message: openai.ChatCompletionMessage{
+						Content: MockContent,
+					},
+				},
+			},
+			KvTransferParams: map[string]any{
+				"address": i.Addr,
+				"port":    i.Port,
+			},
+			Usage: openai.Usage{
+				PromptTokens:            2000,
+				CompletionTokens:        request.MaxTokens,
+				TotalTokens:             2000 + request.MaxTokens,
+				PromptTokensDetails:     &openai.PromptTokensDetails{CachedTokens: 1000},
+				CompletionTokensDetails: nil,
+			},
+		}
+		bytes, err := utils.SonicApi.Marshal(response)
+		if err != nil {
+			fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+			ctx.JSON(http.StatusInternalServerError, err)
+			return
+		}
+		time.Sleep(time.Duration(i.TTFT) * time.Millisecond)
+		i.Collector.TimeToFirstTime.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
+		ctx.Writer.WriteHeader(http.StatusOK)
+		ctx.Header("X-Request-Id", ctx.Request.Header.Get("X-Request-Id"))
+		ctx.Header(constant.HeaderContentLength, strconv.Itoa(len(bytes)))
+
+		ctx.Writer.Write(bytes)
+		ctx.Writer.Flush()
+		return
+	}
+
+	ctx.Header("Content-Type", "text/event-stream")
+	ctx.Header("Cache-Control", "no-cache")
+	ctx.Header("Transfer-Encoding", "chunked")
+	ctx.Header("X-Request-Id", ctx.Request.Header.Get("X-Request-Id"))
+	ctx.Writer.WriteHeader(http.StatusOK)
+
+	usage := &openai.Usage{
+		PromptTokens:            2000,
+		CompletionTokens:        request.MaxTokens,
+		TotalTokens:             2000 + request.MaxTokens,
+		PromptTokensDetails:     &openai.PromptTokensDetails{CachedTokens: 1000},
+		CompletionTokensDetails: nil,
+	}
+	kvTransferMetaData := fmt.Sprintf("%s:%s", request.KvTransferParams["address"], request.KvTransferParams["port"])
+	i.writeRes(ctx, request.MaxTokens, i.getChatResToken, usage, kvTransferMetaData, requestId)
+}
+
+func (i *InferPara) dealMMChatCompletion(ctx *gin.Context) {
+	bodyBytes, err := io.ReadAll(ctx.Request.Body)
+	if err != nil {
+		fmt.Printf("failed to parse req err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusBadRequest, err)
+		return
+	}
+	request := &MMChatCompletionRequest{}
+	if err = utils.SonicApi.Unmarshal(bodyBytes, request); err != nil {
+		fmt.Printf("failed to parse req err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusBadRequest, err)
+		return
+	}
+
+	requestId := ctx.Request.Header.Get("X-Request-Id")
+
+	// layerwise behavior
+	if request.KvTransferParams != nil {
+		if metaserverURL, exists := request.KvTransferParams["metaserver"]; exists {
+			if urlStr, ok := metaserverURL.(string); ok && urlStr != "" {
+				fmt.Printf("Detected metaserver URL: %s, sending request...\n", urlStr)
+				// Send request to metaserver and wait for response
+				if err := i.sendMetaserverRequest(urlStr, request.KvTransferParams, false); err != nil {
+					fmt.Printf("Failed to send metaserver request: %v\n", err)
+					ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Metaserver request failed: %v", err)})
+					return
+				}
+				fmt.Printf("Metaserver request completed successfully\n")
+			}
+		}
+	}
+
+	if !request.Stream {
+		ctx.Writer.Header().Set("Content-Type", "application/json")
+
+		if i.IsError == true {
+			streamErr := StreamError{
+				StreamErrorBody: &StreamErrorBody{
+					Object:  "error",
+					Message: fmt.Sprintf("mock error happened in instance [%s:%s], with code %v", i.Addr, i.Port, i.ErrorCode),
+					Type:    "err",
+					Code:    i.ErrorCode,
+				},
+			}
+			bytes, err := utils.SonicApi.Marshal(streamErr)
+			if err != nil {
+				fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+				ctx.JSON(http.StatusInternalServerError, err)
+				return
+			}
+			ctx.Writer.WriteHeader(400)
+			_, err = ctx.Writer.Write(bytes)
+			ctx.Writer.Flush()
+			return
+		}
+		if i.shouldHang(requestId) {
+			i.hangingWithRequestId(requestId)
+		}
+		response := openai.ChatCompletionResponse{
+			ID:      "test",
+			Object:  "test",
+			Created: 1,
+			Model:   Model,
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Index: 0,
+					Message: openai.ChatCompletionMessage{
+						Content: MockContent,
+					},
+				},
+			},
+			Usage: openai.Usage{
+				PromptTokens:            2000,
+				CompletionTokens:        request.MaxTokens,
+				TotalTokens:             2000 + request.MaxTokens,
+				PromptTokensDetails:     nil,
+				CompletionTokensDetails: nil,
+			},
+			EcTransferParams: map[string]any{
+				"address": i.Addr,
+				"port":    i.Port,
+			},
+			KvTransferParams: map[string]any{
+				"address": i.Addr,
+				"port":    i.Port,
+			},
+		}
+		bytes, err := utils.SonicApi.Marshal(response)
+		if err != nil {
+			fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+			ctx.JSON(http.StatusInternalServerError, err)
+			return
+		}
+		time.Sleep(time.Duration(i.TTFT) * time.Millisecond)
+		i.Collector.TimeToFirstTime.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
+		ctx.Writer.WriteHeader(http.StatusOK)
+		ctx.Writer.Write(bytes)
+		ctx.Writer.Flush()
+		return
+	}
+
+	ctx.Header("Content-Type", "text/event-stream")
+	ctx.Header("Transfer-Encoding", "chunked")
+	ctx.Writer.WriteHeader(http.StatusOK)
+
+	usage := &openai.Usage{
+		PromptTokens:            2000,
+		CompletionTokens:        request.MaxTokens,
+		TotalTokens:             2000 + request.MaxTokens,
+		PromptTokensDetails:     nil,
+		CompletionTokensDetails: nil,
+	}
+	kvTransferMetaData := fmt.Sprintf("%s:%s", request.KvTransferParams["address"], request.KvTransferParams["port"])
+	i.writeRes(ctx, request.MaxTokens, i.getChatResToken, usage, kvTransferMetaData, requestId)
+}
+
+func (i *InferPara) getChatResToken(reqID string, tokenIdx int, usage *openai.Usage) ([]byte, error) {
+	var response openai.ChatCompletionStreamResponse
+	if usage == nil {
+		response = openai.ChatCompletionStreamResponse{
+			ID:      "chatcmpl-" + reqID,
+			Object:  "test",
+			Created: 1,
+			Model:   Model,
+			Choices: []openai.ChatCompletionStreamChoice{
+				{
+					Index: 0,
+					Delta: openai.ChatCompletionStreamChoiceDelta{
+						Content: fmt.Sprintf("%s_%v", MockContent, tokenIdx),
+					},
+				},
+			},
+			Usage: usage,
+		}
+	} else {
+		response = openai.ChatCompletionStreamResponse{
+			ID:      "chatcmpl-" + reqID,
+			Object:  "test",
+			Created: 1,
+			Model:   Model,
+			Choices: []openai.ChatCompletionStreamChoice{},
+			Usage:   usage,
+			KvTransferParams: map[string]any{
+				"address": i.Addr,
+				"port":    i.Port,
+			},
+		}
+	}
+
+	bytes, err := utils.SonicApi.Marshal(response)
+	if err != nil {
+		return nil, err
+	}
+	responseBytes := []byte("data: ")
+	responseBytes = append(responseBytes, bytes...)
+	responseBytes = append(responseBytes, '\n')
+	responseBytes = append(responseBytes, '\n')
+	return responseBytes, nil
+}
+
+func (i *InferPara) getCompletionResToken(reqID string, tokenIdx int, usage *openai.Usage) ([]byte, error) {
+	var response openai.CompletionResponse
+	if usage == nil {
+		response = openai.CompletionResponse{
+			ID:      "cmpl-" + reqID,
+			Object:  "test",
+			Created: 1,
+			Model:   Model,
+			Choices: []openai.CompletionChoice{
+				{
+					Index: 0,
+					Text:  fmt.Sprintf("%s_%v", MockContent, tokenIdx),
+				},
+			},
+			Usage: usage,
+		}
+	} else {
+		response = openai.CompletionResponse{
+			ID:      "cmpl-" + reqID,
+			Object:  "test",
+			Created: 1,
+			Model:   Model,
+			Choices: []openai.CompletionChoice{},
+			Usage:   usage,
+		}
+	}
+
+	bytes, err := utils.SonicApi.Marshal(response)
+	if err != nil {
+		return nil, err
+	}
+	responseBytes := []byte("data: ")
+	responseBytes = append(responseBytes, bytes...)
+	responseBytes = append(responseBytes, '\n')
+	responseBytes = append(responseBytes, '\n')
+	return responseBytes, nil
+}
+
+func (i *InferPara) CompletionsInfer(ctx *gin.Context) {
+	bodyBytes, err := io.ReadAll(ctx.Request.Body)
+	if err != nil {
+		fmt.Printf("failed to parse req err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusBadRequest, err)
+		return
+	}
+	request := &openai.ChatCompletionRequest{}
+	if err = utils.SonicApi.Unmarshal(bodyBytes, request); err != nil {
+		fmt.Printf("failed to parse req err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusBadRequest, err)
+		return
+	}
+
+	requestId := ctx.Request.Header.Get("X-Request-Id")
+
+	// layerwise behavior
+	if request.KvTransferParams != nil {
+		if metaserverURL, exists := request.KvTransferParams["metaserver"]; exists {
+			if urlStr, ok := metaserverURL.(string); ok && urlStr != "" {
+				fmt.Printf("Detected metaserver URL: %s, sending request...\n", urlStr)
+				// Send request to metaserver and wait for response
+				if err := i.sendMetaserverRequest(urlStr, request.KvTransferParams, true); err != nil {
+					fmt.Printf("Failed to send metaserver request: %v\n", err)
+					ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Metaserver request failed: %v", err)})
+					return
+				}
+				fmt.Printf("Metaserver request completed successfully\n")
+			}
+		}
+	}
+
+	if !request.Stream {
+		ctx.Writer.Header().Set("Content-Type", "application/json")
+
+		if i.IsError {
+			streamErr := StreamError{
+				StreamErrorBody: &StreamErrorBody{
+					Object: "error",
+					Message: fmt.Sprintf("mock error happened in instance [%s:%s], with code %v",
+						i.Addr, i.Port, i.ErrorCode),
+					Type: "err",
+					Code: i.ErrorCode,
+				},
+			}
+			bytes, err := utils.SonicApi.Marshal(streamErr)
+			if err != nil {
+				fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+				ctx.JSON(http.StatusInternalServerError, err)
+				return
+			}
+			ctx.Writer.WriteHeader(i.ErrorCode)
+			_, err = ctx.Writer.Write(bytes)
+			ctx.Writer.Flush()
+			return
+		}
+		if i.shouldHang(requestId) {
+			i.hangingWithRequestId(requestId)
+		}
+		response := openai.CompletionResponse{
+			ID:      "cmpl-" + requestId,
+			Object:  "test",
+			Created: 1,
+			Model:   Model,
+			Choices: []openai.CompletionChoice{
+				{
+					Index: 0,
+					Text:  MockContent,
+				},
+			},
+			// kv transfer metadata for mock pd link down
+			KvTransferParams: map[string]any{
+				"address": i.Addr,
+				"port":    i.Port,
+			},
+		}
+		bytes, err := utils.SonicApi.Marshal(response)
+		if err != nil {
+			fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+			ctx.JSON(http.StatusInternalServerError, err)
+			return
+		}
+		time.Sleep(time.Duration(i.TTFT) * time.Millisecond)
+		i.Collector.TimeToFirstTime.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
+		ctx.Writer.WriteHeader(http.StatusOK)
+		ctx.Writer.Write(bytes)
+		ctx.Writer.Flush()
+		return
+	}
+
+	ctx.Header("Content-Type", "text/event-stream")
+	ctx.Header("Transfer-Encoding", "chunked")
+	ctx.Header("X-Request-Id", ctx.Request.Header.Get("X-Request-Id"))
+	ctx.Writer.WriteHeader(http.StatusOK)
+
+	usage := &openai.Usage{
+		PromptTokens:            2000,
+		CompletionTokens:        request.MaxTokens,
+		TotalTokens:             2000 + request.MaxTokens,
+		PromptTokensDetails:     nil,
+		CompletionTokensDetails: nil,
+	}
+	kvTransferMetaData := fmt.Sprintf("%s:%s", request.KvTransferParams["address"], request.KvTransferParams["port"])
+	i.writeRes(ctx, request.MaxTokens, i.getCompletionResToken, usage, kvTransferMetaData, requestId)
+}
+
+// hangingWithRequestId hangs in specific request_id scenario
+func (i *InferPara) hangingWithRequestId(requestId string) {
+	for i.IsHang || i.isRequestIdHanging(requestId) {
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func (i *InferPara) sendMetaserverRequest(metaserverURL string, kvTransferParams map[string]any, isCompletion bool) error {
+	// For completion requests, add "-0" suffix to request_id to match route server expectations
+	requestIdVal, ok := kvTransferParams["request_id"].(string)
+	if !ok {
+		return fmt.Errorf("invalid request_id type")
+	}
+	requestId := requestIdVal
+	if isCompletion {
+		requestId = requestId + "-0"
+	}
+
+	reqBody := map[string]any{
+		"address":    i.Addr,
+		"port":       i.Port,
+		"request_id": requestId,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	req, err := http.NewRequest("POST", metaserverURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-Id", fmt.Sprintf("req-%d", time.Now().UnixNano()))
+
+	fmt.Printf("Sending POST request to metaserver: %s\n body is %s\n", metaserverURL, jsonData)
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request to metaserver: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read metaserver response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("metaserver returned non-OK status: %d, response: %s", resp.StatusCode, string(respBody))
+	}
+
+	fmt.Printf("Metaserver response: %s\n", string(respBody))
+	return nil
+}
+
+func (i *InferPara) writeInitialResponse(ctx *gin.Context) error {
+	initialResponse := openai.ChatCompletionStreamResponse{
+		ID:      "chatcmpl-" + ctx.Request.Header.Get(constant.XRequestId),
+		Object:  "test",
+		Created: 1,
+		Model:   Model,
+		Choices: []openai.ChatCompletionStreamChoice{
+			{
+				Index: 0,
+				Delta: openai.ChatCompletionStreamChoiceDelta{
+					Role:    "assistant",
+					Content: "",
+				},
+				Logprobs:     nil,
+				FinishReason: nil,
+			},
+		},
+	}
+
+	bytes, err := utils.SonicApi.Marshal(initialResponse)
+	if err != nil {
+		fmt.Printf("failed to marshal initial response: %v\n", err)
+		ctx.JSON(http.StatusInternalServerError, err)
+		return err
+	}
+
+	_, err = fmt.Fprintf(ctx.Writer, "data: %s\n\n", bytes)
+	if err != nil {
+		fmt.Printf("failed to write initial response: %v\n", err)
+		return err
+	}
+
+	ctx.Writer.Flush()
+	return nil
+}
+
+func (i *InferPara) writeRes(ctx *gin.Context, maxTokens int, tokenBytes func(string, int, *openai.Usage) ([]byte, error),
+	usage *openai.Usage, kvTransferMetaData string, requestId string) {
+	var err error
+
+	err = i.writeInitialResponse(ctx)
+	if err != nil {
+		fmt.Printf("failed to write initial response: %v\n", err)
+		return
+	}
+
+	for j := 0; j < maxTokens; j++ {
+		if i.IsError {
+			streamErr := StreamError{
+				StreamErrorBody: &StreamErrorBody{
+					Object: "error",
+					Message: fmt.Sprintf("mock error happened in instance [%s:%s] with code %v",
+						i.Addr, i.Port, i.ErrorCode),
+					Type: "err",
+					Code: i.ErrorCode,
+				},
+			}
+			bytes, err := utils.SonicApi.Marshal(streamErr)
+			if err != nil {
+				fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+				ctx.JSON(http.StatusInternalServerError, err)
+				return
+			}
+			_, err = ctx.Writer.Write([]byte("data: "))
+			_, err = ctx.Writer.Write(bytes)
+			_, err = ctx.Writer.Write([]byte("\n\n"))
+			_, err = ctx.Writer.Write([]byte("data: "))
+			_, err = ctx.Writer.Write([]byte{'[', 'D', 'O', 'N', 'E', ']', '\n', '\n'})
+			ctx.Writer.Flush()
+			return
+		}
+		if i.IsLinkDown {
+			_, exist := i.LinkDownList[kvTransferMetaData]
+			if len(i.LinkDownList) == 0 || exist {
+				streamErr := StreamError{
+					StreamErrorBody: &StreamErrorBody{
+						Object:  "error",
+						Message: "pd link is down!",
+						Type:    "PDLinkDownError",
+						Code:    500,
+					},
+				}
+				bytes, err := utils.SonicApi.Marshal(streamErr)
+				if err != nil {
+					fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+					ctx.JSON(http.StatusInternalServerError, err)
+					return
+				}
+				_, err = ctx.Writer.Write([]byte("data: "))
+				_, err = ctx.Writer.Write(bytes)
+				_, err = ctx.Writer.Write([]byte("\n\n"))
+				_, err = ctx.Writer.Write([]byte("data: "))
+				_, err = ctx.Writer.Write([]byte{'[', 'D', 'O', 'N', 'E', ']', '\n', '\n'})
+				ctx.Writer.Flush()
+				return
+			}
+		}
+		if i.shouldHang(requestId) {
+			i.hangingWithRequestId(requestId)
+		}
+		if i.IsHybrid && j == 0 {
+			time.Sleep(time.Duration(i.TTFT) * time.Millisecond)
+			i.Collector.TimePerOutputToken.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
+		} else {
+			time.Sleep(time.Duration(i.TPOT) * time.Millisecond)
+			i.Collector.TimePerOutputToken.WithLabelValues(Model).Observe(float64(i.TPOT) / 1000.0)
+		}
+
+		responseBytes, err := tokenBytes(ctx.Request.Header.Get("X-Request-Id"), j, nil)
+		if err != nil {
+			fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		_, err = ctx.Writer.Write(responseBytes)
+		if err != nil {
+			fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+			ctx.JSON(http.StatusInternalServerError, err)
+			return
+		}
+		ctx.Writer.Flush()
+	}
+
+	lastResponse, err := tokenBytes(ctx.Request.Header.Get("X-Request-Id"), 0, usage)
+	// For streaming interface, when max token is not provided or is 1, one token will be output
+	// Native vLLM seems to not support max token being 0
+	if maxTokens == 0 || maxTokens == 1 {
+		i.Collector.TimeToFirstTime.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
+		i.Collector.End2EndTime.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
+	} else {
+		i.Collector.TimePerOutputToken.WithLabelValues(Model).Observe(float64(i.TPOT) / 1000.0)
+		totalTime := i.TTFT + i.TPOT*(uint(maxTokens)-1)
+		i.Collector.End2EndTime.WithLabelValues(Model).Observe(float64(totalTime) / 1000.0)
+	}
+	_, err = ctx.Writer.Write(lastResponse)
+	_, err = ctx.Writer.Write([]byte("data: "))
+	_, err = ctx.Writer.Write([]byte{'[', 'D', 'O', 'N', 'E', ']', '\n', '\n'})
+	if err != nil {
+		fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusInternalServerError, err)
+		return
+	}
+	ctx.Writer.Flush()
+}
+
+func (i *InferPara) Health(ctx *gin.Context) {
+	if i.IsHealth {
+		ctx.Writer.WriteHeader(http.StatusOK)
+	} else {
+		unHealthBody := UnhealthBody{
+			FaultMessage: "npu err",
+		}
+		ctx.JSON(http.StatusInternalServerError, unHealthBody)
+	}
+}
+
+func (i *InferPara) MockHealth(ctx *gin.Context) {
+	i.IsHealth = true
+	ctx.Writer.WriteHeader(http.StatusOK)
+}
+
+func (i *InferPara) MockUnHealth(ctx *gin.Context) {
+	i.IsHealth = false
+	ctx.Writer.WriteHeader(http.StatusOK)
+}
+
+func (i *InferPara) MockErrorInstanceHandler(ctx *gin.Context) {
+	var errBody MockErrorBody
+	if err := ctx.ShouldBindJSON(&errBody); err != nil {
+		errBody = MockErrorBody{
+			RetCode: 400,
+		}
+	}
+	i.IsError = true
+	i.ErrorCode = errBody.RetCode
+	logger.Log().Infof("istance %s:%s status: no error -> error, code = %v", i.Addr, i.Port, errBody.RetCode)
+	ctx.JSON(200,
+		fmt.Sprintf("istance %s:%s status: no error -> error, code = %v", i.Addr, i.Port, errBody.RetCode))
+}
+
+func (i *InferPara) RemoveErrorInstanceHandler(ctx *gin.Context) {
+	i.IsError = false
+	logger.Log().Infof("istance %s:%s status: error -> no error ", i.Addr, i.Port)
+	ctx.JSON(200, fmt.Sprintf("istance %s:%s status: error -> no error ", i.Addr, i.Port))
+}
+
+func (i *InferPara) LinkDownHandler(ctx *gin.Context) {
+	var linkDownBody LinkDownBody
+	if err := ctx.ShouldBindJSON(&linkDownBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	i.IsLinkDown = true
+	for _, metaData := range linkDownBody.MetaDataList {
+		key := fmt.Sprintf("%s:%s", metaData.Address, metaData.Port)
+		i.LinkDownList[key] = struct{}{}
+	}
+	logger.Log().Infof("instance %s:%s status: link -> linkdown with %+v", i.Addr, i.Port, linkDownBody.MetaDataList)
+	ctx.JSON(200, fmt.Sprintf("instance %s:%s status: link -> linkdown", i.Addr, i.Port))
+}
+
+func (i *InferPara) LinkUpHandler(ctx *gin.Context) {
+	i.IsLinkDown = false
+	i.LinkDownList = make(map[string]struct{})
+	logger.Log().Infof("instance %s:%s status: linkdown -> link", i.Addr, i.Port)
+	ctx.JSON(200, fmt.Sprintf("instance %s:%s status: linkdown -> link", i.Addr, i.Port))
+}
+
+func (i *InferPara) HangInstanceHandler(ctx *gin.Context) {
+	i.IsHang = true
+	logger.Log().Infof("instance %s:%s status: unhang -> hang", i.Addr, i.Port)
+	ctx.JSON(200, fmt.Sprintf("instance %s:%s status: unhang -> hang", i.Addr, i.Port))
+}
+
+func (i *InferPara) UnHangErrorInstanceHandler(ctx *gin.Context) {
+	i.IsHang = false
+	logger.Log().Infof("instance %s:%s status: hang -> unhang ", i.Addr, i.Port)
+	ctx.JSON(200, fmt.Sprintf("instance %s:%s status: hang -> unhang ", i.Addr, i.Port))
+}
+
+// HangSpecificRequestHandler sets specific request_id to hang
+func (i *InferPara) HangSpecificRequestHandler(ctx *gin.Context) {
+	requestId := ctx.Query("request_id")
+	i.HangRequestIdsMu.Lock()
+	i.HangRequestIds[requestId] = struct{}{}
+	i.HangRequestIdsMu.Unlock()
+	logger.Log().Infof("instance %s:%s: set request %s to hang", i.Addr, i.Port, requestId)
+	ctx.JSON(200, fmt.Sprintf("request %s will hang", requestId))
+}
+
+// UnHangSpecificRequestHandler releases specific request_id from hang
+func (i *InferPara) UnHangSpecificRequestHandler(ctx *gin.Context) {
+	requestId := ctx.Query("request_id")
+	i.HangRequestIdsMu.Lock()
+	delete(i.HangRequestIds, requestId)
+	i.HangRequestIdsMu.Unlock()
+	logger.Log().Infof("instance %s:%s: remove request %s from hang", i.Addr, i.Port, requestId)
+	ctx.JSON(200, fmt.Sprintf("request %s will not hang", requestId))
+}
+
+// isRequestIdHanging checks if specific request_id needs to hang
+func (i *InferPara) isRequestIdHanging(requestId string) bool {
+	i.HangRequestIdsMu.Lock()
+	defer i.HangRequestIdsMu.Unlock()
+	for hangStr := range i.HangRequestIds {
+		fmt.Println(fmt.Sprintf("reqId %s, hangStr %s", requestId, hangStr))
+		if strings.HasPrefix(requestId, hangStr) {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldHang checks if hang is needed (global or for specific request_id)
+func (i *InferPara) shouldHang(requestId string) bool {
+	if i.IsHang {
+		return true
+	}
+	if requestId != "" && i.isRequestIdHanging(requestId) {
+		return true
+	}
+	return false
+}
+
+func (i *InferPara) ModelNameHandler(ctx *gin.Context) {
+	logger.Log().Infof("handle model name request, model name  is %s", Model)
+	data := &Data{
+		Id:     Model,
+		Object: "model",
+		Owned:  "vllm",
+	}
+	datas := make([]*Data, 0)
+	datas = append(datas, data)
+	modelNameBody := ModelNameBody{
+		Data: datas,
+	}
+	ctx.JSON(200, modelNameBody)
+}
