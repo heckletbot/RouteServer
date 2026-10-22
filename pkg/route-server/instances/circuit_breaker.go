@@ -67,10 +67,14 @@ type CircuitBreaker struct {
 	// timer driven: timer periodically checks failure rate, sets shouldTrip if threshold exceeded
 	shouldTrip atomic.Bool
 
+	// degraded indicates whether the system is in Level 3 degraded mode (no valid health cache)
+	// Only when degraded=true will the timer and probe triggered failure rate checks execute
+	degraded atomic.Bool
+
 	// last obtained cumulative values (used to calculate increments within period)
-	lastFailedRequests    float64
-	lastSuccessedRequests float64
-	lastCollectTime       time.Time
+	lastTotalRequests float64
+	lastErrorRequests float64
+	lastCollectTime   time.Time
 
 	// signal to stop timer
 	stopCh chan struct{}
@@ -123,8 +127,13 @@ func (cb *CircuitBreaker) startTicker() {
 
 // collectAndCheck collects metrics increments within a period and checks failure rate
 func (cb *CircuitBreaker) collectAndCheck() {
-	currentFailed := rsmetrics.GetNumFailedRequests()
-	currentSuccessed := rsmetrics.GetNumSuccessedRequests()
+	// Skip failure rate check in non-degraded mode to avoid unnecessary computation at Level 2
+	if !cb.degraded.Load() {
+		return
+	}
+
+	currentTotal := rsmetrics.GetNumTotalRequestsWithErrorCode()
+	currentError := rsmetrics.GetNumErrorRequestsWithErrorCode()
 	now := time.Now()
 
 	cb.mu.Lock()
@@ -132,32 +141,31 @@ func (cb *CircuitBreaker) collectAndCheck() {
 
 	if cb.lastCollectTime.IsZero() {
 		// first call, only record baseline
-		cb.lastFailedRequests = currentFailed
-		cb.lastSuccessedRequests = currentSuccessed
+		cb.lastTotalRequests = currentTotal
+		cb.lastErrorRequests = currentError
 		cb.lastCollectTime = now
 		return
 	}
 
-	deltaFailed := currentFailed - cb.lastFailedRequests
-	deltaSuccessed := currentSuccessed - cb.lastSuccessedRequests
+	deltaTotal := currentTotal - cb.lastTotalRequests
+	deltaError := currentError - cb.lastErrorRequests
 
-	cb.lastFailedRequests = currentFailed
-	cb.lastSuccessedRequests = currentSuccessed
+	cb.lastTotalRequests = currentTotal
+	cb.lastErrorRequests = currentError
 	cb.lastCollectTime = now
 
-	total := deltaFailed + deltaSuccessed
-	if total < float64(cb.cfg.MinRequestCount) {
-		logger.Log().Debugf("[CircuitBreaker] Period check: total=%.0f < minRequestCount=%d, skip", total, cb.cfg.MinRequestCount)
+	if deltaTotal <= 0 {
+		logger.Log().Debugf("[CircuitBreaker] Period check: total=%.0f <= 0, skip failure rate calculation", deltaTotal)
 		return
 	}
-	if total == 0 {
-		logger.Log().Debugf("[CircuitBreaker] Period check: total=0, skip failure rate calculation")
+	if deltaTotal < float64(cb.cfg.MinRequestCount) {
+		logger.Log().Debugf("[CircuitBreaker] Period check: total=%.0f < minRequestCount=%d, skip", deltaTotal, cb.cfg.MinRequestCount)
 		return
 	}
 
-	failureRate := deltaFailed / total
-	logger.Log().Debugf("[CircuitBreaker] Period check: total=%.0f, failed=%.0f, successed=%.0f, failureRate=%.4f, threshold=%.4f",
-		total, deltaFailed, deltaSuccessed, failureRate, cb.cfg.FailureRateThreshold)
+	failureRate := deltaError / deltaTotal
+	logger.Log().Debugf("[CircuitBreaker] Period check: total=%.0f, error=%.0f, failureRate=%.4f, threshold=%.4f",
+		deltaTotal, deltaError, failureRate, cb.cfg.FailureRateThreshold)
 
 	if failureRate >= cb.cfg.FailureRateThreshold {
 		logger.Log().Warnf("[CircuitBreaker] Failure rate %.4f above threshold %.4f, setting shouldTrip flag",
@@ -180,16 +188,28 @@ func (cb *CircuitBreaker) Reset() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
+	// Clear baseline data and degraded flag regardless of state
+	// Ensure a clean start when degrading to Level 3 again, avoiding stale data interference
+	cb.degraded.Store(false)
+	cb.shouldTrip.Store(false)
+	cb.lastTotalRequests = 0
+	cb.lastErrorRequests = 0
+	cb.lastCollectTime = time.Time{}
+
 	if cb.state == StateOpen {
 		logger.Log().Infof("[CircuitBreaker] Resetting circuit breaker to closed state due to valid instance info")
 		cb.state = StateClosed
-		cb.shouldTrip.Store(false)
-		cb.lastFailedRequests = 0
-		cb.lastSuccessedRequests = 0
-		cb.lastCollectTime = time.Time{}
-		// update unified metrics
-		cb.updateWorkerReadinessState()
 	}
+
+	// update unified metrics
+	cb.updateWorkerReadinessState()
+}
+
+// SetDegraded sets the degraded flag, called by InstanceManager at Level 3 entry point
+// degraded=true means system has degraded to Level 3 (no valid health cache), circuit breaker is active
+// degraded=false means system is at Level 2 (valid health cache), circuit breaker is dormant
+func (cb *CircuitBreaker) SetDegraded(degraded bool) {
+	cb.degraded.Store(degraded)
 }
 
 // GetForceMode gets current force mode
@@ -261,29 +281,33 @@ func (cb *CircuitBreaker) CheckShouldTrip() bool {
 // This period is definitely within CheckWindowSec time window, so judgment logic is consistent with collectAndCheck
 // Caller must hold cb.mu.Lock()
 func (cb *CircuitBreaker) checkProbeTimeDelta() {
+	// Skip failure rate check in non-degraded mode
+	if !cb.degraded.Load() {
+		return
+	}
+
 	if cb.lastCollectTime.IsZero() {
 		// timer hasn't triggered first collection yet, no baseline data, cannot calculate increment
 		return
 	}
 
-	currentFailed := rsmetrics.GetNumFailedRequests()
-	currentSuccessed := rsmetrics.GetNumSuccessedRequests()
+	currentTotal := rsmetrics.GetNumTotalRequestsWithErrorCode()
+	currentError := rsmetrics.GetNumErrorRequestsWithErrorCode()
 
-	deltaFailed := currentFailed - cb.lastFailedRequests
-	deltaSuccessed := currentSuccessed - cb.lastSuccessedRequests
+	deltaTotal := currentTotal - cb.lastTotalRequests
+	deltaError := currentError - cb.lastErrorRequests
 
-	total := deltaFailed + deltaSuccessed
-	if total < float64(cb.cfg.MinRequestCount) {
-		logger.Log().Debugf("[CircuitBreaker] Probe check: total=%.0f < minRequestCount=%d, skip", total, cb.cfg.MinRequestCount)
+	if deltaTotal <= 0 {
 		return
 	}
-	if total == 0 {
+	if deltaTotal < float64(cb.cfg.MinRequestCount) {
+		logger.Log().Debugf("[CircuitBreaker] Probe check: total=%.0f < minRequestCount=%d, skip", deltaTotal, cb.cfg.MinRequestCount)
 		return
 	}
 
-	failureRate := deltaFailed / total
-	logger.Log().Debugf("[CircuitBreaker] Probe check: total=%.0f, failed=%.0f, successed=%.0f, failureRate=%.4f, threshold=%.4f",
-		total, deltaFailed, deltaSuccessed, failureRate, cb.cfg.FailureRateThreshold)
+	failureRate := deltaError / deltaTotal
+	logger.Log().Debugf("[CircuitBreaker] Probe check: total=%.0f, error=%.0f, failureRate=%.4f, threshold=%.4f",
+		deltaTotal, deltaError, failureRate, cb.cfg.FailureRateThreshold)
 
 	if failureRate >= cb.cfg.FailureRateThreshold {
 		logger.Log().Warnf("[CircuitBreaker] Probe check: failure rate %.4f above threshold %.4f, setting shouldTrip flag",
@@ -291,8 +315,8 @@ func (cb *CircuitBreaker) checkProbeTimeDelta() {
 		cb.shouldTrip.Store(true)
 		cb.state = StateOpen
 		// update baseline to avoid timer repeatedly calculating same increment on next trigger
-		cb.lastFailedRequests = currentFailed
-		cb.lastSuccessedRequests = currentSuccessed
+		cb.lastTotalRequests = currentTotal
+		cb.lastErrorRequests = currentError
 		cb.lastCollectTime = time.Now()
 	}
 }

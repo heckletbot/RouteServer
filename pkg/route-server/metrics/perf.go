@@ -178,7 +178,7 @@ func (m *PerfMetrics) calculate() {
 		return
 	}
 	isPrint := false
-	perfLog := "router server Perf Metrics: "
+	perfLog := "model orch Perf Metrics: "
 	for k, v := range m.pastPerfMetrics {
 		info := v.Statistics()
 		if info.Count == 0 {

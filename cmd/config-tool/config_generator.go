@@ -39,49 +39,50 @@ import (
 )
 
 var (
-	TemplatePath            string
-	DeployTargetPath        string
-	Name                    string
-	Host                    string
-	Port                    uint
-	EncodeAddrs             string
-	PrefillAddrs            string
-	StaticInfos             string
-	DecodeAddrs             string
-	MoeAddrs                string
-	EtcdEndpoints           string
-	RemoteSchedulerType     string
-	RemoteSchedulerEndpoint string
-	LogFilePath             string
-	Domain                  string
-	UseDomainForLeader      string
-	IsCandidate             string
-	Mode                    string
-	InferMode               string
-	InferModuleVersion      string
-	ReadinessCfg            string
-	OpsPort                 uint
-	OpsHTTPSEnable          string
-	OpsMTLSEnable           string
-	OpsTLSCertFile          string
-	OpsTLSKeyFile           string
-	OpsTLSCaCertFile        string
-	TLSCertFile             string
-	TLSKeyFile              string
-	TLSCaCertFile           string
-	TLSSkipVerify           string
-	EnableHTTPS             string
-	EnableMTLS              string
-	ClientHTTPSEnable       string
-	ClientMTLSEnable        string
-	ClientCertFile          string
-	ClientKeyFile           string
-	ClientCaCertFile        string
-	EtcdTLSEnable           string
-	EtcdMTLSEnable          string
-	EtcdCertFile            string
-	EtcdKeyFile             string
-	EtcdCaCertFile          string
+	TemplatePath               string
+	DeployTargetPath           string
+	Name                       string
+	Host                       string
+	Port                       uint
+	EncodeAddrs                string
+	PrefillAddrs               string
+	StaticInfos                string
+	DecodeAddrs                string
+	MoeAddrs                   string
+	EtcdEndpoints              string
+	RemoteSchedulerType        string
+	RemoteSchedulerEndpoint    string
+	LogFilePath                string
+	Domain                     string
+	UseDomainForLeader         string
+	IsCandidate                string
+	Mode                       string
+	InferMode                  string
+	InferModuleVersion         string
+	ReadinessCfg               string
+	OpsPort                    uint
+	OpsHTTPSEnable             string
+	OpsMTLSEnable              string
+	OpsTLSCertFile             string
+	OpsTLSKeyFile              string
+	OpsTLSCaCertFile           string
+	TLSCertFile                string
+	TLSKeyFile                 string
+	TLSCaCertFile              string
+	TLSSkipVerify              string
+	EnableHTTPS                string
+	EnableMTLS                 string
+	ClientHTTPSEnable          string
+	ClientMTLSEnable           string
+	ClientCertFile             string
+	ClientKeyFile              string
+	ClientCaCertFile           string
+	EtcdTLSEnable              string
+	EtcdMTLSEnable             string
+	EtcdCertFile               string
+	EtcdKeyFile                string
+	EtcdCaCertFile             string
+	EnableOpsAPIsOnServicePort string
 )
 
 func main() {
@@ -173,6 +174,15 @@ func applyServerConfig(cfg *config.Config) bool {
 
 	if !applyEtcdTLSConfig(cfg) {
 		return false
+	}
+
+	if EnableOpsAPIsOnServicePort != "" {
+		enable, err := strconv.ParseBool(EnableOpsAPIsOnServicePort)
+		if err != nil {
+			fmt.Printf("Error: invalid enable-ops-apis-on-service-port, err = %v\n", err)
+			return false
+		}
+		cfg.ServerConfig.EnableOpsAPIsOnServicePort = enable
 	}
 
 	return true
@@ -444,7 +454,7 @@ func applyPeerClientConfig(cfg *config.Config) bool {
 // applyLogConfig configures the log file path, complexity: 2
 func applyLogConfig(cfg *config.Config) {
 	if LogFilePath == "" {
-		cfg.LogConfig.Filename = path.Join(DeployTargetPath, "log", "model-orch.log")
+		cfg.LogConfig.Filename = path.Join(DeployTargetPath, "log", "route-server.log")
 		fmt.Printf("log-file is determined automatically to %s\n", cfg.LogConfig.Filename)
 	} else {
 		cfg.LogConfig.Filename = LogFilePath
@@ -468,7 +478,7 @@ func writeConfigFile(cfg *config.Config, configPath string) bool {
 		fmt.Println(err)
 		return false
 	}
-	err = os.WriteFile(path.Join(configPath, "model-orch.yaml"), marshal, 0600)
+	err = os.WriteFile(path.Join(configPath, "route-server.yaml"), marshal, 0600)
 	if err != nil {
 		fmt.Printf("Error: failed to write target config file %s, err = %v\n", configPath, err)
 		return false
@@ -856,10 +866,10 @@ func modifyClusterConfig(cfg *config.Config) (success bool) {
 }
 
 func parseArgs() {
-	flag.StringVar(&TemplatePath, "template", "/opt/model_orch/mo-deploy/model-orch-template.yaml",
+	flag.StringVar(&TemplatePath, "template", "/opt/route_server/mo-deploy/route-server-template.yaml",
 		"path to template file")
-	flag.StringVar(&DeployTargetPath, "target", "/opt/model_orch/",
-		"path to route-server deploy dir")
+	flag.StringVar(&DeployTargetPath, "target", "/opt/route_server/",
+		"path to route_server deploy dir")
 	flag.StringVar(&Host, "host", "", "Host ip for current container")
 	flag.UintVar(&Port, "port", 9800, "non-first token delay")
 	flag.StringVar(&Name, "name", "client_unknown", "Name of the client")
@@ -893,7 +903,7 @@ func parseArgs() {
 			"start with protocol http. set to this route server's own http endpoint by defaults, "+
 			"e.g. http://<rs_ip:port>")
 	flag.StringVar(&LogFilePath, "log-file-path", "",
-		"path to route server log file, if not set, then it will use RS_INSTALL_DIR/<rs_name>/DistributedScheduler/log/route-server.log."+
+		"path to route server log file, if not set, then it will use RS_INSTALL_DIR/<rs_name>/RouteServer/log/route-server.log."+
 			" default is empty. must give full real path")
 	flag.StringVar(&Domain, "domain", "leader_domain", "domain of the leader")
 	flag.StringVar(&UseDomainForLeader, "use-domain-for-leader", "false", "whether to use the domain name to access the leader")
@@ -924,6 +934,7 @@ func parseArgs() {
 	flag.StringVar(&EtcdCertFile, "etcd-cert-file", "", "path to etcd client TLS certificate file (e.g. /etc/certs/etcd-client.crt)")
 	flag.StringVar(&EtcdKeyFile, "etcd-key-file", "", "path to etcd client TLS private key file (e.g. /etc/certs/etcd-client.key)")
 	flag.StringVar(&EtcdCaCertFile, "etcd-ca-cert-file", "", "path to etcd CA certificate file (e.g. /etc/certs/etcd-ca.crt)")
+	flag.StringVar(&EnableOpsAPIsOnServicePort, "enable-ops-apis-on-service-port", "", "register ops APIs on service port as well. true/false (default: false)")
 	flag.Parse()
 }
 

@@ -17,7 +17,7 @@
 package constant
 
 const (
-	SoftwareName = "ModelOrch"
+	SoftwareName = "RouteServer"
 
 	// common key enum
 	Encode                string = "encode"
@@ -27,6 +27,7 @@ const (
 	RequestSrcUser        string = "user"
 	MetricsKeyPrefix      string = "dynamic"
 	XRequestId            string = "X-Request-Id"
+	XRouterId             string = "X-Router-Id"
 	HeaderContentLength   string = "Content-Length"
 	HeaderXSpanId         string = "x-span-id"
 	HeaderXUserAlias      string = "x-user-alias"
@@ -139,7 +140,7 @@ const (
 
 	HybridModeMetricsYml = "metrics_config_vllm_0.12.0_hybrid.yaml"
 
-	EnvServerConfigPath = "ENV_MODEL_ORCH_CONFIG_PATH"
+	EnvServerConfigPath = "ENV_ROUTE_SERVER_CONFIG_PATH"
 
 	// gin context key
 	RewriteRequestID = "rewrite-request-id"
@@ -179,3 +180,5 @@ const (
 	// TLSEtcdKeyPasswordEnv is the environment variable name for the etcd client private key decryption password
 	TLSEtcdKeyPasswordEnv = "TLS_ETCD_KEY_PASSWORD"
 )
+
+var ServerName string

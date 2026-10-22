@@ -77,7 +77,7 @@ func TestStartProbeAsync_Concurrent(t *testing.T) {
 	}
 	wg.Wait()
 
-	// 只应该发起一次探测
+	// Should only initiate one probe
 	leader.mu.Lock()
 	probingCount := 0
 	if leader.probingInstances["test-instance"] {
@@ -90,7 +90,7 @@ func TestStartProbeAsync_Concurrent(t *testing.T) {
 	}
 }
 
-// 测试 startProbeAsync - 不阻塞主循环
+// Test startProbeAsync - non-blocking main loop
 func TestStartProbeAsync_NonBlocking(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                     true,
@@ -110,24 +110,24 @@ func TestStartProbeAsync_NonBlocking(t *testing.T) {
 		},
 	}
 
-	// 记录开始时间
+	// Record start time
 	startTime := time.Now()
 
-	// 模拟主循环对多个实例调用 needToStartProbe 和 startProbeAsync
-	// 这应该在极短时间内完成，不应该阻塞
+	// Simulate main loop calling needToStartProbe and startProbeAsync for multiple instances
+	// This should complete in a very short time, should not block
 	for i := 1; i <= 2; i++ {
 		instanceId := "instance-" + string(rune('0'+i))
 		leader.startProbeAsync(instanceId)
 	}
 
-	// 应该几乎立即返回（纳秒级别）
+	// Should return almost immediately (nanosecond level)
 	elapsed := time.Since(startTime)
 	if elapsed.Milliseconds() > 100 {
 		t.Errorf("Expected non-blocking behavior, but took %v", elapsed)
 	}
 }
 
-// 测试 SetProbeInferRequest
+// Test SetProbeInferRequest
 func TestSetProbeInferRequest(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -152,7 +152,7 @@ func TestSetProbeInferRequest(t *testing.T) {
 	}
 }
 
-// 测试 NewLeaderHangDecider 初始化 invalidProbeCount
+// Test NewLeaderHangDecider initializes invalidProbeCount
 func TestNewLeaderHangDecider_InitInvalidProbeCount(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                      true,
@@ -177,7 +177,7 @@ func TestNewLeaderHangDecider_InitInvalidProbeCount(t *testing.T) {
 	}
 }
 
-// 测试配置默认值处理
+// Test config default value handling
 func TestFillHangCheckerConfig_DefaultValue(t *testing.T) {
 	cfg := &config.HealthCheckConfig{
 		AvailableCheckersCfg: config.AvailableCheckersConfig{
@@ -194,7 +194,7 @@ func TestFillHangCheckerConfig_DefaultValue(t *testing.T) {
 	}
 }
 
-// 测试配置默认值处理 - 负数
+// Test config default value handling - negative
 func TestFillHangCheckerConfig_NegativeValue(t *testing.T) {
 	cfg := &config.HealthCheckConfig{
 		AvailableCheckersCfg: config.AvailableCheckersConfig{
@@ -211,7 +211,7 @@ func TestFillHangCheckerConfig_NegativeValue(t *testing.T) {
 	}
 }
 
-// 测试配置有效值保持不变
+// Test config valid value remains unchanged
 func TestFillHangCheckerConfig_ValidValue(t *testing.T) {
 	cfg := &config.HealthCheckConfig{
 		AvailableCheckersCfg: config.AvailableCheckersConfig{
@@ -228,9 +228,9 @@ func TestFillHangCheckerConfig_ValidValue(t *testing.T) {
 	}
 }
 
-// ==================== WorkerHangChecker 单元测试 ====================
+// ==================== WorkerHangChecker Unit Tests ====================
 
-// 测试场景: SetInstanceRecorder 创建新实例记录器
+// Test scenario: SetInstanceRecorder creates new instance recorder
 func TestWorkerHangChecker_SetInstanceRecorder_NewInstance(t *testing.T) {
 	checker := &WorkerHangChecker{
 		InstancesList: make(map[string]*InstanceRecorder),
@@ -253,7 +253,7 @@ func TestWorkerHangChecker_SetInstanceRecorder_NewInstance(t *testing.T) {
 	}
 }
 
-// 测试场景: SetInstanceRecorder 重复设置同一实例返回nil
+// Test scenario: SetInstanceRecorder returns nil for duplicate instance
 func TestWorkerHangChecker_SetInstanceRecorder_ExistingInstance(t *testing.T) {
 	checker := &WorkerHangChecker{
 		InstancesList: make(map[string]*InstanceRecorder),
@@ -268,7 +268,7 @@ func TestWorkerHangChecker_SetInstanceRecorder_ExistingInstance(t *testing.T) {
 	}
 }
 
-// 测试场景: GetInstanceRecorder 获取存在的实例记录器
+// Test scenario: GetInstanceRecorder gets existing instance recorder
 func TestWorkerHangChecker_GetInstanceRecorder_Existing(t *testing.T) {
 	checker := &WorkerHangChecker{
 		InstancesList: map[string]*InstanceRecorder{
@@ -292,7 +292,7 @@ func TestWorkerHangChecker_GetInstanceRecorder_Existing(t *testing.T) {
 	}
 }
 
-// 测试场景: GetInstanceRecorder 获取不存在的实例返回nil
+// Test scenario: GetInstanceRecorder returns nil for non-existing instance
 func TestWorkerHangChecker_GetInstanceRecorder_NotExisting(t *testing.T) {
 	checker := &WorkerHangChecker{
 		InstancesList: make(map[string]*InstanceRecorder),
@@ -304,7 +304,7 @@ func TestWorkerHangChecker_GetInstanceRecorder_NotExisting(t *testing.T) {
 	}
 }
 
-// 测试场景: RemoveInstance 删除实例记录器
+// Test scenario: RemoveInstance removes instance recorder
 func TestWorkerHangChecker_RemoveInstance(t *testing.T) {
 	checker := &WorkerHangChecker{
 		InstancesList: map[string]*InstanceRecorder{
@@ -326,7 +326,7 @@ func TestWorkerHangChecker_RemoveInstance(t *testing.T) {
 	}
 }
 
-// 测试场景: Init 初始化配置并设置阈值
+// Test scenario: Init initializes config and sets thresholds
 func TestWorkerHangChecker_Init_Enable(t *testing.T) {
 	checker := &WorkerHangChecker{}
 	cfg := &config.HangCheckerConfig{
@@ -359,7 +359,7 @@ func TestWorkerHangChecker_Init_Enable(t *testing.T) {
 	}
 }
 
-// 测试场景: Init 配置未启用时不初始化
+// Test scenario: Init does not initialize when config is disabled
 func TestWorkerHangChecker_Init_Disable(t *testing.T) {
 	checker := &WorkerHangChecker{}
 	cfg := &config.HangCheckerConfig{
@@ -368,13 +368,13 @@ func TestWorkerHangChecker_Init_Disable(t *testing.T) {
 
 	checker.Init(cfg)
 
-	// 当Enable为false时，不应该初始化InstancesList
+	// When Enable is false, InstancesList should not be initialized
 	if checker.InstancesList != nil {
 		t.Error("Expected InstancesList to remain nil when disabled")
 	}
 }
 
-// 测试场景: OnRequestEvent 处理新请求事件
+// Test scenario: OnRequestEvent handles new request event
 func TestWorkerHangChecker_OnRequestEvent_NewRequest(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{
@@ -408,7 +408,7 @@ func TestWorkerHangChecker_OnRequestEvent_NewRequest(t *testing.T) {
 	}
 }
 
-// 测试场景: OnRequestEvent 内部测试请求跳过
+// Test scenario: OnRequestEvent skips internal testing request
 func TestWorkerHangChecker_OnRequestEvent_InternalTestingReq(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg:           &config.HangCheckerConfig{Enable: true},
@@ -425,13 +425,13 @@ func TestWorkerHangChecker_OnRequestEvent_InternalTestingReq(t *testing.T) {
 
 	checker.OnRequestEvent(reqMsg)
 
-	// 内部测试请求应该被跳过
+	// Internal testing request should be skipped
 	if len(checker.InstancesList) != 0 {
 		t.Error("Expected no instance to be added for internal testing request")
 	}
 }
 
-// 测试场景: OnRequestEvent 配置未启用时跳过
+// Test scenario: OnRequestEvent skips when config is disabled
 func TestWorkerHangChecker_OnRequestEvent_Disabled(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg:           &config.HangCheckerConfig{Enable: false},
@@ -447,13 +447,13 @@ func TestWorkerHangChecker_OnRequestEvent_Disabled(t *testing.T) {
 
 	checker.OnRequestEvent(reqMsg)
 
-	// 配置未启用时应该被跳过
+	// Should be skipped when config is disabled
 	if len(checker.InstancesList) != 0 {
 		t.Error("Expected no instance to be added when disabled")
 	}
 }
 
-// 测试场景: OnNewRequest 添加新的非流请求
+// Test scenario: OnNewRequest adds new non-stream request
 func TestWorkerHangChecker_OnNewRequest_NonStreamRequest(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg:           &config.HangCheckerConfig{Enable: true},
@@ -478,7 +478,7 @@ func TestWorkerHangChecker_OnNewRequest_NonStreamRequest(t *testing.T) {
 	}
 }
 
-// 测试场景: OnNewRequest 添加新的流请求
+// Test scenario: OnNewRequest adds new stream request
 func TestWorkerHangChecker_OnNewRequest_StreamRequest(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg:           &config.HangCheckerConfig{Enable: true},
@@ -503,7 +503,7 @@ func TestWorkerHangChecker_OnNewRequest_StreamRequest(t *testing.T) {
 	}
 }
 
-// 测试场景: OnNewRequest 更新已存在的请求时间
+// Test scenario: OnNewRequest updates existing request time
 func TestWorkerHangChecker_OnNewRequest_UpdateExistingRequest(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{Enable: true},
@@ -534,7 +534,7 @@ func TestWorkerHangChecker_OnNewRequest_UpdateExistingRequest(t *testing.T) {
 	}
 }
 
-// 测试场景: OnNewRequest 无效的角色类型记录警告
+// Test scenario: OnNewRequest logs warning for invalid role type
 func TestWorkerHangChecker_OnNewRequest_InvalidRole(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg:           &config.HangCheckerConfig{Enable: true},
@@ -546,11 +546,11 @@ func TestWorkerHangChecker_OnNewRequest_InvalidRole(t *testing.T) {
 	request := &utils.RemoteRequestWrapper{Id: "req-1", Type: "invalid-role", Stream: false}
 	timestamp := time.Now().UnixMilli()
 
-	// 应该记录警告但不会panic
+	// Should log warning but not panic
 	checker.OnNewRequest(request, "instance-1", timestamp)
 }
 
-// 测试场景: OnFinishedRequest 完成非流请求
+// Test scenario: OnFinishedRequest completes non-stream request
 func TestWorkerHangChecker_OnFinishedRequest_NonStreamRequest(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{Enable: true},
@@ -587,7 +587,7 @@ func TestWorkerHangChecker_OnFinishedRequest_NonStreamRequest(t *testing.T) {
 	}
 }
 
-// 测试场景: OnFinishedRequest 当请求列表为空时删除实例
+// Test scenario: OnFinishedRequest removes instance when request list is empty
 func TestWorkerHangChecker_OnFinishedRequest_RemoveInstance(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{Enable: true},
@@ -612,13 +612,13 @@ func TestWorkerHangChecker_OnFinishedRequest_RemoveInstance(t *testing.T) {
 
 	checker.OnFinishedRequest(request, "instance-1", timestamp)
 
-	// 当RequestsTimeList为空时，实例应该被删除
+	// When RequestsTimeList is empty, instance should be removed
 	if _, exists := checker.InstancesList["instance-1"]; exists {
 		t.Error("Expected instance to be removed when RequestsTimeList is empty")
 	}
 }
 
-// 测试场景: OnFinishedRequest 不存在的实例直接返回
+// Test scenario: OnFinishedRequest returns directly for non-existing instance
 func TestWorkerHangChecker_OnFinishedRequest_NonExistingInstance(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg:           &config.HangCheckerConfig{Enable: true},
@@ -628,11 +628,11 @@ func TestWorkerHangChecker_OnFinishedRequest_NonExistingInstance(t *testing.T) {
 
 	request := &utils.RemoteRequestWrapper{Id: "req-1", Type: "prefill", Stream: true}
 
-	// 应该直接返回，不panic
+	// Should return directly, not panic
 	checker.OnFinishedRequest(request, "non-existent", 1000)
 }
 
-// 测试场景: OnLocalDecodeTokens 处理本地解码token事件
+// Test scenario: OnLocalDecodeTokens handles local decode token event
 func TestWorkerHangChecker_OnLocalDecodeTokens(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{Enable: true},
@@ -663,7 +663,7 @@ func TestWorkerHangChecker_OnLocalDecodeTokens(t *testing.T) {
 	}
 }
 
-// 测试场景: OnLocalDecodeTokens 配置未启用时跳过
+// Test scenario: OnLocalDecodeTokens skips when config is disabled
 func TestWorkerHangChecker_OnLocalDecodeTokens_Disabled(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{Enable: false},
@@ -690,7 +690,7 @@ func TestWorkerHangChecker_OnLocalDecodeTokens_Disabled(t *testing.T) {
 	}
 }
 
-// 测试场景: OnLocalDecodeTokens 不存在的实例直接返回
+// Test scenario: OnLocalDecodeTokens returns directly for non-existing instance
 func TestWorkerHangChecker_OnLocalDecodeTokens_NonExistingInstance(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg:           &config.HangCheckerConfig{Enable: true},
@@ -704,11 +704,11 @@ func TestWorkerHangChecker_OnLocalDecodeTokens_NonExistingInstance(t *testing.T)
 		timestamp:  2000,
 	}
 
-	// 应该直接返回，不panic
+	// Should return directly, not panic
 	checker.OnLocalDecodeTokens(tokenMsg)
 }
 
-// 测试场景: IsInstanceHanging 阈值时间小于等于0时返回false
+// Test scenario: IsInstanceHanging returns false when threshold time <= 0
 func TestWorkerHangChecker_IsInstanceHanging_ThresholdZero(t *testing.T) {
 	checker := &WorkerHangChecker{
 		Thresholds: map[string]*RoleThreshold{
@@ -731,7 +731,7 @@ func TestWorkerHangChecker_IsInstanceHanging_ThresholdZero(t *testing.T) {
 	}
 }
 
-// 测试场景: IsInstanceHanging 有非流请求且SkipNonStream为true时不报告挂起
+// Test scenario: IsInstanceHanging does not report hanging when non-stream request exists and SkipNonStream is true
 func TestWorkerHangChecker_IsInstanceHanging_NonStreamWithSkip(t *testing.T) {
 	checker := &WorkerHangChecker{
 		Thresholds: map[string]*RoleThreshold{
@@ -749,7 +749,7 @@ func TestWorkerHangChecker_IsInstanceHanging_NonStreamWithSkip(t *testing.T) {
 		MayHang:               false,
 	}
 
-	timestamp := int64(10000) // 超过阈值时间，但有非流请求应该跳过
+	timestamp := int64(10000) // Exceeds threshold time, but has non-stream request should skip
 	result := checker.IsInstanceHanging(recorder, "instance-1", timestamp)
 
 	if result != false {
@@ -757,7 +757,7 @@ func TestWorkerHangChecker_IsInstanceHanging_NonStreamWithSkip(t *testing.T) {
 	}
 }
 
-// 测试场景: IsInstanceHanging 有非流请求且超过警告间隔时记录警告
+// Test scenario: IsInstanceHanging logs warning when non-stream request exceeds warning interval
 func TestWorkerHangChecker_IsInstanceHanging_NonStreamWarnInterval(t *testing.T) {
 	checker := &WorkerHangChecker{
 		Thresholds: map[string]*RoleThreshold{
@@ -775,7 +775,7 @@ func TestWorkerHangChecker_IsInstanceHanging_NonStreamWarnInterval(t *testing.T)
 		MayHang:               false,
 	}
 
-	timestamp := int64(40000) // 超过阈值时间和警告间隔
+	timestamp := int64(40000) // Exceeds threshold time and warning interval
 	result := checker.IsInstanceHanging(recorder, "instance-1", timestamp)
 
 	if result != false {
@@ -786,7 +786,7 @@ func TestWorkerHangChecker_IsInstanceHanging_NonStreamWarnInterval(t *testing.T)
 	}
 }
 
-// 测试场景: IsInstanceHanging 实例挂起时返回true
+// Test scenario: IsInstanceHanging returns true when instance is hanging
 func TestWorkerHangChecker_IsInstanceHanging_Hanging(t *testing.T) {
 	checker := &WorkerHangChecker{
 		Thresholds: map[string]*RoleThreshold{
@@ -804,7 +804,7 @@ func TestWorkerHangChecker_IsInstanceHanging_Hanging(t *testing.T) {
 		MayHang:               false,
 	}
 
-	timestamp := int64(10000) // 超过阈值时间
+	timestamp := int64(10000) // Exceeds threshold time
 	result := checker.IsInstanceHanging(recorder, "instance-1", timestamp)
 
 	if result != true {
@@ -815,7 +815,7 @@ func TestWorkerHangChecker_IsInstanceHanging_Hanging(t *testing.T) {
 	}
 }
 
-// 测试场景: IsInstanceHanging 实例从挂起恢复时记录日志
+// Test scenario: IsInstanceHanging logs when instance recovers from hanging
 func TestWorkerHangChecker_IsInstanceHanging_RecoverFromHang(t *testing.T) {
 	checker := &WorkerHangChecker{
 		Thresholds: map[string]*RoleThreshold{
@@ -830,10 +830,10 @@ func TestWorkerHangChecker_IsInstanceHanging_RecoverFromHang(t *testing.T) {
 		RequestsTimeList:      map[string]int64{"req-1": 10000},
 		NonStreamCnt:          0,
 		LastNonStreamWarnTime: 0,
-		MayHang:               true, // 之前是挂起状态
+		MayHang:               true, // Previously in hanging state
 	}
 
-	timestamp := int64(12000) // 未超过阈值时间
+	timestamp := int64(12000) // Does not exceed threshold time
 	result := checker.IsInstanceHanging(recorder, "instance-1", timestamp)
 
 	if result != false {
@@ -844,7 +844,7 @@ func TestWorkerHangChecker_IsInstanceHanging_RecoverFromHang(t *testing.T) {
 	}
 }
 
-// 测试场景: InstanceHangCheck 配置未启用时返回nil
+// Test scenario: InstanceHangCheck returns nil when config is disabled
 func TestWorkerHangChecker_InstanceHangCheck_Disabled(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{Enable: false},
@@ -857,7 +857,7 @@ func TestWorkerHangChecker_InstanceHangCheck_Disabled(t *testing.T) {
 	}
 }
 
-// 测试场景: InstanceHangCheck 正常检测挂起实例
+// Test scenario: InstanceHangCheck normally detects hanging instances
 func TestWorkerHangChecker_InstanceHangCheck(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{Enable: true},
@@ -892,7 +892,7 @@ func TestWorkerHangChecker_InstanceHangCheck(t *testing.T) {
 	}
 }
 
-// 测试场景: InstanceHangCheck 无挂起实例时返回空列表
+// Test scenario: InstanceHangCheck returns empty list when no hanging instances
 func TestWorkerHangChecker_InstanceHangCheck_NoHang(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{Enable: true},
@@ -921,9 +921,9 @@ func TestWorkerHangChecker_InstanceHangCheck_NoHang(t *testing.T) {
 	}
 }
 
-// ==================== LeaderHangDecider 单元测试 ====================
+// ==================== LeaderHangDecider Unit Tests ====================
 
-// 测试场景: GetWorker 获取存在的worker
+// Test scenario: GetWorker gets existing worker
 func TestLeaderHangDecider_GetWorker_Existing(t *testing.T) {
 	leader := &LeaderHangDecider{
 		WorkerList: map[string]map[string]*WorkerRecorder{
@@ -943,7 +943,7 @@ func TestLeaderHangDecider_GetWorker_Existing(t *testing.T) {
 	}
 }
 
-// 测试场景: GetWorker 不存在的实例返回nil并记录警告
+// Test scenario: GetWorker returns nil for non-existing instance and logs warning
 func TestLeaderHangDecider_GetWorker_NonExistingInstance(t *testing.T) {
 	leader := &LeaderHangDecider{
 		WorkerList: make(map[string]map[string]*WorkerRecorder),
@@ -955,7 +955,7 @@ func TestLeaderHangDecider_GetWorker_NonExistingInstance(t *testing.T) {
 	}
 }
 
-// 测试场景: GetWorker 不存在的worker返回nil
+// Test scenario: GetWorker returns nil for non-existing worker
 func TestLeaderHangDecider_GetWorker_NonExistingWorker(t *testing.T) {
 	leader := &LeaderHangDecider{
 		WorkerList: map[string]map[string]*WorkerRecorder{
@@ -969,7 +969,7 @@ func TestLeaderHangDecider_GetWorker_NonExistingWorker(t *testing.T) {
 	}
 }
 
-// 测试场景: SetWorker 设置新的worker
+// Test scenario: SetWorker sets new worker
 func TestLeaderHangDecider_SetWorker_NewWorker(t *testing.T) {
 	leader := &LeaderHangDecider{
 		WorkerList: map[string]map[string]*WorkerRecorder{
@@ -986,7 +986,7 @@ func TestLeaderHangDecider_SetWorker_NewWorker(t *testing.T) {
 	}
 }
 
-// 测试场景: SetWorker 不存在的实例返回nil
+// Test scenario: SetWorker returns nil for non-existing instance
 func TestLeaderHangDecider_SetWorker_NonExistingInstance(t *testing.T) {
 	leader := &LeaderHangDecider{
 		WorkerList: make(map[string]map[string]*WorkerRecorder),
@@ -998,7 +998,7 @@ func TestLeaderHangDecider_SetWorker_NonExistingInstance(t *testing.T) {
 	}
 }
 
-// 测试场景: SetWorker 已存在的worker返回现有记录
+// Test scenario: SetWorker returns existing record for existing worker
 func TestLeaderHangDecider_SetWorker_ExistingWorker(t *testing.T) {
 	existingWorker := &WorkerRecorder{
 		RequestsList:    make(map[string]int64),
@@ -1019,7 +1019,7 @@ func TestLeaderHangDecider_SetWorker_ExistingWorker(t *testing.T) {
 	}
 }
 
-// 测试场景: ClearInstance 清除实例的所有worker
+// Test scenario: ClearInstance clears all workers of an instance
 func TestLeaderHangDecider_ClearInstance(t *testing.T) {
 	leader := &LeaderHangDecider{
 		WorkerList: map[string]map[string]*WorkerRecorder{
@@ -1043,17 +1043,17 @@ func TestLeaderHangDecider_ClearInstance(t *testing.T) {
 	}
 }
 
-// 测试场景: ClearInstance 不存在的实例记录警告
+// Test scenario: ClearInstance logs warning for non-existing instance
 func TestLeaderHangDecider_ClearInstance_NonExisting(t *testing.T) {
 	leader := &LeaderHangDecider{
 		WorkerList: make(map[string]map[string]*WorkerRecorder),
 	}
 
-	// 应该记录警告但不panic
+	// Should log warning but not panic
 	leader.ClearInstance("non-existent")
 }
 
-// 测试场景: OnAllInstancesRenewed 添加新实例
+// Test scenario: OnAllInstancesRenewed adds new instance
 func TestLeaderHangDecider_OnAllInstancesRenewed_AddInstance(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -1079,7 +1079,7 @@ func TestLeaderHangDecider_OnAllInstancesRenewed_AddInstance(t *testing.T) {
 	}
 }
 
-// 测试场景: OnAllInstancesRenewed 删除不存在的实例
+// Test scenario: OnAllInstancesRenewed deletes non-existing instance
 func TestLeaderHangDecider_OnAllInstancesRenewed_DeleteInstance(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -1107,7 +1107,7 @@ func TestLeaderHangDecider_OnAllInstancesRenewed_DeleteInstance(t *testing.T) {
 	}
 }
 
-// 测试场景: OnAllInstancesRenewed 配置未启用时跳过
+// Test scenario: OnAllInstancesRenewed skips when config is disabled
 func TestLeaderHangDecider_OnAllInstancesRenewed_Disabled(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: false,
@@ -1125,13 +1125,13 @@ func TestLeaderHangDecider_OnAllInstancesRenewed_Disabled(t *testing.T) {
 
 	leader.OnAllInstancesRenewed(available, unavailable)
 
-	// 配置未启用时不应该修改WorkerList
+	// When config is disabled, WorkerList should not be modified
 	if len(leader.WorkerList) != 0 {
 		t.Error("Expected WorkerList to remain empty when disabled")
 	}
 }
 
-// 测试场景: OnInstanceTokenEvent 处理实例挂起事件
+// Test scenario: OnInstanceTokenEvent handles instance hang event
 func TestLeaderHangDecider_OnInstanceTokenEvent(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -1160,7 +1160,7 @@ func TestLeaderHangDecider_OnInstanceTokenEvent(t *testing.T) {
 	}
 }
 
-// 测试场景: OnInstanceTokenEvent 配置未启用时跳过
+// Test scenario: OnInstanceTokenEvent skips when config is disabled
 func TestLeaderHangDecider_OnInstanceTokenEvent_Disabled(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: false,
@@ -1189,7 +1189,7 @@ func TestLeaderHangDecider_OnInstanceTokenEvent_Disabled(t *testing.T) {
 	}
 }
 
-// 测试场景: OnRequestEvents 处理请求事件
+// Test scenario: OnRequestEvents handles request events
 func TestLeaderHangDecider_OnRequestEvents(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -1210,14 +1210,14 @@ func TestLeaderHangDecider_OnRequestEvents(t *testing.T) {
 		},
 	}
 
-	leader.OnRequestEvents("worker-1", requestEvents)
+	leader.OnRequestEvents("worker-1", "", requestEvents)
 
 	if _, exists := leader.WorkerList["instance-1"]["worker-1"]; !exists {
 		t.Error("Expected worker to be added")
 	}
 }
 
-// 测试场景: OnRequestEvents 配置未启用时跳过
+// Test scenario: OnRequestEvents skips when config is disabled
 func TestLeaderHangDecider_OnRequestEvents_Disabled(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: false,
@@ -1236,14 +1236,14 @@ func TestLeaderHangDecider_OnRequestEvents_Disabled(t *testing.T) {
 		},
 	}
 
-	leader.OnRequestEvents("worker-1", requestEvents)
+	leader.OnRequestEvents("worker-1", "", requestEvents)
 
 	if len(leader.WorkerList) != 0 {
 		t.Error("Expected WorkerList to remain empty when disabled")
 	}
 }
 
-// 测试场景: OnNewRequest 处理新请求
+// Test scenario: OnNewRequest handles new request
 func TestLeaderHangDecider_OnNewRequest(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -1271,7 +1271,7 @@ func TestLeaderHangDecider_OnNewRequest(t *testing.T) {
 	}
 }
 
-// 测试场景: OnNewRequest 不存在的实例记录警告
+// Test scenario: OnNewRequest logs warning for non-existing instance
 func TestLeaderHangDecider_OnNewRequest_NonExistingInstance(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -1287,11 +1287,11 @@ func TestLeaderHangDecider_OnNewRequest_NonExistingInstance(t *testing.T) {
 		TimeStamp:      1000,
 	}
 
-	// 应该记录警告但不panic
+	// Should log warning but not panic
 	leader.OnNewRequest("worker-1", reqMsg)
 }
 
-// 测试场景: OnFinishedRequest 完成请求
+// Test scenario: OnFinishedRequest completes request
 func TestLeaderHangDecider_OnFinishedRequest(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -1319,13 +1319,13 @@ func TestLeaderHangDecider_OnFinishedRequest(t *testing.T) {
 	if _, exists := leader.WorkerList["instance-1"]["worker-1"].RequestsList["req-1"]; exists {
 		t.Error("Expected request to be removed")
 	}
-	// 确保还保留另一个请求
+	// Ensure the other request is still kept
 	if _, exists := leader.WorkerList["instance-1"]["worker-1"].RequestsList["req-2"]; !exists {
 		t.Error("Expected req-2 to still exist")
 	}
 }
 
-// 测试场景: OnFinishedRequest 不存在的worker直接返回
+// Test scenario: OnFinishedRequest returns directly for non-existing worker
 func TestLeaderHangDecider_OnFinishedRequest_NonExistingWorker(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -1342,11 +1342,11 @@ func TestLeaderHangDecider_OnFinishedRequest_NonExistingWorker(t *testing.T) {
 		TargetInstance: "instance-1",
 	}
 
-	// 应该直接返回，不panic
+	// Should return directly, not panic
 	leader.OnFinishedRequest("non-existent", reqMsg)
 }
 
-// 测试场景: OnFinishedRequest 请求完成后删除空的worker列表
+// Test scenario: OnFinishedRequest deletes empty worker list after request completion
 func TestLeaderHangDecider_OnFinishedRequest_RemoveEmptyWorker(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -1376,17 +1376,17 @@ func TestLeaderHangDecider_OnFinishedRequest_RemoveEmptyWorker(t *testing.T) {
 	}
 }
 
-// 测试场景: Stop 关闭channel
+// Test scenario: Stop closes channel
 func TestLeaderHangDecider_Stop(t *testing.T) {
 	leader := &LeaderHangDecider{
 		closeChan: make(chan struct{}),
 	}
 
-	// 应该不会panic
+	// Should not panic
 	leader.Stop()
 }
 
-// 测试场景: getProbeStatus 正在探测中
+// Test scenario: getProbeStatus is probing
 func TestLeaderHangDecider_getProbeStatus_Probing(t *testing.T) {
 	leader := &LeaderHangDecider{
 		probingInstances: map[string]bool{
@@ -1400,7 +1400,7 @@ func TestLeaderHangDecider_getProbeStatus_Probing(t *testing.T) {
 	}
 }
 
-// 测试场景: getProbeStatus 无探测记录
+// Test scenario: getProbeStatus no probe record
 func TestLeaderHangDecider_getProbeStatus_NoRecord(t *testing.T) {
 	leader := &LeaderHangDecider{
 		probingInstances: make(map[string]bool),
@@ -1413,7 +1413,7 @@ func TestLeaderHangDecider_getProbeStatus_NoRecord(t *testing.T) {
 	}
 }
 
-// 测试场景: getProbeStatus 探测成功且未超时
+// Test scenario: getProbeStatus probe success and not timeout
 func TestLeaderHangDecider_getProbeStatus_Success(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
@@ -1432,7 +1432,7 @@ func TestLeaderHangDecider_getProbeStatus_Success(t *testing.T) {
 	}
 }
 
-// 测试场景: getProbeStatus 探测成功已超时返回None
+// Test scenario: getProbeStatus probe success timeout returns None
 func TestLeaderHangDecider_getProbeStatus_SuccessTimeout(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
@@ -1442,7 +1442,7 @@ func TestLeaderHangDecider_getProbeStatus_SuccessTimeout(t *testing.T) {
 		cfg:              cfg,
 		probingInstances: make(map[string]bool),
 		probeStates:      map[string]ProbeState{"instance-1": ProbeStateSuccess},
-		lastProbeTime:    map[string]int64{"instance-1": time.Now().UnixMilli() - 60000}, // 超过探测间隔
+		lastProbeTime:    map[string]int64{"instance-1": time.Now().UnixMilli() - 60000}, // Exceeds probe interval
 	}
 
 	status := leader.getProbeStatus("instance-1")
@@ -1451,7 +1451,7 @@ func TestLeaderHangDecider_getProbeStatus_SuccessTimeout(t *testing.T) {
 	}
 }
 
-// 测试场景: getProbeStatus 探测失败
+// Test scenario: getProbeStatus probe failed
 func TestLeaderHangDecider_getProbeStatus_Failed(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
@@ -1470,11 +1470,11 @@ func TestLeaderHangDecider_getProbeStatus_Failed(t *testing.T) {
 	}
 }
 
-// 测试场景: getProbeStatus 未知状态返回None
+// Test scenario: getProbeStatus unknown state returns None
 func TestLeaderHangDecider_getProbeStatus_UnknownState(t *testing.T) {
 	leader := &LeaderHangDecider{
 		probingInstances: make(map[string]bool),
-		probeStates:      map[string]ProbeState{"instance-1": 999}, // 未知状态
+		probeStates:      map[string]ProbeState{"instance-1": 999}, // Unknown state
 	}
 
 	status := leader.getProbeStatus("instance-1")
@@ -1483,7 +1483,7 @@ func TestLeaderHangDecider_getProbeStatus_UnknownState(t *testing.T) {
 	}
 }
 
-// 测试场景: checkAndResetProbeTimeout 未超时返回原状态
+// Test scenario: checkAndResetProbeTimeout returns original status when not timeout
 func TestLeaderHangDecider_checkAndResetProbeTimeout_NotTimeout(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
@@ -1500,7 +1500,7 @@ func TestLeaderHangDecider_checkAndResetProbeTimeout_NotTimeout(t *testing.T) {
 	}
 }
 
-// 测试场景: checkAndResetProbeTimeout 超时返回None
+// Test scenario: checkAndResetProbeTimeout returns None when timeout
 func TestLeaderHangDecider_checkAndResetProbeTimeout_Timeout(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
@@ -1518,7 +1518,7 @@ func TestLeaderHangDecider_checkAndResetProbeTimeout_Timeout(t *testing.T) {
 	}
 }
 
-// 测试场景: checkAndResetProbeTimeout 无探测时间记录返回默认状态
+// Test scenario: checkAndResetProbeTimeout returns default status when no probe time record
 func TestLeaderHangDecider_checkAndResetProbeTimeout_NoRecord(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
@@ -1535,7 +1535,7 @@ func TestLeaderHangDecider_checkAndResetProbeTimeout_NoRecord(t *testing.T) {
 	}
 }
 
-// 测试场景: ProbeStatus 值定义
+// Test scenario: ProbeStatus value definitions
 func TestProbeStatusValues(t *testing.T) {
 	if ProbeStatusNone != 0 {
 		t.Errorf("ProbeStatusNone should be 0, got %d", ProbeStatusNone)
@@ -1551,7 +1551,7 @@ func TestProbeStatusValues(t *testing.T) {
 	}
 }
 
-// 测试场景: ProbeResult 值定义
+// Test scenario: ProbeResult value definitions
 func TestProbeResultValues(t *testing.T) {
 	if ProbeResultSkip != 0 {
 		t.Errorf("ProbeResultSkip should be 0, got %d", ProbeResultSkip)
@@ -1564,9 +1564,9 @@ func TestProbeResultValues(t *testing.T) {
 	}
 }
 
-// ==================== 其他边界测试场景 ====================
+// ==================== Other Boundary Test Scenarios ====================
 
-// 测试场景: OnRequestEvent 完成请求事件
+// Test scenario: OnRequestEvent finished request event
 func TestWorkerHangChecker_OnRequestEvent_FinishedRequest(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{
@@ -1593,20 +1593,20 @@ func TestWorkerHangChecker_OnRequestEvent_FinishedRequest(t *testing.T) {
 	reqMsg := &utils.RequestEventMsg{
 		Request:            &utils.RemoteRequestWrapper{Id: "req-1", Type: "prefill", Stream: true},
 		TargetInstance:     "instance-1",
-		EventType:          1, // 使用非0值模拟RequestFinish
+		EventType:          1, // Use non-zero value to simulate RequestFinish
 		TimeStamp:          2000,
 		InternalTestingReq: false,
 	}
 
 	checker.OnRequestEvent(reqMsg)
 
-	// 请求完成后应该被删除
+	// Should be deleted after request completion
 	if _, exists := checker.InstancesList["instance-1"]; exists {
 		t.Error("Expected instance to be removed after all requests finished")
 	}
 }
 
-// 测试场景: OnNewRequest 已有实例时增加请求
+// Test scenario: OnNewRequest adds request when instance already exists
 func TestWorkerHangChecker_OnNewRequest_ExistingInstance(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{Enable: true},
@@ -1640,7 +1640,7 @@ func TestWorkerHangChecker_OnNewRequest_ExistingInstance(t *testing.T) {
 	}
 }
 
-// 测试场景: OnLocalDecodeTokens 不存在的请求直接返回
+// Test scenario: OnLocalDecodeTokens returns directly for non-existing request
 func TestWorkerHangChecker_OnLocalDecodeTokens_NonExistingRequest(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{Enable: true},
@@ -1663,11 +1663,11 @@ func TestWorkerHangChecker_OnLocalDecodeTokens_NonExistingRequest(t *testing.T) 
 		timestamp:  2000,
 	}
 
-	// 应该直接返回，不panic
+	// Should return directly, not panic
 	checker.OnLocalDecodeTokens(tokenMsg)
 }
 
-// 测试场景: IsInstanceHanging 无请求时也检查挂起
+// Test scenario: IsInstanceHanging also checks hanging when no requests
 func TestWorkerHangChecker_IsInstanceHanging_NoRequests(t *testing.T) {
 	checker := &WorkerHangChecker{
 		Thresholds: map[string]*RoleThreshold{
@@ -1693,7 +1693,7 @@ func TestWorkerHangChecker_IsInstanceHanging_NoRequests(t *testing.T) {
 	}
 }
 
-// 测试场景: OnInstanceTokenEvent worker不存在时跳过
+// Test scenario: OnInstanceTokenEvent skips when worker does not exist
 func TestLeaderHangDecider_OnInstanceTokenEvent_WorkerNotExist(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -1709,11 +1709,11 @@ func TestLeaderHangDecider_OnInstanceTokenEvent_WorkerNotExist(t *testing.T) {
 		{InstanceId: "instance-1", IsHang: true},
 	}
 
-	// worker不存在时应该跳过，不panic
+	// Should skip when worker does not exist, not panic
 	leader.OnInstanceTokenEvent("non-existent-worker", instanceEvents)
 }
 
-// 测试场景: OnRequestEvents 处理完成请求事件
+// Test scenario: OnRequestEvents handles finished request event
 func TestLeaderHangDecider_OnRequestEvents_FinishedRequest(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -1735,24 +1735,24 @@ func TestLeaderHangDecider_OnRequestEvents_FinishedRequest(t *testing.T) {
 		{
 			Request:        &utils.RemoteRequestWrapper{Id: "req-1"},
 			TargetInstance: "instance-1",
-			EventType:      1, // 使用非0值模拟RequestFinish
+			EventType:      1, // Use non-zero value to simulate RequestFinish
 			TimeStamp:      2000,
 		},
 	}
 
-	leader.OnRequestEvents("worker-1", requestEvents)
+	leader.OnRequestEvents("worker-1", "", requestEvents)
 
-	// req-1应该被删除，但req-2应该还存在
+	// req-1 should be deleted, but req-2 should still exist
 	if _, exists := leader.WorkerList["instance-1"]["worker-1"].RequestsList["req-1"]; exists {
 		t.Error("Expected request to be removed")
 	}
-	// 确保还保留另一个请求
+	// Ensure the other request is still kept
 	if _, exists := leader.WorkerList["instance-1"]["worker-1"].RequestsList["req-2"]; !exists {
 		t.Error("Expected req-2 to still exist")
 	}
 }
 
-// 测试场景: NewLeaderHangDecider 配置未启用
+// Test scenario: NewLeaderHangDecider config disabled
 func TestNewLeaderHangDecider_Disabled(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: false,
@@ -1770,13 +1770,13 @@ func TestNewLeaderHangDecider_Disabled(t *testing.T) {
 
 	leader := NewLeaderHangDecider(leaderHealthChecker)
 
-	// 配置未启用时也应该返回非nil对象
+	// Should return non-nil object even when config is disabled
 	if leader == nil {
 		t.Error("Expected LeaderHangDecider to be created even when disabled")
 	}
 }
 
-// 测试场景: getProbeStatus 探测中状态
+// Test scenario: getProbeStatus probing state
 func TestLeaderHangDecider_getProbeStatus_ProbeStateProbing(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
@@ -1795,7 +1795,7 @@ func TestLeaderHangDecider_getProbeStatus_ProbeStateProbing(t *testing.T) {
 	}
 }
 
-// 测试场景: getProbeStatus 探测状态超时返回None
+// Test scenario: getProbeStatus probe status timeout returns None
 func TestLeaderHangDecider_getProbeStatus_FailedTimeout(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
@@ -1814,7 +1814,7 @@ func TestLeaderHangDecider_getProbeStatus_FailedTimeout(t *testing.T) {
 	}
 }
 
-// 测试场景: startProbeAsync 探测模块为nil
+// Test scenario: startProbeAsync probe module is nil
 func TestStartProbeAsync_ProbeNil(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                     true,
@@ -1834,11 +1834,11 @@ func TestStartProbeAsync_ProbeNil(t *testing.T) {
 		},
 	}
 
-	// probeInferRequest为nil时应该正常返回
+	// When probeInferRequest is nil, should return normally
 	leader.startProbeAsync("test-instance")
 }
 
-// 测试场景: startProbeAsync 实例为nil
+// Test scenario: startProbeAsync instance is nil
 func TestStartProbeAsync_InstanceNil(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                     true,
@@ -1858,15 +1858,15 @@ func TestStartProbeAsync_InstanceNil(t *testing.T) {
 		},
 	}
 
-	// 实例为nil时应该正常返回
+	// When instance is nil, should return normally
 	leader.startProbeAsync("non-existent-instance")
 }
 
-// 测试场景: probeBeforeHang 配置未启用探测
+// Test scenario: probeBeforeHang config probe not enabled
 func TestProbeBeforeHang_ConfigNotEnabled(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                     true,
-		EnableProbeBeforeHangCheck: false, // 探测未启用
+		EnableProbeBeforeHangCheck: false, // Probe not enabled
 		HangProbeIntervalMs:        30000,
 	}
 	leader := &LeaderHangDecider{
@@ -1881,15 +1881,15 @@ func TestProbeBeforeHang_ConfigNotEnabled(t *testing.T) {
 		},
 	}
 
-	// 配置未启用探测时，probeBeforeHang的行为通过checkLeaderHang中的逻辑处理
-	// 这里我们测试getProbeStatus返回None时的场景
+	// When probe is not enabled, probeBeforeHang behavior is handled by logic in checkLeaderHang
+	// Here we test the scenario where getProbeStatus returns None
 	status := leader.getProbeStatus("instance-1")
 	if status != ProbeStatusNone {
 		t.Errorf("Expected ProbeStatusNone when no probe record, got %d", status)
 	}
 }
 
-// 测试场景: probeBeforeHang 正在探测中
+// Test scenario: probeBeforeHang is probing
 func TestProbeBeforeHang_Probing(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                     true,
@@ -1900,7 +1900,7 @@ func TestProbeBeforeHang_Probing(t *testing.T) {
 		cfg:              cfg,
 		WorkerList:       map[string]map[string]*WorkerRecorder{"instance-1": {}},
 		lastProbeTime:    make(map[string]int64),
-		probingInstances: map[string]bool{"instance-1": true}, // 正在探测中
+		probingInstances: map[string]bool{"instance-1": true}, // Currently probing
 		probeStates:      make(map[string]ProbeState),
 		leaderHealthChecker: &LeaderHealthChecker{
 			healthInstance:    map[string]*client.Instance{"instance-1": {ID: "instance-1"}},
@@ -1914,7 +1914,7 @@ func TestProbeBeforeHang_Probing(t *testing.T) {
 	}
 }
 
-// 测试场景: probeBeforeHang 探测成功且未超时
+// Test scenario: probeBeforeHang probe success and not timeout
 func TestProbeBeforeHang_ProbeSuccessNotTimeout(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                     true,
@@ -1925,7 +1925,7 @@ func TestProbeBeforeHang_ProbeSuccessNotTimeout(t *testing.T) {
 	leader := &LeaderHangDecider{
 		cfg:              cfg,
 		WorkerList:       map[string]map[string]*WorkerRecorder{"instance-1": {}},
-		lastProbeTime:    map[string]int64{"instance-1": now}, // 最近探测时间
+		lastProbeTime:    map[string]int64{"instance-1": now}, // Most recent probe time
 		probingInstances: make(map[string]bool),
 		probeStates:      map[string]ProbeState{"instance-1": ProbeStateSuccess},
 		leaderHealthChecker: &LeaderHealthChecker{
@@ -1940,14 +1940,14 @@ func TestProbeBeforeHang_ProbeSuccessNotTimeout(t *testing.T) {
 	}
 }
 
-// 测试场景: probeBeforeHang 探测成功已超时
+// Test scenario: probeBeforeHang probe success timeout
 func TestProbeBeforeHang_ProbeSuccessTimeout(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                     true,
 		EnableProbeBeforeHangCheck: true,
 		HangProbeIntervalMs:        30000,
 	}
-	// 探测时间超过间隔，视为超时
+	// Probe time exceeds interval, considered timeout
 	oldTime := time.Now().UnixMilli() - 60000
 	leader := &LeaderHangDecider{
 		cfg:              cfg,
@@ -1967,7 +1967,7 @@ func TestProbeBeforeHang_ProbeSuccessTimeout(t *testing.T) {
 	}
 }
 
-// 测试场景: getProbeStatus 配置未启用探测
+// Test scenario: getProbeStatus probe not enabled in config
 func TestGetProbeStatus_ConfigNotEnabled(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                     true,
@@ -1986,7 +1986,7 @@ func TestGetProbeStatus_ConfigNotEnabled(t *testing.T) {
 	}
 }
 
-// 测试场景: getProbeStatus 正在探测中
+// Test scenario: getProbeStatus is probing
 func TestGetProbeStatus_Probing(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -2004,7 +2004,7 @@ func TestGetProbeStatus_Probing(t *testing.T) {
 	}
 }
 
-// 测试场景: getProbeStatus 实例不健康（在unhealthy列表中）
+// Test scenario: getProbeStatus instance is unhealthy (in unhealthy list)
 func TestGetProbeStatus_InstanceUnhealthy(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -2020,14 +2020,14 @@ func TestGetProbeStatus_InstanceUnhealthy(t *testing.T) {
 		},
 	}
 
-	// 实例在不健康列表中，isInstanceHealthy返回false
+	// Instance is in unhealthy list, isInstanceHealthy returns false
 	isHealthy := leader.leaderHealthChecker.isInstanceHealthy("instance-1")
 	if isHealthy != false {
 		t.Error("Expected instance to be unhealthy")
 	}
 }
 
-// 测试场景: getProbeStatus 探测间隔未到
+// Test scenario: getProbeStatus probe interval not reached
 func TestGetProbeStatus_ProbeIntervalNotReached(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
@@ -2036,7 +2036,7 @@ func TestGetProbeStatus_ProbeIntervalNotReached(t *testing.T) {
 	now := time.Now().UnixMilli()
 	leader := &LeaderHangDecider{
 		cfg:              cfg,
-		lastProbeTime:    map[string]int64{"instance-1": now - 10000}, // 10秒前，刚好在间隔内
+		lastProbeTime:    map[string]int64{"instance-1": now - 10000}, // 10 seconds ago, just within interval
 		probingInstances: make(map[string]bool),
 		probeStates:      map[string]ProbeState{"instance-1": ProbeStateFailed},
 		leaderHealthChecker: &LeaderHealthChecker{
@@ -2046,13 +2046,13 @@ func TestGetProbeStatus_ProbeIntervalNotReached(t *testing.T) {
 	}
 
 	status := leader.getProbeStatus("instance-1")
-	// 探测失败且未超时，应该返回ProbeStatusFailed
+	// Probe failed and not timeout, should return ProbeStatusFailed
 	if status != ProbeStatusFailed {
 		t.Errorf("Expected ProbeStatusFailed when probe failed and not timeout, got %d", status)
 	}
 }
 
-// 测试场景: getProbeStatus 探测模块为nil
+// Test scenario: getProbeStatus probe module is nil
 func TestGetProbeStatus_ProbeModuleNil(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -2062,7 +2062,7 @@ func TestGetProbeStatus_ProbeModuleNil(t *testing.T) {
 		lastProbeTime:     make(map[string]int64),
 		probingInstances:  make(map[string]bool),
 		probeStates:       make(map[string]ProbeState),
-		probeInferRequest: nil, // 探测模块为nil
+		probeInferRequest: nil, // Probe module is nil
 		leaderHealthChecker: &LeaderHealthChecker{
 			healthInstance:    map[string]*client.Instance{"instance-1": {ID: "instance-1"}},
 			unhealthyInstance: make(map[string]*client.Instance),
@@ -2075,7 +2075,7 @@ func TestGetProbeStatus_ProbeModuleNil(t *testing.T) {
 	}
 }
 
-// 测试场景: getProbeStatus 实例为nil
+// Test scenario: getProbeStatus instance is nil
 func TestGetProbeStatus_InstanceNil(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -2098,19 +2098,19 @@ func TestGetProbeStatus_InstanceNil(t *testing.T) {
 	}
 }
 
-// 测试场景: getProbeStatus 所有条件满足返回true (实例健康且可以发起探测)
+// Test scenario: getProbeStatus all conditions met returns true (instance healthy and can initiate probe)
 func TestGetProbeStatus_AllConditionsMet(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
 		HangProbeIntervalMs: 30000,
 	}
-	// 上次探测时间超过间隔，可以再次探测
+	// Last probe time exceeds interval, can probe again
 	oldTime := time.Now().UnixMilli() - 60000
 	leader := &LeaderHangDecider{
 		cfg:               cfg,
 		lastProbeTime:     map[string]int64{"instance-1": oldTime},
 		probingInstances:  make(map[string]bool),
-		probeStates:       map[string]ProbeState{"instance-1": ProbeStateSuccess}, // 之前成功过
+		probeStates:       map[string]ProbeState{"instance-1": ProbeStateSuccess}, // Previously succeeded
 		probeInferRequest: &ProbeInferRequest{},
 		leaderHealthChecker: &LeaderHealthChecker{
 			healthInstance:    map[string]*client.Instance{"instance-1": {ID: "instance-1"}},
@@ -2119,13 +2119,13 @@ func TestGetProbeStatus_AllConditionsMet(t *testing.T) {
 	}
 
 	status := leader.getProbeStatus("instance-1")
-	// 探测成功已超时，返回ProbeStatusNone，表示可以发起新探测
+	// Probe success timeout, returns ProbeStatusNone, indicating can initiate new probe
 	if status != ProbeStatusNone {
 		t.Errorf("Expected ProbeStatusNone (can start new probe), got %d", status)
 	}
 }
 
-// 测试场景: isInstanceHealthy 实例在健康列表中
+// Test scenario: isInstanceHealthy instance is in healthy list
 func TestIsInstanceHealthy_InHealthyList(t *testing.T) {
 	lhc := &LeaderHealthChecker{
 		healthInstance:    map[string]*client.Instance{"instance-1": {ID: "instance-1"}},
@@ -2139,7 +2139,7 @@ func TestIsInstanceHealthy_InHealthyList(t *testing.T) {
 	}
 }
 
-// 测试场景: isInstanceHealthy 实例不在健康列表中
+// Test scenario: isInstanceHealthy instance is not in healthy list
 func TestIsInstanceHealthy_NotInHealthyList(t *testing.T) {
 	lhc := &LeaderHealthChecker{
 		healthInstance:    make(map[string]*client.Instance),
@@ -2153,7 +2153,7 @@ func TestIsInstanceHealthy_NotInHealthyList(t *testing.T) {
 	}
 }
 
-// 测试场景: isInstanceHealthy 实例既不在健康列表也不在不健康列表中
+// Test scenario: isInstanceHealthy instance is in neither healthy nor unhealthy list
 func TestIsInstanceHealthy_NotInAnyList(t *testing.T) {
 	lhc := &LeaderHealthChecker{
 		healthInstance:    make(map[string]*client.Instance),
@@ -2167,7 +2167,7 @@ func TestIsInstanceHealthy_NotInAnyList(t *testing.T) {
 	}
 }
 
-// 测试场景: startProbeAsync 有效探测成功 (successToCheck=true, testSuccess=true)
+// Test scenario: startProbeAsync valid probe success (successToCheck=true, testSuccess=true)
 func TestStartProbeAsync_ValidProbeSuccess(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                      true,
@@ -2189,24 +2189,24 @@ func TestStartProbeAsync_ValidProbeSuccess(t *testing.T) {
 		},
 	}
 
-	// 由于startProbeAsync是异步的，我们需要等待一下让goroutine执行
-	// 但我们可以通过检查probingInstances状态来验证
+	// Since startProbeAsync is asynchronous, we need to wait a bit for the goroutine to execute
+	// But we can verify by checking probingInstances state
 	leader.startProbeAsync("test-instance")
 
-	// 等待异步探测完成
+	// Wait for async probe to complete
 	time.Sleep(100 * time.Millisecond)
 
 	leader.mu.Lock()
 	defer leader.mu.Unlock()
 
-	// 探测完成后probingInstances应该被清除
-	// 由于我们没有真正的探测模块，探测会失败
-	// 检查探测状态
+	// After probe completes, probingInstances should be cleared
+	// Since we don't have a real probe module, the probe will fail
+	// Check probe status
 	state := leader.probeStates["test-instance"]
 	t.Logf("Probe state after async probe: %d", state)
 }
 
-// 测试场景: startProbeAsync 有效探测失败 (successToCheck=true, testSuccess=false)
+// Test scenario: startProbeAsync valid probe fail (successToCheck=true, testSuccess=false)
 func TestStartProbeAsync_ValidProbeFail(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                      true,
@@ -2228,29 +2228,29 @@ func TestStartProbeAsync_ValidProbeFail(t *testing.T) {
 		},
 	}
 
-	// 设置初始的invalidProbeCount
+	// Set initial invalidProbeCount
 	leader.invalidProbeCount["test-instance"] = 1
 
 	leader.startProbeAsync("test-instance")
 
-	// 等待异步探测完成
+	// Wait for async probe to complete
 	time.Sleep(100 * time.Millisecond)
 
 	leader.mu.Lock()
 	defer leader.mu.Unlock()
 
-	// 由于ProbeInferRequest未正确配置（model name为空），探测会返回无效探测
-	// invalidProbeCount = 1 + 1 = 2，未达到阈值3，所以状态是ProbeStateNone
+	// Since ProbeInferRequest is not properly configured (model name is empty), probe will return invalid probe
+	// invalidProbeCount = 1 + 1 = 2, not reaching threshold 3, so status is ProbeStateNone
 	if leader.probeStates["test-instance"] != ProbeStateNone {
 		t.Errorf("Expected ProbeStateNone for invalid probe (not properly configured), got %d", leader.probeStates["test-instance"])
 	}
-	// 验证无效探测计数已增加
+	// Verify invalid probe count has increased
 	if leader.invalidProbeCount["test-instance"] != 2 {
 		t.Errorf("Expected invalidProbeCount = 2, got %d", leader.invalidProbeCount["test-instance"])
 	}
 }
 
-// 测试场景: startProbeAsync 无效探测达到最大次数
+// Test scenario: startProbeAsync invalid probe reaches max count
 func TestStartProbeAsync_InvalidProbeMaxCount(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                      true,
@@ -2272,24 +2272,24 @@ func TestStartProbeAsync_InvalidProbeMaxCount(t *testing.T) {
 		},
 	}
 
-	// 设置当前无效探测次数为阈值-1=2，下一次探测会达到最大
+	// Set current invalid probe count to threshold-1=2, next probe will reach max
 	leader.invalidProbeCount["test-instance"] = 2
 
 	leader.startProbeAsync("test-instance")
 
-	// 等待异步探测完成
+	// Wait for async probe to complete
 	time.Sleep(100 * time.Millisecond)
 
 	leader.mu.Lock()
 	defer leader.mu.Unlock()
 
-	// 达到最大连续无效探测次数时，状态应该是ProbeStateFailed
+	// When reaching max consecutive invalid probe count, status should be ProbeStateFailed
 	if leader.probeStates["test-instance"] != ProbeStateFailed {
 		t.Errorf("Expected ProbeStateFailed when reaching max invalid probe count, got %d", leader.probeStates["test-instance"])
 	}
 }
 
-// 测试场景: startProbeAsync 无效探测达到阈值-1
+// Test scenario: startProbeAsync invalid probe reaches threshold-1
 func TestStartProbeAsync_InvalidProbeThresholdMinusOne(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                      true,
@@ -2311,24 +2311,24 @@ func TestStartProbeAsync_InvalidProbeThresholdMinusOne(t *testing.T) {
 		},
 	}
 
-	// 设置当前无效探测次数为1（阈值-1=2时，再来一次会达到阈值）
+	// Set current invalid probe count to 1 (when threshold-1=2, one more will reach threshold)
 	leader.invalidProbeCount["test-instance"] = 1
 
 	leader.startProbeAsync("test-instance")
 
-	// 等待异步探测完成
+	// Wait for async probe to complete
 	time.Sleep(100 * time.Millisecond)
 
 	leader.mu.Lock()
 	defer leader.mu.Unlock()
 
-	// 达到阈值-1时，状态应该是ProbeStateNone（等待下一次探测）
+	// At threshold-1, status should be ProbeStateNone (waiting for next probe)
 	if leader.probeStates["test-instance"] != ProbeStateNone {
 		t.Errorf("Expected ProbeStateNone at threshold-1, got %d", leader.probeStates["test-instance"])
 	}
 }
 
-// 测试场景: startProbeAsync 无效探测未达到阈值
+// Test scenario: startProbeAsync invalid probe not reaching threshold
 func TestStartProbeAsync_InvalidProbeBelowThreshold(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:                      true,
@@ -2350,24 +2350,24 @@ func TestStartProbeAsync_InvalidProbeBelowThreshold(t *testing.T) {
 		},
 	}
 
-	// 设置当前无效探测次数为0
+	// Set current invalid probe count to 0
 	leader.invalidProbeCount["test-instance"] = 0
 
 	leader.startProbeAsync("test-instance")
 
-	// 等待异步探测完成
+	// Wait for async probe to complete
 	time.Sleep(100 * time.Millisecond)
 
 	leader.mu.Lock()
 	defer leader.mu.Unlock()
 
-	// 未达到阈值时，状态应该是ProbeStateNone
+	// When not reaching threshold, status should be ProbeStateNone
 	if leader.probeStates["test-instance"] != ProbeStateNone {
 		t.Errorf("Expected ProbeStateNone when below threshold, got %d", leader.probeStates["test-instance"])
 	}
 }
 
-// 测试场景: OnAllInstancesRenewed 从健康实例变为不健康
+// Test scenario: OnAllInstancesRenewed from healthy to unhealthy
 func TestOnAllInstancesRenewed_HealthyToUnhealthy(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -2393,7 +2393,7 @@ func TestOnAllInstancesRenewed_HealthyToUnhealthy(t *testing.T) {
 		HangTag: map[string]bool{"instance-1": true, "instance-2": false},
 	}
 
-	// 模拟实例列表更新：instance-1和instance-2都在available列表中
+	// Simulate instance list update: both instance-1 and instance-2 are in available list
 	available := map[string]*client.Instance{
 		"instance-1": {ID: "instance-1"},
 		"instance-2": {ID: "instance-2"},
@@ -2402,20 +2402,20 @@ func TestOnAllInstancesRenewed_HealthyToUnhealthy(t *testing.T) {
 
 	leader.OnAllInstancesRenewed(available, unavailable)
 
-	// instance-1和instance-2都应该保留在WorkerList中
+	// Both instance-1 and instance-2 should remain in WorkerList
 	if _, exists := leader.WorkerList["instance-1"]; !exists {
 		t.Error("Expected instance-1 to remain in WorkerList")
 	}
 	if _, exists := leader.WorkerList["instance-2"]; !exists {
 		t.Error("Expected instance-2 to remain in WorkerList")
 	}
-	// HangTag应该保留
+	// HangTag should remain
 	if leader.HangTag["instance-1"] != true {
 		t.Error("Expected instance-1 HangTag to remain true")
 	}
 }
 
-// 测试场景: OnFinishedRequest (Worker) 删除请求后实例为空的情况
+// Test scenario: OnFinishedRequest (Worker) instance becomes empty after removing request
 func TestWorkerHangChecker_OnFinishedRequest_RemoveEmptyInstance(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{Enable: true},
@@ -2440,13 +2440,13 @@ func TestWorkerHangChecker_OnFinishedRequest_RemoveEmptyInstance(t *testing.T) {
 
 	checker.OnFinishedRequest(request, "instance-1", timestamp)
 
-	// 当RequestsTimeList为空时，实例应该被删除
+	// When RequestsTimeList is empty, instance should be removed
 	if _, exists := checker.InstancesList["instance-1"]; exists {
 		t.Error("Expected instance to be removed when RequestsTimeList is empty")
 	}
 }
 
-// 测试场景: OnFinishedRequest (Worker) 删除最后请求后MayHang为true时被清除
+// Test scenario: OnFinishedRequest (Worker) MayHang cleared when last request deleted and MayHang is true
 func TestWorkerHangChecker_OnFinishedRequest_RemoveMayHangInstance(t *testing.T) {
 	checker := &WorkerHangChecker{
 		cfg: &config.HangCheckerConfig{Enable: true},
@@ -2457,7 +2457,7 @@ func TestWorkerHangChecker_OnFinishedRequest_RemoveMayHangInstance(t *testing.T)
 				RequestsTimeList:      map[string]int64{"req-1": 1000},
 				NonStreamCnt:          0,
 				LastNonStreamWarnTime: 0,
-				MayHang:               true, // 标记为可能挂起
+				MayHang:               true, // Marked as possibly hanging
 			},
 		},
 		Thresholds: map[string]*RoleThreshold{
@@ -2469,16 +2469,16 @@ func TestWorkerHangChecker_OnFinishedRequest_RemoveMayHangInstance(t *testing.T)
 	request := &utils.RemoteRequestWrapper{Id: "req-1", Type: "prefill", Stream: true}
 	timestamp := int64(2000)
 
-	// 这个测试验证当删除实例时，如果MayHang为true会打印恢复日志
+	// This test verifies that when instance is removed, if MayHang is true, recovery log is printed
 	checker.OnFinishedRequest(request, "instance-1", timestamp)
 
-	// 实例应该被删除
+	// Instance should be removed
 	if _, exists := checker.InstancesList["instance-1"]; exists {
 		t.Error("Expected instance to be removed")
 	}
 }
 
-// 测试场景: IsInstanceHanging 边界条件 - 刚好等于阈值时间
+// Test scenario: IsInstanceHanging boundary condition - exactly equals threshold time
 func TestWorkerHangChecker_IsInstanceHanging_BoundaryEqualThreshold(t *testing.T) {
 	checker := &WorkerHangChecker{
 		Thresholds: map[string]*RoleThreshold{
@@ -2496,7 +2496,7 @@ func TestWorkerHangChecker_IsInstanceHanging_BoundaryEqualThreshold(t *testing.T
 		MayHang:               false,
 	}
 
-	// 刚好等于阈值时间，不应该被判定为挂起
+	// Exactly equals threshold time, should not be judged as hanging
 	timestamp := int64(6000) // 1000 + 5000 = 6000
 	result := checker.IsInstanceHanging(recorder, "instance-1", timestamp)
 
@@ -2505,7 +2505,7 @@ func TestWorkerHangChecker_IsInstanceHanging_BoundaryEqualThreshold(t *testing.T
 	}
 }
 
-// 测试场景: IsInstanceHanging 边界条件 - 刚好超过阈值时间
+// Test scenario: IsInstanceHanging boundary condition - just exceeds threshold time
 func TestWorkerHangChecker_IsInstanceHanging_BoundaryExceedThreshold(t *testing.T) {
 	checker := &WorkerHangChecker{
 		Thresholds: map[string]*RoleThreshold{
@@ -2523,7 +2523,7 @@ func TestWorkerHangChecker_IsInstanceHanging_BoundaryExceedThreshold(t *testing.
 		MayHang:               false,
 	}
 
-	// 刚好超过阈值时间，应该被判定为挂起
+	// Just exceeds threshold time, should be judged as hanging
 	timestamp := int64(6001) // 1000 + 5000 + 1
 	result := checker.IsInstanceHanging(recorder, "instance-1", timestamp)
 
@@ -2532,7 +2532,7 @@ func TestWorkerHangChecker_IsInstanceHanging_BoundaryExceedThreshold(t *testing.
 	}
 }
 
-// 测试场景: IsInstanceHanging 边界条件 - LastSuccessTime为0
+// Test scenario: IsInstanceHanging boundary condition - LastSuccessTime is 0
 func TestWorkerHangChecker_IsInstanceHanging_LastSuccessTimeZero(t *testing.T) {
 	checker := &WorkerHangChecker{
 		Thresholds: map[string]*RoleThreshold{
@@ -2543,7 +2543,7 @@ func TestWorkerHangChecker_IsInstanceHanging_LastSuccessTimeZero(t *testing.T) {
 
 	recorder := &InstanceRecorder{
 		Role:                  "prefill",
-		LastSuccessTime:       0, // 初始状态
+		LastSuccessTime:       0, // Initial state
 		RequestsTimeList:      map[string]int64{"req-1": 1000},
 		NonStreamCnt:          0,
 		LastNonStreamWarnTime: 0,
@@ -2553,24 +2553,24 @@ func TestWorkerHangChecker_IsInstanceHanging_LastSuccessTimeZero(t *testing.T) {
 	timestamp := int64(10000)
 	result := checker.IsInstanceHanging(recorder, "instance-1", timestamp)
 
-	// LastSuccessTime为0时，hangtime会很大，应该被判定为挂起
+	// When LastSuccessTime is 0, hangtime will be large, should be judged as hanging
 	if result != true {
 		t.Error("Expected true when LastSuccessTime is 0")
 	}
 }
 
-// 测试场景: IsInstanceHanging 边界条件 - Role配置但ThresholdTime为0
+// Test scenario: IsInstanceHanging boundary condition - Role configured but ThresholdTime is 0
 func TestWorkerHangChecker_IsInstanceHanging_RoleNotExist(t *testing.T) {
 	checker := &WorkerHangChecker{
 		Thresholds: map[string]*RoleThreshold{
 			"prefill": {ThresholdTime: 5000, SkipNonStream: false},
-			"decode":  {ThresholdTime: 0, SkipNonStream: false}, // 阈值为0，不检查挂起
+			"decode":  {ThresholdTime: 0, SkipNonStream: false}, // Threshold is 0, do not check hanging
 		},
 		HangWarningInterval: 30000,
 	}
 
 	recorder := &InstanceRecorder{
-		Role:                  "decode", // 阈值为0的角色
+		Role:                  "decode", // Role with threshold 0
 		LastSuccessTime:       1000,
 		RequestsTimeList:      map[string]int64{"req-1": 1000},
 		NonStreamCnt:          0,
@@ -2581,17 +2581,17 @@ func TestWorkerHangChecker_IsInstanceHanging_RoleNotExist(t *testing.T) {
 	timestamp := int64(10000)
 	result := checker.IsInstanceHanging(recorder, "instance-1", timestamp)
 
-	// 当ThresholdTime为0时，应该返回false（不检查挂起）
+	// When ThresholdTime is 0, should return false (do not check hanging)
 	if result != false {
 		t.Error("Expected false when role threshold time is 0")
 	}
 }
 
-// 测试场景: IsInstanceHanging 边界条件 - NonStreamCnt刚好为0
+// Test scenario: IsInstanceHanging boundary condition - NonStreamCnt is exactly 0
 func TestWorkerHangChecker_IsInstanceHanging_NonStreamCntZero(t *testing.T) {
 	checker := &WorkerHangChecker{
 		Thresholds: map[string]*RoleThreshold{
-			"prefill": {ThresholdTime: 5000, SkipNonStream: true}, // 启用非流跳过
+			"prefill": {ThresholdTime: 5000, SkipNonStream: true}, // Enable non-stream skip
 		},
 		HangWarningInterval: 30000,
 	}
@@ -2600,7 +2600,7 @@ func TestWorkerHangChecker_IsInstanceHanging_NonStreamCntZero(t *testing.T) {
 		Role:                  "prefill",
 		LastSuccessTime:       1000,
 		RequestsTimeList:      map[string]int64{"req-1": 1000},
-		NonStreamCnt:          0, // 刚好为0
+		NonStreamCnt:          0, // Exactly 0
 		LastNonStreamWarnTime: 0,
 		MayHang:               false,
 	}
@@ -2608,13 +2608,13 @@ func TestWorkerHangChecker_IsInstanceHanging_NonStreamCntZero(t *testing.T) {
 	timestamp := int64(10000)
 	result := checker.IsInstanceHanging(recorder, "instance-1", timestamp)
 
-	// NonStreamCnt为0且SkipNonStream为true时，不应该走跳过逻辑，而是正常检查
+	// When NonStreamCnt is 0 and SkipNonStream is true, should not take skip logic, but check normally
 	if result != true {
 		t.Error("Expected true when NonStreamCnt is 0 and SkipNonStream is true (should check normally)")
 	}
 }
 
-// 测试场景: checkAndResetProbeTimeout 未超时
+// Test scenario: checkAndResetProbeTimeout not timeout
 func TestCheckAndResetProbeTimeout_NotTimeout(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
@@ -2623,7 +2623,7 @@ func TestCheckAndResetProbeTimeout_NotTimeout(t *testing.T) {
 	now := time.Now().UnixMilli()
 	leader := &LeaderHangDecider{
 		cfg:           cfg,
-		lastProbeTime: map[string]int64{"instance-1": now - 10000}, // 10秒前，未超时
+		lastProbeTime: map[string]int64{"instance-1": now - 10000}, // 10 seconds ago, not timed out
 	}
 
 	status := leader.checkAndResetProbeTimeout("instance-1", ProbeStatusSuccess)
@@ -2632,13 +2632,13 @@ func TestCheckAndResetProbeTimeout_NotTimeout(t *testing.T) {
 	}
 }
 
-// 测试场景: checkAndResetProbeTimeout 超时
+// Test scenario: checkAndResetProbeTimeout timeout
 func TestCheckAndResetProbeTimeout_Timeout(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
 		HangProbeIntervalMs: 30000,
 	}
-	oldTime := time.Now().UnixMilli() - 60000 // 60秒前，已超时
+	oldTime := time.Now().UnixMilli() - 60000 // 60 seconds ago, already timed out
 	leader := &LeaderHangDecider{
 		cfg:           cfg,
 		lastProbeTime: map[string]int64{"instance-1": oldTime},
@@ -2651,7 +2651,7 @@ func TestCheckAndResetProbeTimeout_Timeout(t *testing.T) {
 	}
 }
 
-// 测试场景: checkAndResetProbeTimeout 无探测时间记录
+// Test scenario: checkAndResetProbeTimeout no probe time record
 func TestCheckAndResetProbeTimeout_NoProbeTime(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable:              true,
@@ -2659,7 +2659,7 @@ func TestCheckAndResetProbeTimeout_NoProbeTime(t *testing.T) {
 	}
 	leader := &LeaderHangDecider{
 		cfg:           cfg,
-		lastProbeTime: make(map[string]int64), // 无记录
+		lastProbeTime: make(map[string]int64), // No record
 	}
 
 	status := leader.checkAndResetProbeTimeout("instance-1", ProbeStatusFailed)
@@ -2668,7 +2668,7 @@ func TestCheckAndResetProbeTimeout_NoProbeTime(t *testing.T) {
 	}
 }
 
-// 测试场景: OnAllInstancesRenewed 配置未启用时跳过
+// Test scenario: OnAllInstancesRenewed skips when config is disabled
 func TestOnAllInstancesRenewed_HealthyToUnhealthy_ConfigDisabled(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: false,
@@ -2687,19 +2687,19 @@ func TestOnAllInstancesRenewed_HealthyToUnhealthy_ConfigDisabled(t *testing.T) {
 		HangTag: map[string]bool{"instance-1": true},
 	}
 
-	// 配置未启用时，不应该清除实例
+	// When config is disabled, should not clear instances
 	available := make(map[string]*client.Instance)
 	unavailable := map[string]*client.Instance{"instance-1": {ID: "instance-1"}}
 
 	leader.OnAllInstancesRenewed(available, unavailable)
 
-	// 实例不应该被清除
+	// Instance should not be cleared
 	if _, exists := leader.WorkerList["instance-1"]; !exists {
 		t.Error("Expected instance to remain when config is disabled")
 	}
 }
 
-// 测试场景: LeaderHangDecider OnFinishedRequest 删除请求后worker为空的情况
+// Test scenario: LeaderHangDecider OnFinishedRequest worker becomes empty after deleting request
 func TestLeaderHangDecider_OnFinishedRequest_RemoveEmptyWorkerList(t *testing.T) {
 	cfg := &config.HangCheckerConfig{
 		Enable: true,
@@ -2726,7 +2726,7 @@ func TestLeaderHangDecider_OnFinishedRequest_RemoveEmptyWorkerList(t *testing.T)
 
 	leader.OnFinishedRequest("worker-1", reqMsg)
 
-	// worker-1的RequestsList应该为空，worker-1应该被删除
+	// worker-1's RequestsList should be empty, worker-1 should be deleted
 	if _, exists := leader.WorkerList["instance-1"]; exists {
 		if _, workerExists := leader.WorkerList["instance-1"]["worker-1"]; workerExists {
 			t.Error("Expected worker to be removed when RequestsList is empty")

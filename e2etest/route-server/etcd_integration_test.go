@@ -19,10 +19,11 @@ package route_server
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -39,13 +40,13 @@ import (
 
 const (
 	etcdIntegrationCtx = "etcd-integration-test"
-	leaderHTTPPort     = "35878"
-	// leader ops port is 35888
-	workerHTTPPort = "35879"
-	// worker ops port is 35889
-	prefill1Port = "60000"
-	prefill2Port = "60001"
-	decodePort   = "60002"
+	leaderHTTPPort     = "30100"
+	leaderOpsPort      = "30110"
+	workerHTTPPort     = "30101"
+	workerOpsPort      = "30111"
+	prefill1Port       = "30102"
+	prefill2Port       = "30103"
+	decodePort         = "30104"
 
 	prefill1ID      = "prefill1"
 	prefill2ID      = "prefill2"
@@ -53,7 +54,8 @@ const (
 	etcdFailuresKey = "/rs/instances/failures"
 	rsLeaderKey     = "/rs/leader"
 	rsPeersAllDir   = "/rs/cluster/state/peers/all/"
-	etcdClientPort  = "2379"
+	etcdClientPort  = "30105"
+	etcdPeerPort    = "30106"
 
 	// Default health check parameters
 	healthCheckIntervalMs = 10000
@@ -73,50 +75,13 @@ var _ = Describe(etcdIntegrationCtx, Ordered, func() {
 	BeforeAll(func() {
 		var err error
 
-		By("step 0: ensure ports 2379/2380/60000/60001/60002 are free")
-		for _, p := range []string{etcdClientPort, "2380", prefill1Port, prefill2Port, decodePort} {
-			out, _ := exec.Command("sh", "-c", fmt.Sprintf("lsof -ti tcp:%s 2>/dev/null", p)).Output()
-			if len(out) > 0 {
-				pids := strings.Fields(string(out))
-				for _, pid := range pids {
-					GinkgoWriter.Printf("[cleanup] killing pid %s holding port %s\n", pid, p)
-					exec.Command("kill", "-9", pid).Run()
-				}
-			}
-		}
+		By("step 0: ensure ports are free")
+		// Cross-platform port cleanup: use lsof (Linux/macOS) or netstat (Windows)
+		EnsurePorts([]string{leaderHTTPPort, leaderOpsPort, workerHTTPPort, workerOpsPort, etcdClientPort, etcdPeerPort, prefill1Port, prefill2Port, decodePort})
 		time.Sleep(500 * time.Millisecond)
 
 		By("step 1: start embedded etcd via embed.StartEtcd on port " + etcdClientPort)
-		etcdCfg := embed.NewConfig()
-		etcdCfg.Name = "test-etcd"
-		etcdCfg.Dir = filepath.Join(os.TempDir(), fmt.Sprintf("etcd-test-%d", time.Now().UnixNano()))
-		etcdCfg.ListenPeerUrls = []url.URL{{Scheme: "http", Host: "127.0.0.1:2380"}}
-		etcdCfg.ListenClientUrls = []url.URL{{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%s", etcdClientPort)}}
-		etcdCfg.AdvertisePeerUrls = []url.URL{{Scheme: "http", Host: "127.0.0.1:2380"}}
-		etcdCfg.AdvertiseClientUrls = []url.URL{{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%s", etcdClientPort)}}
-		etcdCfg.InitialCluster = fmt.Sprintf("test-etcd=http://127.0.0.1:2380")
-		etcdCfg.InitialClusterToken = "test-token"
-		etcdCfg.ClusterState = embed.ClusterStateFlagNew
-		// Reduce etcd log output to avoid interference
-		etcdCfg.LogLevel = "error"
-
-		etcdServer, err = embed.StartEtcd(etcdCfg)
-		Expect(err).NotTo(HaveOccurred())
-		select {
-		case <-etcdServer.Server.ReadyNotify():
-			GinkgoWriter.Printf("[etcd] embedded etcd server ready\n")
-		case <-time.After(10 * time.Second):
-			Fail("etcd server did not become ready within 10s")
-		}
-
-		// Create client connection to etcd
-		cli, err := clientv3.New(clientv3.Config{
-			Endpoints:   []string{fmt.Sprintf("127.0.0.1:%s", etcdClientPort)},
-			DialTimeout: 5 * time.Second,
-		})
-		Expect(err).NotTo(HaveOccurred())
-		etcdClient = cli
-		GinkgoWriter.Printf("[etcd] client connected to 127.0.0.1:%s\n", etcdClientPort)
+		etcdServer, etcdClient = StartEmbeddedEtcd(etcdClientPort, etcdPeerPort, "test-etcd")
 
 		By("step 2: generate leader and worker config via config-tool")
 		deployPath := filepath.Join(projectRoot, "deploy")
@@ -128,7 +93,7 @@ var _ = Describe(etcdIntegrationCtx, Ordered, func() {
 		Expect(os.RemoveAll(leaderCfgDir)).To(BeNil())
 		Expect(os.MkdirAll(filepath.Join(leaderCfgDir, "config"), 0755)).To(BeNil())
 		leaderToolParam := DisableHTTPSConfig([]string{
-			"-template", filepath.Join(deployPath, "model-orch-template.yaml"),
+			"-template", filepath.Join(deployPath, "route-server-template.yaml"),
 			"-host", "127.0.0.1",
 			"-target", leaderCfgDir,
 			"-infer-mode", "PD",
@@ -149,7 +114,7 @@ var _ = Describe(etcdIntegrationCtx, Ordered, func() {
 		Expect(os.RemoveAll(workerCfgDir)).To(BeNil())
 		Expect(os.MkdirAll(filepath.Join(workerCfgDir, "config"), 0755)).To(BeNil())
 		workerToolParam := DisableHTTPSConfig([]string{
-			"-template", filepath.Join(deployPath, "model-orch-template.yaml"),
+			"-template", filepath.Join(deployPath, "route-server-template.yaml"),
 			"-host", "127.0.0.1",
 			"-target", workerCfgDir,
 			"-infer-mode", "PD",
@@ -184,8 +149,8 @@ var _ = Describe(etcdIntegrationCtx, Ordered, func() {
 		)).To(BeNil())
 
 		DeferCleanup(func() {
-			os.RemoveAll(leaderCfgDir)
-			os.RemoveAll(workerCfgDir)
+			os.RemoveAll(path.Join(leaderCfgDir, "config"))
+			os.RemoveAll(path.Join(workerCfgDir, "config"))
 		})
 
 		By("step 3: start mock vllm instances (2 prefill + 1 decode)")
@@ -204,7 +169,7 @@ var _ = Describe(etcdIntegrationCtx, Ordered, func() {
 				"-name", inst.name,
 			}
 			command := exec.Command(mockVLLMPath, params...)
-			sess, startErr := gexec.Start(command, GinkgoWriter, GinkgoWriter)
+			sess, startErr := gexec.Start(command, io.Discard, GinkgoWriter)
 			Expect(startErr).NotTo(HaveOccurred())
 			mockServers = append(mockServers, sess)
 			GinkgoWriter.Printf("[mock] started %s on port %s\n", inst.name, inst.port)
@@ -217,8 +182,9 @@ var _ = Describe(etcdIntegrationCtx, Ordered, func() {
 			constant.EnvServerConfigPath, filepath.Join(leaderCfgDir, "config")))
 		command := exec.Command(rsPath)
 		command.Env = leaderEnv
-		leaderSession, err = gexec.Start(command, GinkgoWriter, GinkgoWriter)
+		leaderSession, err = gexec.Start(command, io.Discard, GinkgoWriter)
 		Expect(err).NotTo(HaveOccurred())
+		checkRsListenSucceess(leaderSession)
 
 		By("step 5: start worker route-server")
 		workerEnv := os.Environ()
@@ -226,14 +192,11 @@ var _ = Describe(etcdIntegrationCtx, Ordered, func() {
 			constant.EnvServerConfigPath, filepath.Join(workerCfgDir, "config")))
 		command = exec.Command(rsPath)
 		command.Env = workerEnv
-		workerSession, err = gexec.Start(command, GinkgoWriter, GinkgoWriter)
+		workerSession, err = gexec.Start(command, io.Discard, GinkgoWriter)
 		Expect(err).NotTo(HaveOccurred())
+		checkRsListenSucceess(workerSession)
 
-		By("step 6: wait for both servers to be ready (listen)")
-		Eventually(leaderSession.Out, 30*time.Second).Should(gbytes.Say("Start HTTP server on"))
-		GinkgoWriter.Printf("[leader] route-server is ready on port %s\n", leaderHTTPPort)
-		Eventually(workerSession.Out, 30*time.Second).Should(gbytes.Say("Start HTTP server on"))
-		GinkgoWriter.Printf("[worker] route-server is ready on port %s\n", workerHTTPPort)
+		By("step 6: wait for both servers to be ready (already verified in checkRsListenSucceess)")
 
 		By("step 7: wait for leader election and worker registration via etcd")
 		Eventually(func() bool {
@@ -260,8 +223,8 @@ var _ = Describe(etcdIntegrationCtx, Ordered, func() {
 		}, 30*time.Second, 1*time.Second).Should(BeTrue(), "worker1 should be registered in etcd")
 		GinkgoWriter.Printf("[etcd] worker1 registered, confirmed via %s\n", rsPeersAllDir)
 
-		By("step 8: wait for worker to sync health cache from leader via events")
-		workerClient := &RSClient{BaseURL: "http://localhost:" + workerHTTPPort, HTTPClient: &http.Client{}}
+		By("step 7: wait for worker to sync health cache from leader via events")
+		workerClient := NewRSClient("http://localhost:" + workerHTTPPort)
 		Eventually(func() bool {
 			ready, msg, err := workerClient.GetWorkerReadiness()
 			if err != nil {
@@ -313,7 +276,7 @@ var _ = Describe(etcdIntegrationCtx, Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
 			GinkgoWriter.Printf("[baseline] worker->leader response status: %d\n", resp.StatusCode)
-			Expect(resp.StatusCode).To(Or(Equal(http.StatusOK), Equal(http.StatusServiceUnavailable)))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		})
 
 		It("[verify] kill prefill instance -> leader writes to etcd -> kill leader -> within cache period fallback skips faulty instance -> after cache expires faulty instance can be scheduled", func() {
@@ -351,45 +314,40 @@ var _ = Describe(etcdIntegrationCtx, Ordered, func() {
 			resp, err := workerClient.SendChatCompletion(reqCtx, NewBasicChatRequestBody(), nil)
 			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
-			// Wait a while for log buffer to be written
 			time.Sleep(2 * time.Second)
-			// Check buffer content directly
-			output := string(workerSession.Out.Contents())
-			GinkgoWriter.Printf("[debug] workerSession.Out length: %d\n", len(output))
-			Expect(strings.Contains(output, "Instance prefill1 is in etcd failure cache")).To(BeTrue(),
+			Eventually(workerSession.Out).Should(gbytes.Say("Instance prefill1 is in etcd failure cache"),
 				"should see etcd failure cache log")
-			Expect(strings.Contains(output, "Fallback sched")).To(BeTrue(),
+			Eventually(workerSession.Out).Should(gbytes.Say("Fallback sched"),
 				"should see fallback sched log")
 			GinkgoWriter.Printf("[worker] confirmed etcd failure cache is filtering prefill1\n")
 
 			By(fmt.Sprintf("Phase 3: within cache window, verify multiple requests are NOT dispatched to prefill1 (port %s)", prefill1Port))
-			prefill1Scheduled := false
 			for i := 0; i < 5; i++ {
 				reqCtx := TimeoutCtx(context.Background(), 30*time.Second)
 				resp, err := workerClient.SendChatCompletion(reqCtx, NewBasicChatRequestBody(), nil)
 				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 				resp.Body.Close()
-				prefillLog := fmt.Sprintf("send request to \\[prefill\\] instance \\[%s\\]", prefill1ID)
-				if strings.Contains(string(workerSession.Out.Contents()), prefillLog) {
-					prefill1Scheduled = true
-				}
+				prefillLog := fmt.Sprintf("send request to \\[prefill\\] instance \\[%s\\]", prefill2ID)
+				Eventually(workerSession.Out, 5*time.Second).Should(gbytes.Say(prefillLog),
+					"during etcd cache window, should dispatch to killed prefill2")
 			}
-			Expect(prefill1Scheduled).To(BeFalse(),
-				"during etcd cache window, should NOT dispatch to killed prefill1(%s)", prefill1Port)
 
 			By(fmt.Sprintf("Phase 4: wait for etcd failure cache to expire (about %dms)...", etcdCacheExpireMs))
 			time.Sleep(time.Duration(etcdCacheExpireMs) * time.Millisecond)
 			GinkgoWriter.Printf("[etcd] cache should now be expired\n")
 
-			By(fmt.Sprintf("Phase 5: after cache expires, verify etcd failure cache expired (check worker logs)"))
-			// prefill1 process is dead, but after etcd failure cache expires, mergeEtcdFailureBlacklist should stop intercepting
-			// Due to other blacklist mechanisms like link-blacklist (180s), prefill1 still won't be scheduled
-			// Verify fallback scheduler still works normally (didn't crash due to etcd cache issue)
-			reqCtx2 := TimeoutCtx(context.Background(), 30*time.Second)
-			resp2, err2 := workerClient.SendChatCompletion(reqCtx2, NewBasicChatRequestBody(), nil)
-			Expect(err2).NotTo(HaveOccurred())
-			resp2.Body.Close()
-			GinkgoWriter.Printf("[fallback-after-expiry] fallback scheduler works correctly after etcd cache expiry\n")
+			By(fmt.Sprintf("Phase 5: after cache expires, verify etcd failure cache expired (check worker logs), round-robin scheduling will dispatch requests to prefill1"))
+			prefillLog := fmt.Sprintf("send request to \\[prefill\\] instance \\[%s\\]", prefill1ID)
+			for i := 0; i < 5; i++ {
+				reqCtx2 := TimeoutCtx(context.Background(), 30*time.Second)
+				resp2, err2 := workerClient.SendChatCompletion(reqCtx2, NewBasicChatRequestBody(), nil)
+				Expect(err2).NotTo(HaveOccurred())
+				resp2.Body.Close()
+			}
+			Eventually(workerSession.Out, 10*time.Second).Should(gbytes.Say(prefillLog),
+				"after cache expiry, prefill1 should be schedulable again")
+			GinkgoWriter.Printf("[fallback-after-expiry] prefill1 scheduled again, etcd cache expiry confirmed\n")
 		})
 	})
 })

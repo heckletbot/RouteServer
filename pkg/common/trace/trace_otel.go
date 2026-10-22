@@ -222,7 +222,7 @@ func initOtelTrace(ctx context.Context, traceCfg *config.TraceConfig) {
 	if err != nil {
 		logger.Log().Error(err.Error())
 	}
-	curTracer := otel.Tracer("ModelOrch")
+	curTracer := otel.Tracer("RouteServer")
 	otelTracer = curTracer
 }
 

@@ -99,11 +99,11 @@ func BuildTLSConfig(tlsCfg *config.TLSCertificateConfig, passwordEnv string) (*t
 		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
 
-	// 如果配置了 CA 或启用了 mTLS，加载 CA 用于验证服务端
+	// load ca to verify target server if ca or mTLS is configured
 	if tlsCfg.CaFile != "" || tlsCfg.EnableMTLS {
 		caFile := tlsCfg.CaFile
 		if caFile == "" && tlsCfg.EnableMTLS {
-			// mTLS 启用但没有 CA 时，使用系统 CA 池（仅客户端验证服务端）
+			// When mTLS is enabled but no CA is available, the system CA pool is used (only the client verifies the server).
 			return tlsConfig, nil
 		}
 		caCert, err := os.ReadFile(caFile)

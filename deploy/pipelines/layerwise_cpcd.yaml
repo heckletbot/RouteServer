@@ -69,6 +69,6 @@ pipeline_cfg:
     type: default_success
   error_phase:
     name: layerwise_failure
-    type: default_fail
+    type: vllm_ascend_fail
   sub_pipelines:
     - MetaServer-CPCD

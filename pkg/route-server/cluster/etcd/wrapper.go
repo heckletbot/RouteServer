@@ -855,7 +855,9 @@ func (ew *EtcdWrapper) handlePeerRegistration(events []*clientv3.Event) {
 		return
 	}
 	logInfoWithId(ew.logId, "start to handle peer registration")
+	ew.stateChangeLock.RLock()
 	addPeers, removePeerIds := ew.parsePeerEtcdEvents(events, ew.latestStateFunc(), ProcessPeerInfoStageRegister)
+	ew.stateChangeLock.RUnlock()
 
 	if len(addPeers) > 0 {
 		for _, peer := range addPeers {
@@ -876,14 +878,14 @@ func (ew *EtcdWrapper) handlePeerRegistration(events []*clientv3.Event) {
 
 func (ew *EtcdWrapper) handlePeerStateChanges(events []*clientv3.Event, iter int) {
 	logInfoWithId(ew.logId, "peer_changes_iter [%v], start to handle peer state changes events", iter)
+	ew.stateChangeLock.Lock()
+	defer ew.stateChangeLock.Unlock()
 	state := ew.latestStateFunc()
 	addPeers, removePeerIds := ew.parsePeerEtcdEvents(events, state, ProcessPeerInfoStageStateSync)
 	if len(addPeers) == 0 && len(removePeerIds) == 0 {
 		logInfoWithId(ew.logId, "peer_changes_iter [%v], no peers actually changed, skip handle peer state", iter)
 		return
 	}
-	ew.stateChangeLock.Lock()
-	defer ew.stateChangeLock.Unlock()
 	newState := cluster.DeepCopyState(state)
 	for _, addPeer := range addPeers {
 		newState.Peers[addPeer.Name] = addPeer
@@ -908,13 +910,13 @@ func (ew *EtcdWrapper) handlePeerStateChanges(events []*clientv3.Event, iter int
 
 func (ew *EtcdWrapper) handleInstanceStateChange(events []*clientv3.Event, iter int) {
 	logInfoWithId(ew.logId, "ins_change_iter [%v], start to handle instance state changes events", iter)
+	ew.stateChangeLock.Lock()
+	defer ew.stateChangeLock.Unlock()
 	state := ew.latestStateFunc()
 	addInstances, removeInstances := ew.parseInstanceEvents(events, state)
 	if len(addInstances) == 0 && len(removeInstances) == 0 {
 		return
 	}
-	ew.stateChangeLock.Lock()
-	defer ew.stateChangeLock.Unlock()
 
 	newState := cluster.DeepCopyState(state)
 	for id, instance := range addInstances {
@@ -1523,7 +1525,9 @@ func (ew *EtcdWrapper) handleFailureInstanceChanged(events []*clientv3.Event, it
 	// retrieve all instances from the cluster cache
 	var allInstances map[string]*config.Route
 	allInstances = make(map[string]*config.Route)
+	ew.stateChangeLock.RLock()
 	state := ew.latestStateFunc()
+	ew.stateChangeLock.RUnlock()
 	if state == nil {
 		logErrorWithId(ew.logId, "cluster state is nil, using empty instance routes")
 	} else {

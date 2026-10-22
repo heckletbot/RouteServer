@@ -896,9 +896,9 @@ func (m *InstanceManager) OnRemoveInstance(names []string, reason string) {
 	m.routeMapMutex.RUnlock()
 }
 
-func (m *InstanceManager) OnRequestEvents(workerId string, requestEvents []*utils.RequestEventMsg) {
-	m.schedulerManager.OnRequestEvent(workerId, requestEvents)
-	m.leaderHealthChecker.OnRequestEvents(workerId, requestEvents)
+func (m *InstanceManager) OnRequestEvents(workerId string, workerBootId string, requestEvents []*utils.RequestEventMsg) {
+	m.schedulerManager.OnRequestEvent(workerId, workerBootId, requestEvents)
+	m.leaderHealthChecker.OnRequestEvents(workerId, workerBootId, requestEvents)
 }
 
 func (m *InstanceManager) OnInstanceTokenEvent(workerId string, instanceEvents []*utils.InstanceEventMsg) {

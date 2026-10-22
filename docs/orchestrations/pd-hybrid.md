@@ -2,7 +2,7 @@
 
 ## Deployment Mode Overview
 
-PD Hybrid is the simplest deployment mode in ModelOrch. In this mode, Prefill and Decode stages are co-located on the same vLLM inference instance. A single instance handles the entire inference lifecycle — from prompt processing to token generation — eliminating the need for KV Cache transfer between separate Prefill and Decode instances.
+PD Hybrid is the simplest deployment mode in RouteServer. In this mode, Prefill and Decode stages are co-located on the same vLLM inference instance. A single instance handles the entire inference lifecycle — from prompt processing to token generation — eliminating the need for KV Cache transfer between separate Prefill and Decode instances.
 
 This mode is suitable for scenarios where:
 

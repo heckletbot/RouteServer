@@ -376,7 +376,7 @@ func (l *LeaderHangDecider) OnInstanceTokenEvent(workerId string, instanceEvents
 	}
 }
 
-func (l *LeaderHangDecider) OnRequestEvents(workerId string, requestEvents []*utils.RequestEventMsg) {
+func (l *LeaderHangDecider) OnRequestEvents(workerId string, workerBootId string, requestEvents []*utils.RequestEventMsg) {
 	if !l.cfg.Enable {
 		return
 	}

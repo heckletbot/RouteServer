@@ -39,9 +39,50 @@ func PrepareStreamOptions(reqBody *utils.JSONModifier) {
 			openai.IncludeUsageKey: true,
 		})
 	} else {
-		options[openai.IncludeUsageKey] = true
-		reqBody.Set(openai.StreamOptionsKey, options)
+		filteredOptions := make(map[string]interface{})
+		if val, exists := options[openai.ContinuousUsageStatsKey]; exists {
+			filteredOptions[openai.ContinuousUsageStatsKey], _ = utils.TryParseBool(val)
+		}
+		filteredOptions[openai.IncludeUsageKey] = true
+		reqBody.Set(openai.StreamOptionsKey, filteredOptions)
 	}
+}
+
+func parseMaxTokens(raw *utils.JSONModifier, isChat bool) (int32, error) {
+	if isChat {
+		if !raw.IsInt(openai.MaxTokenKey) {
+			return 0, fmt.Errorf("max_tokens must be an integer")
+		}
+		if !raw.IsInt(openai.MaxCompletionTokenKey) {
+			return 0, fmt.Errorf("max_completion_tokens must be an integer")
+		}
+		if maxCompletionTokens, exists := raw.GetInt(openai.MaxCompletionTokenKey); exists {
+			if maxCompletionTokens < 1 {
+				return 0, fmt.Errorf("max_completion_tokens must be at least 1, got %d", maxCompletionTokens)
+			}
+			return int32(maxCompletionTokens), nil
+		}
+		if maxTokens, exists := raw.GetInt(openai.MaxTokenKey); exists {
+			if maxTokens < 1 {
+				return 0, fmt.Errorf("max_tokens must be at least 1, got %d", maxTokens)
+			}
+			return int32(maxTokens), nil
+		}
+		return 0, nil
+	}
+	if !raw.IsInt(openai.MaxTokenKey) {
+		_, exists := raw.GetRaw(openai.MaxTokenKey)
+		if exists {
+			return 0, fmt.Errorf("max_tokens must be an integer")
+		}
+	}
+	if maxTokens, exists := raw.GetInt(openai.MaxTokenKey); exists {
+		if maxTokens < 1 {
+			return 0, fmt.Errorf("max_tokens must be at least 1, got %d", maxTokens)
+		}
+		return int32(maxTokens), nil
+	}
+	return 0, nil
 }
 
 func GetInferRequestId(header *http.Header, isChat bool) string {

@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/goccy/go-yaml"
@@ -42,7 +43,12 @@ import (
 )
 
 const (
-	PDTestContext = "pd-test-context"
+	PDTestContext          = "pd-test-context"
+	DefaultConsecutiveTime = 1
+	pdListenPort           = "30900"
+	pdOpsPort              = "30910"
+	pdPrefillPort          = "30901"
+	pdDecodePort           = "30902"
 )
 
 var _ = Describe(PDTestContext, Ordered, func() {
@@ -53,6 +59,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 	)
 
 	BeforeAll(func() {
+		EnsurePorts([]string{pdListenPort, pdOpsPort, pdPrefillPort, pdDecodePort})
 		By("copy pipelines config")
 		configPath := filepath.Join(projectRoot, "e2etest", "environment", PDTestContext, "config")
 		Expect(os.MkdirAll(filepath.Join(configPath, "pipelines"), 0755)).To(BeNil())
@@ -68,6 +75,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 		cfg.InstanceManagerCfg.HealthCheckConfig.UnavailableCheckersCfg.RestHealthCfg.ConsecutiveTime = 3
 		cfg.InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig.LinkBlockWindowsMs = 100
 		cfg.InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig.LinkBlockTagValidTimeMs = 10000
+		cfg.MetaCleanupCfg = &commoncfg.MetaCleanupConfig{
+			MaxInstanceDownTimeSec: 30,
+			MaxWorkerDownTimeSec:   30,
+		}
 		outData, err := yaml.Marshal(&cfg)
 		Expect(err).To(BeNil())
 		Expect(os.WriteFile(filepath.Join(deployPath, TEMP_TEMPLATE), outData, 0644)).To(BeNil())
@@ -78,19 +89,15 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			"-host", "127.0.0.1",
 			"-target", filepath.Join(projectRoot, "e2etest", "environment", PDTestContext),
 			"-infer-mode", "PD",
-			"-prefills", "prefill1#127.0.0.1:8081",
-			"-decodes", "decode1#127.0.0.1:8082",
+			"-prefills", fmt.Sprintf("prefill1#127.0.0.1:%s", pdPrefillPort),
+			"-decodes", fmt.Sprintf("decode1#127.0.0.1:%s", pdDecodePort),
 			"-name", "route-server-pd-test",
 			"-remote-scheduler-type", "disable",
-			"-port", listenPort,
+			"-port", pdListenPort,
 			"-mode", "singleton",
 			"-infer-module-version", "pipeline",
 		})
 		Expect(exec.Command(configToolPath, toolParam...).Run()).To(BeNil())
-
-		By("modify recover health config - set consecutive-time to 1")
-		configFile := filepath.Join(configPath, "model-orch.yaml")
-		Expect(InjectRecoverHealthConfigToYaml(configFile)).To(BeNil())
 
 		Expect(os.Setenv(constant.EnvServerConfigPath, configPath)).To(BeNil())
 		Expect(options.InitConfig()).To(BeNil())
@@ -152,7 +159,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			resp *http.Response
 		)
 		BeforeEach(func() {
-			clientRs = NewRSClient("http://localhost:" + listenPort)
+			clientRs = NewRSClient("http://localhost:" + pdListenPort)
 			extraHeaders = make(map[string]string)
 			spanId = uuid.NewString()
 			extraHeaders[constant.HeaderXSpanId] = spanId
@@ -198,7 +205,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 		var clientRs *RSClient
 
 		BeforeEach(func() {
-			clientRs = NewRSClient("http://localhost:" + listenPort)
+			clientRs = NewRSClient("http://localhost:" + pdListenPort)
 		})
 
 		// ============================================
@@ -575,19 +582,17 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			healthCheckIntervalMs = options.GetConfig().InstanceManagerCfg.HealthCheckConfig.RestHealthCommonConfig.Interval
 			consecutiveFailureCount = options.GetConfig().InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.RestHealthCfg.ConsecutiveTime
 			recoverConsecutiveCount = options.GetConfig().InstanceManagerCfg.HealthCheckConfig.UnavailableCheckersCfg.RestHealthCfg.ConsecutiveTime
-			// Add one buffer
-			recoveryWaitTime = time.Duration(healthCheckIntervalMs*(recoverConsecutiveCount+1)) * time.Millisecond
+			// Add  buffer
+			recoveryWaitTime = time.Duration(healthCheckIntervalMs*(recoverConsecutiveCount+3)) * time.Millisecond
 		})
 
 		BeforeEach(func() {
 
-			// prefill port 8081, decode port 8082
-			mockDecodeClient = NewMockServerClient("8082")
+			mockDecodeClient = NewMockServerClient(pdDecodePort)
 			_, err = mockDecodeClient.LinkUp()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(restartProcess(&session)).To(BeNil())
-			clientRs = NewRSClient("http://localhost:" + listenPort)
-			// Wait for status to take effect
+			clientRs = NewRSClient("http://localhost:" + pdListenPort)
 			By("wait for health check completed: move 2 to available, move 0 to unavailable")
 			Eventually(session.Out, 10*time.Second).Should(gbytes.Say("move 2 to available, move 0 to unavailable"))
 		})
@@ -597,7 +602,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 		// -------------------------------------------------------
 		Context("TC1: Single PD Link Down failure (not added to blacklist)", func() {
 			It("non-streaming - single link down then recovery, request returns link down error", func() {
-				_, err := mockDecodeClient.LinkDown("127.0.0.1", "8082")
+				_, err := mockDecodeClient.LinkDown("127.0.0.1", pdDecodePort)
 				Expect(err).NotTo(HaveOccurred())
 				time.Sleep(500 * time.Millisecond)
 
@@ -637,7 +642,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				}
 
 				// Set link down
-				_, err := mockDecodeClient.LinkDown("127.0.0.1", "8082")
+				_, err := mockDecodeClient.LinkDown("127.0.0.1", pdDecodePort)
 				Expect(err).NotTo(HaveOccurred())
 				time.Sleep(500 * time.Millisecond)
 
@@ -673,7 +678,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 		// -------------------------------------------------------
 		Context("TC2: Multiple consecutive PD Link Down failures", func() {
 			It("non-streaming - 3 consecutive link downs, verify logs and normal after recovery", func() {
-				_, err := mockDecodeClient.LinkDown("127.0.0.1", "8082")
+				_, err := mockDecodeClient.LinkDown("127.0.0.1", pdDecodePort)
 				Expect(err).NotTo(HaveOccurred())
 				// Trigger consecutiveFailureCount times link down
 				for i := 0; i < consecutiveFailureCount; i++ {
@@ -703,11 +708,17 @@ var _ = Describe(PDTestContext, Ordered, func() {
 
 				// Check metrics
 				resp, err = clientRs.GetInternalMetrics()
-				Expect(err).NotTo(HaveOccurred())
+				if err != nil {
+					if resp != nil {
+						resp.Body.Close()
+					}
+					Fail(fmt.Sprintf("GetInternalMetrics failed: %v", err))
+				}
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 				Expect(ExtractMetricValue(resp,
 					"rs:number_faulty_endpoints", map[string]string{"fault_type": health.LinkBlacklist, "role": "decode"})).
 					To(Equal(1.0))
+				resp.Body.Close()
 
 				// Recover link
 				_, err = mockDecodeClient.LinkUp()
@@ -734,7 +745,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 
 				// Trigger consecutiveFailureCount times link down
 				for i := 0; i < consecutiveFailureCount; i++ {
-					_, err := mockDecodeClient.LinkDown("127.0.0.1", "8082")
+					_, err := mockDecodeClient.LinkDown("127.0.0.1", pdDecodePort)
 					Expect(err).NotTo(HaveOccurred())
 					time.Sleep(200 * time.Millisecond)
 
@@ -762,8 +773,8 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				// Recover link
 				_, err = mockDecodeClient.LinkUp()
 				Expect(err).NotTo(HaveOccurred())
-				time.Sleep(recoveryWaitTime)
 
+				time.Sleep(recoveryWaitTime)
 				// Verify request succeeds after recovery
 				resp, err = clientRs.SendChatCompletion(context.Background(), body, nil)
 				Expect(err).NotTo(HaveOccurred())
@@ -802,10 +813,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 		})
 
 		BeforeEach(func() {
-			clientRs = NewRSClient("http://localhost:" + listenPort)
-			// According to pd_test.go config, prefill port is 8081, decode port is 8082
-			mockPrefillClient = NewMockServerClient("8081")
-			mockDecodeClient = NewMockServerClient("8082")
+			clientRs = NewRSClient("http://localhost:" + pdListenPort)
+			// According to pd_test.go config, prefill port is pdPrefillPort, decode port is pdDecodePort
+			mockPrefillClient = NewMockServerClient(pdPrefillPort)
+			mockDecodeClient = NewMockServerClient(pdDecodePort)
 
 			// Ensure all instances start with healthy status
 			_, err := mockPrefillClient.MockHealth()
@@ -873,9 +884,247 @@ var _ = Describe(PDTestContext, Ordered, func() {
 		})
 
 	})
+
+	Context("Finish Reason Log Verification", func() {
+		var (
+			clientRs          *RSClient
+			mockPrefillClient *MockServerClient
+		)
+
+		BeforeEach(func() {
+			clientRs = NewRSClient("http://localhost:" + pdListenPort)
+			mockPrefillClient = NewMockServerClient(pdPrefillPort)
+		})
+
+		It("finish reason: when max_tokens=2, finish_reason is length", func() {
+			reqId := "test-finish-length"
+			body := map[string]interface{}{
+				"model":      "pangu",
+				"messages":   []map[string]string{{"role": "user", "content": "Hello"}},
+				"max_tokens": 2,
+				"stream":     true,
+			}
+
+			resp, err := clientRs.SendChatCompletion(context.Background(), body, map[string]string{
+				constant.XRequestId: reqId,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			defer resp.Body.Close()
+
+			expectedRegexp := fmt.Sprintf(`request_id.*.%s.*finish_reason = length`, reqId)
+			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
+		})
+
+		It("finish reason: without max_tokens, finish_reason is stop", func() {
+			reqId := "test-finish-stop"
+			body := map[string]interface{}{
+				"model":    "pangu",
+				"messages": []map[string]string{{"role": "user", "content": "Hello"}},
+				"stream":   true,
+			}
+
+			resp, err := clientRs.SendChatCompletion(context.Background(), body, map[string]string{
+				constant.XRequestId: reqId,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			defer resp.Body.Close()
+
+			expectedRegexp := fmt.Sprintf(`request_id.*.%s.*finish_reason = stop`, reqId)
+			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
+		})
+
+		It("finish reason: with tools, finish_reason is tool_calls", func() {
+			reqId := "test-finish-tool"
+			body := map[string]interface{}{
+				"model":      "pangu",
+				"max_tokens": 12,
+				"messages":   []map[string]string{{"role": "user", "content": "Get Beijing weather in Celsius"}},
+				"tools": []map[string]interface{}{
+					{
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":        "get_weather",
+							"description": "Get the current weather in a given location",
+							"parameters": map[string]interface{}{
+								"type": "object",
+								"properties": map[string]interface{}{
+									"location": map[string]interface{}{
+										"type":        "string",
+										"description": "City Name",
+									},
+									"unit": map[string]interface{}{
+										"type": "string",
+										"enum": []string{"celsius", "fahrenheit"},
+									},
+								},
+								"required": []string{"location", "unit"},
+							},
+						},
+					},
+				},
+				"tool_choice": "auto",
+				"stream":      true,
+			}
+
+			resp, err := clientRs.SendChatCompletion(context.Background(), body, map[string]string{
+				constant.XRequestId: reqId,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			defer resp.Body.Close()
+
+			expectedRegexp := fmt.Sprintf(`request_id.*.%s.*finish_reason = tool_calls`, reqId)
+			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
+		})
+
+		It("finish reason: when prefill returns 500, finish_reason is unknown", func() {
+			By("set prefill1 instance to return 500 error")
+			errBody := strings.NewReader(`{"code": 500}`)
+			req, err := http.NewRequest("POST", fmt.Sprintf("http://127.0.0.1:%s/mock_error", pdPrefillPort), errBody)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := mockPrefillClient.HTTPClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			DeferCleanup(func() {
+				mockPrefillClient.RemoveError()
+			})
+
+			By("send request and verify finish_reason = unknown in logs")
+			reqId := "test-finish-unknown"
+			body := map[string]interface{}{
+				"model":    "pangu",
+				"messages": []map[string]string{{"role": "user", "content": "Get Beijing weather"}},
+				"stream":   true,
+			}
+
+			httpResp, err := clientRs.SendChatCompletion(context.Background(), body, map[string]string{
+				constant.XRequestId: reqId,
+				"x-span-id":         "p1",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			defer httpResp.Body.Close()
+
+			expectedRegexp := fmt.Sprintf(`request_id.*.%s.*finish_reason = unknown.*err_stage = Prefill`, reqId)
+			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
+		})
+	})
+
+	Context("P/D Fault Reliability Test", func() {
+		var (
+			clientRs            *RSClient
+			mockPrefillClient   *MockServerClient
+			mockDecodeClient    *MockServerClient
+			mockPrefill1Session *gexec.Session
+		)
+
+		BeforeEach(func() {
+			clientRs = NewRSClient("http://localhost:" + pdListenPort)
+			mockPrefillClient = NewMockServerClient(pdPrefillPort)
+			mockDecodeClient = NewMockServerClient(pdDecodePort)
+			mockPrefill1Session = mockServers[0]
+
+			_, err := mockPrefillClient.MockHealth()
+			Expect(err).NotTo(HaveOccurred())
+			_, err = mockDecodeClient.MockHealth()
+			Expect(err).NotTo(HaveOccurred())
+			time.Sleep(1 * time.Second)
+
+			DeferCleanup(func() {
+				mockPrefillClient.MockHealth()
+				mockDecodeClient.MockHealth()
+				mockPrefillClient.RemoveError()
+				mockDecodeClient.RemoveError()
+			})
+		})
+
+		It("in non-xpyd scenario, killed P instance should not be cleaned up by status API", func() {
+			By("kill prefill1 instance (simulate completely unavailable)")
+			mockPrefill1Session.Kill()
+			mockPrefill1Session.Wait()
+
+			By("wait for status API to show P instance in fault state")
+			var statusResp map[string]interface{}
+			Eventually(func() bool {
+				resp, err := clientRs.GetStatus()
+				if err != nil {
+					if resp != nil {
+						resp.Body.Close()
+					}
+					return false
+				}
+				err = ParseResponse(resp, &statusResp)
+				resp.Body.Close()
+				if err != nil || statusResp == nil {
+					return false
+				}
+				prefills, ok := statusResp["prefills"]
+				if !ok {
+					return false
+				}
+				prefillList, ok := prefills.([]interface{})
+				if !ok {
+					return false
+				}
+				for _, p := range prefillList {
+					pInfo, ok := p.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if pInfo["url"] == fmt.Sprintf("http://127.0.0.1:%s", pdPrefillPort) {
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "status API should return data including prefill1 instance")
+
+			By("wait 45s then check status API")
+			time.Sleep(45 * time.Second)
+
+			By("check status API to confirm P instance still exists, not cleaned up")
+			Eventually(func() bool {
+				resp, err := clientRs.GetStatus()
+				if err != nil {
+					if resp != nil {
+						resp.Body.Close()
+					}
+					return false
+				}
+				err = ParseResponse(resp, &statusResp)
+				resp.Body.Close()
+				if err != nil || statusResp == nil {
+					return false
+				}
+				prefills, ok := statusResp["prefills"]
+				if !ok {
+					return false
+				}
+				prefillList, ok := prefills.([]interface{})
+				if !ok {
+					return false
+				}
+				for _, p := range prefillList {
+					pInfo, ok := p.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if pInfo["url"] == fmt.Sprintf("http://127.0.0.1:%s", pdPrefillPort) {
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "in non-xpyd scenario, faulty P instance should still exist, not cleaned up")
+
+			By("in non-xpyd scenario, status API should not clean up faulty P instances")
+		})
+	})
 })
 
-func InjectRecoverHealthConfigToYaml(configPath string) error {
+func InjectRecoverHealthConfigToYaml(configPath string, consecutiveTime int) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return err
@@ -903,7 +1152,7 @@ func InjectRecoverHealthConfigToYaml(configPath string) error {
 	if !ok {
 		return fmt.Errorf("rest-health not found")
 	}
-	recoverHealthCfg["consecutive-time"] = 1
+	recoverHealthCfg["consecutive-time"] = consecutiveTime
 
 	data, err = yaml.Marshal(configMap)
 	if err != nil {

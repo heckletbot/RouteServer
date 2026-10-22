@@ -25,6 +25,7 @@ import (
 
 	"infer-dp-scheduler/pkg/common/constant"
 	"infer-dp-scheduler/pkg/common/errs"
+	"infer-dp-scheduler/pkg/common/logger"
 	"infer-dp-scheduler/pkg/common/openai"
 	"infer-dp-scheduler/pkg/common/trace"
 	"infer-dp-scheduler/pkg/common/utils"
@@ -38,6 +39,11 @@ const (
 
 	DoRemoteDecodeKey       = "do_remote_decode"
 	DoRemotePrefillKey      = "do_remote_prefill"
+	RemoteEngineIdKey       = "remote_engine_id"
+	RemoteBlockIdsKey       = "remote_block_ids"
+	RemoteHostKey           = "remote_host"
+	RemotePortKey           = "remote_port"
+	AbortedRequestKey       = "aborted_request"
 	MetaserverKey           = "metaserver"
 	RequestIdKey            = "request_id"
 	ReusePrefilledTokensKey = "reuse_prefilled_tokens"
@@ -49,6 +55,16 @@ func PrepareLayerwiseRequestBody(ctx *PipelineContext, copiedBody *utils.JSONMod
 	metaserverURL := "http://" + ctx.ServerCfg.Addr + ":" + ctx.ServerCfg.HttpPort + "/v1/metaserver"
 
 	var kvTransferParams map[string]interface{}
+
+	abortedRequests := []string{}
+	prefillerId := ctx.RequestContext.InferMsg.GetInstance(constant.Prefill)
+	if prefillerId != "" {
+		if aborted := ctx.InferManager.AcquireVllmAscendAbortedRequests(prefillerId); len(aborted) > 0 {
+			abortedRequests = append(abortedRequests, aborted...)
+			logger.Log().Infof("request_id: %s passing down previous aborted requests %v", parsedReq.GetRequestId(), aborted)
+		}
+	}
+
 	switch ctx.ServerCfg.InferMode {
 	case constant.LayerwiseMode:
 		kvTransferParams = map[string]interface{}{
@@ -63,6 +79,7 @@ func PrepareLayerwiseRequestBody(ctx *PipelineContext, copiedBody *utils.JSONMod
 			DoRemotePrefillKey: false,
 			MetaserverKey:      metaserverURL,
 			RequestIdKey:       parsedReq.GetRequestId(),
+			AbortedRequestKey:  abortedRequests,
 		}
 	default:
 		// set to empty
@@ -93,7 +110,7 @@ func (m *MetaServicePrepare) ExecutePhase(context *PipelineContext) (rsError *er
 	}
 
 	if context.RequestContext.CancelCtx != nil && context.RequestContext.CancelCtx.IsCancel.Load() {
-		return errs.NewRSMaError(&errs.RequestForcedCancelledErr, m.StageName())
+		return errs.NewRSMaError(&errs.RequestForcedCancelledErr, m.StageName(), errs.FailureTypeCanceled)
 	}
 
 	return nil
@@ -185,11 +202,10 @@ type LayerwiseErrorPhase struct {
 }
 
 func (l *LayerwiseErrorPhase) ExecutePhase(ctx *PipelineContext) (rsError *errs.RSError) {
-	if ctx.RequestContext.RsErr != nil {
-		tracer := ctx.GetTracer()
+	tracer := ctx.GetTracer()
+	if ctx.HasMainErr() {
 		tracer.Tracer.Event("", "metaserver_error", fmt.Sprintf("request [%s] layerwise error: %v", ctx.RequestId(), ctx.RequestContext.RsErr.Error()))
 	} else {
-		tracer := ctx.GetTracer()
 		tracer.Tracer.Event("", "metaserver_error", fmt.Sprintf("request [%s] run fail phase but no rsError is found", ctx.RequestId()))
 	}
 	ctx.ClientGinCtx.Writer.WriteHeader(http.StatusServiceUnavailable)

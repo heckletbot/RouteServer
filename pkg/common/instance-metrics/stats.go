@@ -47,7 +47,7 @@ const (
 	Faulty    InstanceStatus = 3
 )
 
-// ZeroCopyStats stats that sync localy in single ModelOrch
+// ZeroCopyStats stats that sync localy in single RouteServer
 type ZeroCopyStats struct {
 	Id           string
 	Role         string

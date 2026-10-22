@@ -108,7 +108,7 @@ func (lkm *LinkdownCheckerModule) handleLinkDownEvent(msg *utils.RequestEventMsg
 	lkm.leaderHealthChecker.OnSubCheckModuleEvent(singleEventToEventSlice(instanceEvents))
 }
 
-func (lkm *LinkdownCheckerModule) OnRequestEvents(workerId string, requestEvents []*utils.RequestEventMsg) {
+func (lkm *LinkdownCheckerModule) OnRequestEvents(workerId string, workerBootId string, requestEvents []*utils.RequestEventMsg) {
 	if !lkm.cfg.Enable {
 		return
 	}

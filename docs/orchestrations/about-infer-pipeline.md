@@ -1,10 +1,10 @@
 # About Infer Pipeline
 
-The Infer Pipeline is a core capability of ModelOrch. It provides a configuration-driven approach to assembling inference workflows, generating a DAG-based execution pipeline by declaring Phases and their dependencies, flexibly adapting to various inference deployment patterns. This document is intended for open-source users and developers, covering the design rationale, core concepts, and the full workflow from configuration declaration to deployment.
+The Infer Pipeline is a core capability of RouteServer. It provides a configuration-driven approach to assembling inference workflows, generating a DAG-based execution pipeline by declaring Phases and their dependencies, flexibly adapting to various inference deployment patterns. This document is intended for open-source users and developers, covering the design rationale, core concepts, and the full workflow from configuration declaration to deployment.
 
 ## Design Background
 
-As an OpenAI-compatible distributed inference orchestration frontend, ModelOrch needs to support multiple vLLM deployment patterns:
+As an OpenAI-compatible distributed inference orchestration frontend, RouteServer needs to support multiple vLLM deployment patterns:
 
 - **PD Hybrid**: Prefill and Decode run in the same vLLM instance
 - **PD Disaggregate**: Prefill and Decode are separated into different instances for independent scaling
@@ -140,17 +140,17 @@ infer_modes:
 
 ### Step 3: Specify Pipeline at Deployment Time
 
-When starting ModelOrch, specify the inference mode via command-line option or environment variable:
+When starting RouteServer, specify the inference mode via command-line option or environment variable:
 
 ```bash
 # Via command-line option
-modelorch --infer-mode PD-Disaggregate
+routeserver --infer-mode PD-Disaggregate
 
 # Or via environment variable
 export INFER_MODE=PD-Disaggregate
 ```
 
-At startup, ModelOrch loads the corresponding Pipeline from the configuration based on `infer_mode`, builds the Phase DAG, and each subsequent inference request will follow this DAG execution flow.
+At startup, RouteServer loads the corresponding Pipeline from the configuration based on `infer_mode`, builds the Phase DAG, and each subsequent inference request will follow this DAG execution flow.
 
 ## Orchestration Examples
 

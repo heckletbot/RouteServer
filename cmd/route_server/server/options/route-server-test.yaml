@@ -44,8 +44,8 @@ scheduler-manager:
       scheduler-name: round-robin
       instance-role: decode
       params:
-        update-interval-ms: -1 #指标更新间隔，开启prometheus后需要配置，默认为-1，即不更新指标
-        needStats: "vllm:num_requests_running,vllm:num_requests_waiting" #指标类型，开启prometheus后需要配置
+        update-interval-ms: -1
+        needStats: "vllm:num_requests_running,vllm:num_requests_waiting"
 monitor:
   monitor-client-type: none
 metrics:

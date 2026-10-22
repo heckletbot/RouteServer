@@ -2,13 +2,13 @@
 
 GO := go
 GOFLAGS := -v
-BINARY_NAME := model-orch
+BINARY_NAME := route-server
 CONFIG_TOOL := config_generator
 SRC_DIR := cmd/route_server
 CONFIG_TOOL_DIR := cmd/config-tool
 BUILD_DIR := build
 OUTPUT_DIR := output
-PKG_NAME := DistributedScheduler
+PKG_NAME := route-server
 DEPLOY_DIR := deploy
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "unknown")
@@ -21,16 +21,16 @@ LDFLAGS := -X 'infer-dp-scheduler/cmd/route_server/server.version=$(VERSION)' \
            -X 'infer-dp-scheduler/cmd/route_server/server.commitId=$(COMMIT)' \
            -X 'infer-dp-scheduler/cmd/route_server/server.buildTime=$(BUILD_TIME)'
 
-$(OUTPUT_DIR)/$(PKG_NAME)/DistributedScheduler/bin:
+$(OUTPUT_DIR)/$(PKG_NAME)/route-server/bin:
 	@mkdir -p $@
 
-$(OUTPUT_DIR)/$(PKG_NAME)/DistributedScheduler/bin/$(BINARY_NAME): | $(OUTPUT_DIR)/$(PKG_NAME)/DistributedScheduler/bin
+$(OUTPUT_DIR)/$(PKG_NAME)/route-server/bin/$(BINARY_NAME): | $(OUTPUT_DIR)/$(PKG_NAME)/route-server/bin
 	@cd $(SRC_DIR) && $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o ../../$@ .
 
-$(OUTPUT_DIR)/$(PKG_NAME)/$(CONFIG_TOOL): | $(OUTPUT_DIR)/$(PKG_NAME)/DistributedScheduler/bin
+$(OUTPUT_DIR)/$(PKG_NAME)/$(CONFIG_TOOL): | $(OUTPUT_DIR)/$(PKG_NAME)/route-server/bin
 	@cd $(CONFIG_TOOL_DIR) && $(GO) build $(GOFLAGS) -o ../../$@ .
 
-build-binary: $(OUTPUT_DIR)/$(PKG_NAME)/DistributedScheduler/bin/$(BINARY_NAME)
+build-binary: $(OUTPUT_DIR)/$(PKG_NAME)/route-server/bin/$(BINARY_NAME)
 	@echo "Binary built: $@"
 
 build-config-tool: $(OUTPUT_DIR)/$(PKG_NAME)/$(CONFIG_TOOL)

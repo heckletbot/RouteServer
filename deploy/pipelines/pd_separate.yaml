@@ -63,8 +63,8 @@ pipeline_cfg:
       dependsOn:
         - decode_schedule
   success_phase:
-    name: epd_success
+    name: pd_success
     type: default_success
   error_phase:
-    name: epd_failure
+    name: pd_failure
     type: default_fail

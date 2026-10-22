@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/google/uuid"
 	"infer-dp-scheduler/cmd/route_server/server/options"
 	monitor_client "infer-dp-scheduler/pkg/common/client/monitor-client"
 	peer_client "infer-dp-scheduler/pkg/common/client/peer-client"
@@ -52,6 +53,7 @@ type App struct {
 }
 
 type Managers struct {
+	WorkerBootId           string
 	adminHandler           *AdminHandler
 	probeHandler           *ProbeHandler
 	metricsCollector       *metrics_collector.Collector
@@ -144,7 +146,9 @@ func (a *App) Run() error {
 }
 
 func (a *App) initManagers() (*Managers, error) {
-	managers := &Managers{}
+	managers := &Managers{
+		WorkerBootId: uuid.New().String(),
+	}
 	messageCenter := utils.NewRegularMessageCenter()
 	messageCenter.InitTopic(constant.LocalWorkerEventsTopic)
 	messageCenter.InitTopic(constant.InstanceDownTopic)
@@ -180,13 +184,15 @@ func (a *App) initManagers() (*Managers, error) {
 	pdLinkBlacklistManager := health.NewPDLinkBlacklistManager(&options.GetConfig().InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig)
 	remoteScheduledRequestManager := scheduler.NewRemoteScheduledRequestManager(options.GetConfig().SchedulersCfg.RemoteSchedule)
 
-	// 创建APC管理器，需要在schedulerInit之前，独立于APC Scheduler，不启用APC Scheduler时也可启用，缓存更新异步处理不影响转发流程
+	// The APC manager is created before schedulerInit and is independent of the APC scheduler.
+	// The APC manager can be enabled even when the APC scheduler is disabled.
+	// Asynchronous processing of cache updates does not affect the forwarding process.
 	apcManager, err := apc.NewManagerAndStart(&options.GetConfig().APCManagerConfig, clusterService)
 	if err != nil {
 		return managers, fmt.Errorf("failed to create APC manager: %v", err)
 	}
 
-	schedulerManager, err := scheduler.NewManager(options.GetConfig(), clusterService, peerClient, pdLinkBlacklistManager, remoteScheduledRequestManager)
+	schedulerManager, err := scheduler.NewManagerWithBootId(options.GetConfig(), managers.WorkerBootId, clusterService, peerClient, pdLinkBlacklistManager, remoteScheduledRequestManager)
 	if err != nil {
 		return managers, fmt.Errorf("fail to create scheduler manager, err = %v", err)
 	}
@@ -207,7 +213,7 @@ func (a *App) initManagers() (*Managers, error) {
 		clusterService.RegisterStateApplier(stateApplier)
 	}
 	logger.Log().Infof("Cluster service registered appliers %v successfully.", clusterService.GetApplierNames())
-	workerEventSyncer := health.NewWorkerEventSyncer(options.GetConfig(), peerClient, messageCenter, clusterService)
+	workerEventSyncer := health.NewWorkerEventSyncer(options.GetConfig(), peerClient, managers.WorkerBootId, messageCenter, clusterService)
 	if stateApplier, ok := workerEventSyncer.(cluster.StateApplier); ok {
 		clusterService.RegisterStateApplier(stateApplier)
 	}
@@ -375,7 +381,13 @@ func ApplyDefaultRateLimitCfg(cfg *config.Config) {
 // hangThreshold: Decode hang threshold (milliseconds)
 // clientWriteTimeoutMs: server configured client-write-timeout-ms
 // Return value: actual timeout to use (milliseconds), -1 means no timeout
-func calculateClientWriteTimeout(hangThreshold, clientWriteTimeoutMs int64) int64 {
+func calculateClientWriteTimeout(hangThreshold, clientWriteTimeoutMs int64) (result int64) {
+	defer func() {
+		if result >= 300_000 {
+			result = 300_000
+		}
+	}()
+
 	// Case 1: client-write-timeout-ms not configured or is 0
 	if clientWriteTimeoutMs == 0 {
 		if hangThreshold > 0 {
@@ -445,6 +457,8 @@ func applyDefaultConfig(cfg *config.Config) error {
 	}
 
 	ApplyDefaultClientWriteTimeout(cfg)
+
+	constant.ServerName = cfg.ServerConfig.Name
 	return nil
 }
 

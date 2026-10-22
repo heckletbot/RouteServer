@@ -2,13 +2,13 @@
 
 ## Deployment Mode Overview
 
-Layerwise CDCP (Client -> Decode -> Client -> Prefill, see [vllm-ascend issue](https://github.com/vllm-project/vllm-ascend/issues/4842)) is a layer-wise disaggregated deployment mode in ModelOrch. In this mode, Prefill is handled by a remote compute node, and the current node only handles the Decode stage. The vLLM instance on the current node receives KV Cache from the remote prefill node in a layer-wise manner, avoiding the need for full KV Cache transfer upfront.
+Layerwise CDCP (Client -> Decode -> Client -> Prefill, see [vllm-ascend issue](https://github.com/vllm-project/vllm-ascend/issues/4842)) is a layer-wise disaggregated deployment mode in RouteServer. In this mode, Prefill is handled by a remote compute node, and the current node only handles the Decode stage. The vLLM instance on the current node receives KV Cache from the remote prefill node in a layer-wise manner, avoiding the need for full KV Cache transfer upfront.
 
 In this mode:
 
 - **Remote Compute Node** handles the Prefill stage, computing KV Cache for each transformer layer.
 - **Current Node** runs the Decode stage only, receiving KV Cache layer by layer from the remote prefill node.
-- **vLLM Decode Instance** on the current node communicates with ModelOrch via the `/v1/metaserver` endpoint to coordinate prefill completion signaling and KV transfer parameter exchange.
+- **vLLM Decode Instance** on the current node communicates with RouteServer via the `/v1/metaserver` endpoint to coordinate prefill completion signaling and KV transfer parameter exchange.
 
 This mode is suitable for scenarios where:
 
@@ -112,7 +112,7 @@ The detailed steps are:
    - Two pre-processing functions are applied in sequence:
      - `decode_prepare_request`: Prepares the base Decode request (preserves streaming options, original `max_tokens`, etc.).
      - `layerwise_prepare_request`: Injects `kv_transfer_params` into the request body, including:
-       - `metaserver`: The URL of ModelOrch's `/v1/metaserver` endpoint, telling the vLLM instance where to send the prefill callback request.
+       - `metaserver`: The URL of RouteServer's `/v1/metaserver` endpoint, telling the vLLM instance where to send the prefill callback request.
        - `do_remote_decode`: Set to `false` — decode is handled locally on this vLLM instance.
        - `do_remote_prefill`: Set to `true` — prefill was/will be done by a remote compute node.
        - `request_id`: The unique request identifier for correlation.
@@ -120,7 +120,7 @@ The detailed steps are:
 
 4. **vLLM Decode Instance Receives Request** (step ②): The vLLM Decode instance receives the request with `kv_transfer_params` containing `do_remote_prefill=true` and the `metaserver` URL for callbacks.
 
-5. **Sub Pipeline Trigger** (step ③): The vLLM Decode instance detects the `metaserver` field in `kv_transfer_params` and sends an HTTP POST request to `/v1/metaserver` on ModelOrch, triggering the sub pipeline.
+5. **Sub Pipeline Trigger** (step ③): The vLLM Decode instance detects the `metaserver` field in `kv_transfer_params` and sends an HTTP POST request to `/v1/metaserver` on RouteServer, triggering the sub pipeline.
 
 6. **Sub Pipeline Execution — meta_service_prepare** (Prepare Phase): Parses the incoming metaserver request body, extracts `kv_transfer_params`, and identifies the original request's `PipelineContext` via `request_id`. It then calls `SetKVTransferParams()` to store the KV transfer parameters on the shared context and signals the main pipeline via the `KVTransferSend` channel.
 
@@ -159,7 +159,7 @@ The Decode request is constructed by applying two pre-processing functions in se
 2. **`layerwise_prepare_request`** (`PrepareLayerwiseRequestBody`): Injects layerwise-specific KV transfer parameters into the request body:
    - `do_remote_decode`: `false` — decode is performed locally.
    - `do_remote_prefill`: `true` — prefill is performed remotely.
-   - `metaserver`: The URL of ModelOrch's `/v1/metaserver` endpoint.
+   - `metaserver`: The URL of RouteServer's `/v1/metaserver` endpoint.
    - `request_id`: The unique identifier for correlating the metaserver callback.
 
 **Example — Client sends a streaming chat completion request:**
@@ -192,7 +192,7 @@ The Decode request is constructed by applying two pre-processing functions in se
   "kv_transfer_params": {
     "do_remote_decode": false,
     "do_remote_prefill": true,
-    "metaserver": "http://modelorch-host:port/v1/metaserver",
+    "metaserver": "http://routeserver-host:port/v1/metaserver",
     "request_id": "req-abc-123"
   }
 }
@@ -224,7 +224,7 @@ The Prefill request in the sub pipeline is constructed by applying two pre-proce
   "kv_transfer_params": {
     "do_remote_decode": false,
     "do_remote_prefill": true,
-    "metaserver": "http://modelorch-host:port/v1/metaserver",
+    "metaserver": "http://routeserver-host:port/v1/metaserver",
     "request_id": "req-abc-123"
   }
 }

@@ -20,5 +20,5 @@ steps:
           echo "will exec test and upload to codeCov ENV_SERVICE_NAME is ${ENV_SERVICE_NAME}"
           cd ${WORKSPACE}/
           ls
-          curl -k "https://codecov.rnd.huawei.com/rest/codecov/freeExecShell/getShContent/1752229246039752705" -o codecov.sh #通用解析脚本，不要轻易改动
+          curl -k "https://codecov.rnd.huawei.com/rest/codecov/freeExecShell/getShContent/1752229246039752705" -o codecov.sh #universal script, do not change it
           bash -x ./codecov.sh

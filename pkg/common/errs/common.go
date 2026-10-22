@@ -25,36 +25,56 @@ import (
 	"infer-dp-scheduler/pkg/common/openai"
 )
 
-const ErrorPrefix = "ModelOrch."
+const ErrorPrefix = "RouteServer."
 
 type ErrorBody struct {
 	Message string `json:"error_msg"`
 	Code    string `json:"error_code"`
 }
 
+type FailureType string
+
+const (
+	FailureTypeUnknown    FailureType = "unknown"
+	FailureTypeConnection FailureType = "connection"
+	FailureTypeTimeout    FailureType = "timeout"
+	FailureTypeKVTransfer FailureType = "kv_transfer"
+	FailureTypeEngine     FailureType = "engine"
+	FailureTypeClient     FailureType = "client"
+	FailureTypeCanceled   FailureType = "canceled"
+)
+
 type RSError struct {
 	MaErr           *MaError
 	EngineErr       *EngineError
 	EngineStreamErr *EngineError
 	ErrorStage      string
+	FailureType     FailureType
 }
 
-func NewRSMaError(maErr *MaError, stage string) *RSError {
+func NewRSMaError(maErr *MaError, stage string, failureType ...FailureType) *RSError {
+	failure := FailureTypeUnknown
+	if len(failureType) != 0 {
+		failure = failureType[0]
+	}
 	return &RSError{
-		MaErr:      maErr,
-		ErrorStage: stage,
+		FailureType: failure,
+		MaErr:       maErr,
+		ErrorStage:  stage,
 	}
 }
 
 func NewRSEngineError(engineErr *EngineError, stage string) *RSError {
 	return &RSError{
-		EngineErr:  engineErr,
-		ErrorStage: stage,
+		FailureType: FailureTypeEngine,
+		EngineErr:   engineErr,
+		ErrorStage:  stage,
 	}
 }
 
 func NewRSStreamError(engineStreamErr *EngineError, stage string) *RSError {
 	return &RSError{
+		FailureType:     FailureTypeEngine,
 		EngineStreamErr: engineStreamErr,
 		ErrorStage:      stage,
 	}
@@ -67,8 +87,8 @@ type EngineError struct {
 }
 
 type MaError struct {
-	Status    int    // 状态码
-	Code      string // 错误码
+	Status    int    // http status code
+	Code      string // model orch internal error code
 	MsgEn     string
 	MsgCn     string
 	Args      []interface{}

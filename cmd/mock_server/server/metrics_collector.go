@@ -18,16 +18,15 @@ package server
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"infer-dp-scheduler/pkg/common/utils"
-
-	"io"
-	"net/http"
-	"sync"
 )
 
 type Collector struct {

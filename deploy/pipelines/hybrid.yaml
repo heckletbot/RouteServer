@@ -35,8 +35,8 @@ pipeline_cfg:
       dependsOn:
         - req_schedule
   success_phase:
-    name: epd_success
+    name: success
     type: default_success
   error_phase:
-    name: epd_failure
+    name: failure
     type: default_fail

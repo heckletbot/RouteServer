@@ -461,7 +461,7 @@ func (lbm *LinkBlacklistCheckerModule) OnAllInstancesRenewed(available, unavaila
 	lbm.pdLinkBlacklistManager.OnAllInstancesRenewed(available, unavailable)
 }
 
-func (lbm *LinkBlacklistCheckerModule) OnRequestEvents(workerId string, requestEvents []*utils.RequestEventMsg) {
+func (lbm *LinkBlacklistCheckerModule) OnRequestEvents(workerId string, workerBootId string, requestEvents []*utils.RequestEventMsg) {
 	if !lbm.cfg.Enable {
 		return
 	}

@@ -327,7 +327,7 @@ var (
 		Status: http.StatusServiceUnavailable,
 		Code:   "5003",
 		MsgEn:  "no available %s instance found in router : %s",
-		MsgCn:  "RouterServer中当前无可调用的%s实例: %s",
+		MsgCn:  "RouteServer中当前无可调用的%s实例: %s",
 	}
 
 	EmptyReqErr = MaError{

@@ -121,7 +121,7 @@ func ParseUint(in any) (uint, bool) {
 	case int:
 		if v < 0 {
 			return 0, false
-		} // uint 不能为负数
+		} // uint can not be negative
 		return uint(v), true
 	case int64:
 		if v < 0 {

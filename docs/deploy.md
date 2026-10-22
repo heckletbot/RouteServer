@@ -4,6 +4,8 @@ This guide describes deployment options. All deployment examples in this guide h
 
 For secure deployment in production environments, refer to [security reference](./security.md)
 
+> **Before you start**: If you are building from source, see the [Build Guide](./build.md) first to compile the project. If you have a pre-built release package (`.zip`), you can skip straight to [Installation Process](#installation-process).
+
 ## Environment Configuration
 
 Configure the inference instance interface through environment variables:
@@ -23,7 +25,7 @@ Configure the inference instance interface through environment variables:
 
 | Variable | Description | Default Value |
 |----------|-------------|---------------|
-| `MO_INSTALL_DIR` | Installation directory of the deploy.sh script | `/opt/model_orch` |
+| `RS_INSTALL_DIR` | Installation directory of the deploy.sh script | `/opt/route_server` |
 
 ---
 
@@ -31,7 +33,7 @@ Configure the inference instance interface through environment variables:
 
 1. **Extract the package**
    ```bash
-   unzip DistributedScheduler-*.zip
+   unzip route-server-*.zip
    ```
 
 2. **Run the deployment script**
@@ -45,24 +47,24 @@ Configure the inference instance interface through environment variables:
 
 The deployment script performs the following operations:
 
-1. **Copies** the software and configuration files to `MO_INSTALL_DIR/<mo_name>/` directory
+1. **Copies** the software and configuration files to `RS_INSTALL_DIR/<rs_name>/` directory
 
-2. **Generates** the ModelOrch configuration file (`model-orch.yaml`) based on:
+2. **Generates** the RouteServer configuration file (`route-server.yaml`) based on:
    - Template YAML files
    - Local IP address
    - Parameters provided to the deploy.sh script
-   - Saves the configuration to `MO_INSTALL_DIR/<mo_name>/DistributedScheduler/config/`
+   - Saves the configuration to `RS_INSTALL_DIR/<rs_name>/route-server/config/`
 
 3. **Exports** environment variables, including:
-   - `ENV_MODEL_ORCH_CONFIG_PATH` pointing to the generated model-orch.yaml
+   - `ENV_ROUTE_SERVER_CONFIG_PATH` pointing to the generated route-server.yaml
    - Sets `GOMAXPROCS` based on the provided parameters
 
-4. **Starts** the ModelOrch process
+4. **Starts** the RouteServer process
 
 5. **Verifies** the process status:
    - Returns `0` if the process started successfully
    - Returns `1` if the process failed to start
-   - (In daemon mode, the script waits for the ModelOrch process to exit before returning)
+   - (In daemon mode, the script waits for the RouteServer process to exit before returning)
 
 ---
 
@@ -72,16 +74,16 @@ The `deploy.sh` script supports the following optional parameters:
 
 ### Basic Configuration
 
-#### `--mo_name`
-- **Description**: Name of the model orch instance, configured in `model-orch.yaml` as `server.name`
-- **Default**: `ModelOrch_<ip>_<port>`
+#### `--rs_name`
+- **Description**: Name of the route server instance, configured in `route-server.yaml` as `server.name`
+- **Default**: `RouteServer_<ip>_<port>`
 
 #### `--host`
-- **Description**: Specify the IP address of this ModelOrch instance
+- **Description**: Specify the IP address of this RouteServer instance
 - **Default**: Auto-detect
 
 #### `--port`
-- **Description**: HTTP port for the ModelOrch to listen on, configured in `model-orch.yaml` as `server.http_port`
+- **Description**: HTTP port for the RouteServer to listen on, configured in `route-server.yaml` as `server.http_port`
 - **Default**: `9800`
 
 #### `--ops-port`
@@ -89,7 +91,7 @@ The `deploy.sh` script supports the following optional parameters:
 - **Default**: `http-port + 10`
 
 #### `--max-procs`
-- **Description**: Configure `GOMAXPROCS` at startup to limit ModelOrch CPU usage
+- **Description**: Configure `GOMAXPROCS` at startup to limit RouteServer CPU usage
 - **Default**: No limit
 
 #### `--readiness-cfg`
@@ -103,15 +105,15 @@ The `deploy.sh` script supports the following optional parameters:
 #### `--daemon`
 - **Description**: Whether the script should run in daemon mode
 - **Values**: `true`/`false`
-- **Behavior**: When `true`, the script waits for the ModelOrch process to exit before returning
+- **Behavior**: When `true`, the script waits for the RouteServer process to exit before returning
 - **Default**: `false`
 
 #### `--log-file-path`
-- **Description**: Specify the full path to the ModelOrch log file
-- **Default**: `$MO_INSTALL_DIR/$mo_name/log/model-orch.log`
+- **Description**: Specify the full path to the RouteServer log file
+- **Default**: `$RS_INSTALL_DIR/$rs_name/log/route-server.log`
 
 #### `--show-std-output`
-- **Description**: Whether to print ModelOrch process output directly to stdout
+- **Description**: Whether to print RouteServer process output directly to stdout
 - **Values**: `true`/`false`
 - **Default**: `false`
 
@@ -123,7 +125,7 @@ The `deploy.sh` script supports the following optional parameters:
 ### Distributed Deployment
 
 #### `--mode`
-- **Description**: Deployment mode of the ModelOrch
+- **Description**: Deployment mode of the RouteServer
 - **Values**: `singleton`, `etcd`
 - **Effect**: Automatically adjusts event sync interval and remote-scheduler settings
 - **Priority**: Lower than `--remote-scheduler-type` and `--remote-scheduler-endpoint`
@@ -133,8 +135,8 @@ The `deploy.sh` script supports the following optional parameters:
 - **Description**: Type of remote centralized scheduling
 - **Values**: `leader`, `endpoint`, or empty string
 - **Options**:
-  - `leader`: ModelOrch worker accesses cluster leader for remote scheduling
-  - `endpoint`: ModelOrch worker accesses specified endpoint for remote scheduling
+  - `leader`: RouteServer worker accesses cluster leader for remote scheduling
+  - `endpoint`: RouteServer worker accesses specified endpoint for remote scheduling
   - Empty string: Disable remote scheduling (local scheduling only)
 - **Note**: Should not be set for singleton mode deployment
 
@@ -153,7 +155,7 @@ The `deploy.sh` script supports the following optional parameters:
 - **Default**: `false`
 
 #### `--candidate`
-- **Description**: Whether this ModelOrch is deployed in candidate mode
+- **Description**: Whether this RouteServer is deployed in candidate mode
 - **Values**: `true`/`false`
 - **Usage**:
   - Management plane MO process: set to `true`
@@ -198,7 +200,7 @@ The `deploy.sh` script supports the following optional parameters:
 
 ## Deploy in Singleton mode
 
-In singleton mode, ModelOrch handles both scheduling and request streaming on a single instance.  
+In singleton mode, RouteServer handles both scheduling and request streaming on a single instance.  
 
 This mode is suitable for single-node deployments or testing environments.
 
@@ -207,7 +209,7 @@ Examples are provided for both PD and Hybrid modes. Choose based on your actual 
 #### 1. PD Mode Deployment
 
 ```bash
-# ModelOrch IP and port settings
+# RouteServer IP and port settings
 export HOST="x.x.x.x"
 export PORT=9800
 
@@ -215,16 +217,18 @@ export PORT=9800
 export PREFILL_SERVERS="x.x.x.x:8000"
 export DECODE_SERVERS="x.x.x.x:8001"
 
-cd /path/to/DistributedScheduler
+cd /path/to/route-server
 
 bash deploy.sh \
-    --mo_name singleton_${HOST}_${PORT} \
+    --rs_name singleton_${HOST}_${PORT} \
     --port $PORT \
     --host $HOST \
     --mode singleton \
     --infer-mode PD \
     --enable-https false \
-    --ops-enable-https false
+    --ops-enable-https false \
+    --client-https-enable false \
+    --etcd-tls-enable false
 ```
 
 #### 2.Hybrid Mode Deployment
@@ -232,40 +236,42 @@ bash deploy.sh \
 Hybrid mode only requires Decode nodes (no Prefill nodes).
 
 ```bash
-# ModelOrch IP and port settings
+# RouteServer IP and port settings
 export HOST="x.x.x.x"
 export PORT=9800
 
 # Hybrid mode only requires Decode servers
 export DECODE_SERVERS="x.x.x.x:8001"
 
-cd /path/to/DistributedScheduler
+cd /path/to/route-server
 
 bash deploy.sh \
-    --mo_name singleton_${HOST}_${PORT} \
+    --rs_name singleton_${HOST}_${PORT} \
     --port $PORT \
     --host $HOST \
     --mode singleton \
     --infer-mode Hybrid \
     --enable-https false \
-    --ops-enable-https false
+    --ops-enable-https false \
+    --client-https-enable false \
+    --etcd-tls-enable false 
 ```
 
 #### Verify Deployment
 
-After starting the ModelOrch service, execute the following command to check if the ModelOrch health check is normal:
+After starting the RouteServer service, execute the following command to check if the RouteServer health check is normal:
 
 ```bash
 curl -iX GET "http://x.x.x.x:9800/status" -H "Content-Type:application/json"
 ```
 
-If it returns code 200, the ModelOrch deployment is successful.
+If it returns code 200, the RouteServer deployment is successful.
 
 #### View Logs
 
-To view ModelOrch service logs:
+To view RouteServer service logs:
 ```bash
-tail -f $MO_INSTALL_DIR/singleton_${HOST}_${PORT}/DistributedScheduler/log/model-orch.log
+tail -f $RS_INSTALL_DIR/singleton_${HOST}_${PORT}/route-server/log/route-server.log
 ```
 
 ---
@@ -409,7 +415,7 @@ Then follow the previous steps to restart.
 
 ### Worker Deployment
 
-When deployed as Worker, ModelOrch only handles request streaming and relies on the cluster leader for scheduling and health checks.  
+When deployed as Worker, RouteServer only handles request streaming and relies on the cluster leader for scheduling and health checks.  
 Execute the script to start the service.  
 
 Examples are provided for both PD and Hybrid modes. Choose based on your actual scenario.
@@ -419,7 +425,7 @@ The environment variables must be configured, and ports must not be duplicated.
 #### 1. PD Mode Deployment
 
 ```bash
-# ModelOrch IP and port settings
+# RouteServer IP and port settings
 export HOST="x.x.x.x"
 export PORT=9800
 
@@ -430,10 +436,10 @@ export DECODE_SERVERS="x.x.x.x:8001"
 # Configure etcd service address, etcd node list, comma-separated
 export ETCD_ENDPOINTS="x.x.x.x:2379,y.y.y.y:2379,z.z.z.z:2379"
 
-cd /path/to/DistributedScheduler
+cd /path/to/route-server
 
 bash deploy.sh \
-    --mo_name worker_${HOST}_${PORT} \
+    --rs_name worker_${HOST}_${PORT} \
     --port $PORT \
     --host $HOST \
     --mode etcd \
@@ -443,13 +449,15 @@ bash deploy.sh \
     --max-procs 16 \
     --remote-scheduler-type leader \
     --enable-https false \
-    --ops-enable-https false
+    --ops-enable-https false \
+    --client-https-enable false \
+    --etcd-tls-enable false
 ```
 
 #### 2. Hybrid Mode Deployment
 
 ```bash
-# ModelOrch IP and port settings
+# RouteServer IP and port settings
 export HOST="x.x.x.x"
 export PORT=9800
 
@@ -459,10 +467,10 @@ export DECODE_SERVERS="x.x.x.x:8001"
 # Configure etcd service address, etcd node list, comma-separated
 export ETCD_ENDPOINTS="x.x.x.x:2379,y.y.y.y:2379,z.z.z.z:2379"
 
-cd /path/to/DistributedScheduler
+cd /path/to/route-server
 
 bash deploy.sh \
-    --mo_name worker_${HOST}_${PORT} \
+    --rs_name worker_${HOST}_${PORT} \
     --port $PORT \
     --host $HOST \
     --mode etcd \
@@ -472,13 +480,15 @@ bash deploy.sh \
     --max-procs 16 \
     --remote-scheduler-type leader \
     --enable-https false \
-    --ops-enable-https false
+    --ops-enable-https false \
+    --client-https-enable false \
+    --etcd-tls-enable false
 ```
 
-When you see fields similar to the following, the ModelOrch deployment is successful.
+When you see fields similar to the following, the RouteServer deployment is successful.
 
 ```shell
-ModelOrch process is running (PID: 18942), --daemon is not set, exit with 0
+RouteServer process is running (PID: 18942), --daemon is not set, exit with 0
 ```
 
 **Note**: In production deployment, please configure a stable ClusterIP type Service for the etcd cluster on K8S, and configure ETCD_ENDPOINTS with the etcd cluster's ClusterIP type Service domain:port
@@ -487,19 +497,19 @@ ModelOrch process is running (PID: 18942), --daemon is not set, exit with 0
 
 #### Verify Deployment
 
-After starting the ModelOrch service, execute the following command to check if the ModelOrch health check is normal:
+After starting the RouteServer service, execute the following command to check if the RouteServer health check is normal:
 
 ```bash
 curl -iX GET "http://x.x.x.x:9800/status" -H "Content-Type:application/json"
 ```
 
-If it returns code 200, the current node's connection to ModelOrch is normal.
+If it returns code 200, the current node's connection to RouteServer is normal.
 
 #### View Logs
 
-To view ModelOrch service logs:
+To view RouteServer service logs:
 ```bash
-tail -f $MO_INSTALL_DIR/worker_${HOST}_${PORT}/DistributedScheduler/log/model-orch.log
+tail -f $RS_INSTALL_DIR/worker_${HOST}_${PORT}/route-server/log/route-server.log
 ```
 
 ### Candidate Deployment
@@ -515,7 +525,7 @@ The environment variables must be configured, and ports must not be duplicated.
 #### 1. PD Mode Deployment
 
 ```bash
-# ModelOrch IP and port settings
+# RouteServer IP and port settings
 export HOST="x.x.x.x"
 export PORT=9800
 
@@ -526,10 +536,10 @@ export DECODE_SERVERS="x.x.x.x:8001"
 # Configure etcd service address, etcd node list, comma-separated
 export ETCD_ENDPOINTS="x.x.x.x:2379,y.y.y.y:2379,z.z.z.z:2379"
 
-cd /path/to/DistributedScheduler
+cd /path/to/route-server
 
 bash deploy.sh \
-    --mo_name candidate_${HOST}_${PORT} \
+    --rs_name candidate_${HOST}_${PORT} \
     --port $PORT \
     --host $HOST \
     --infer-mode PD \
@@ -539,13 +549,15 @@ bash deploy.sh \
     --max-procs 16 \
     --remote-scheduler-type leader \
     --enable-https false \
-    --ops-enable-https false
+    --ops-enable-https false \
+    --client-https-enable false \
+    --etcd-tls-enable false
 ```
 
 #### 2. Hybrid Mode Deployment
 
 ```bash
-# ModelOrch IP and port settings
+# RouteServer IP and port settings
 export HOST="x.x.x.x"
 export PORT=9800
 
@@ -555,10 +567,10 @@ export DECODE_SERVERS="x.x.x.x:8001"
 # Configure etcd service address, etcd node list, comma-separated
 export ETCD_ENDPOINTS="x.x.x.x:2379,y.y.y.y:2379,z.z.z.z:2379"
 
-cd /path/to/DistributedScheduler
+cd /path/to/route-server
 
 bash deploy.sh \
-    --mo_name candidate_${HOST}_${PORT} \
+    --rs_name candidate_${HOST}_${PORT} \
     --port $PORT \
     --host $HOST \
     --infer-mode Hybrid \
@@ -568,13 +580,15 @@ bash deploy.sh \
     --max-procs 16 \
     --remote-scheduler-type leader \
     --enable-https false \
-    --ops-enable-https false
+    --ops-enable-https false \
+    --client-https-enable false \
+    --etcd-tls-enable false
 ```
 
-When you see fields similar to the following, the ModelOrch deployment is successful.
+When you see fields similar to the following, the RouteServer deployment is successful.
 
 ```shell
-ModelOrch process is running (PID: 18942), --daemon is not set, exit with 0
+RouteServer process is running (PID: 18942), --daemon is not set, exit with 0
 ```
 
 **Note**: In production deployment, please configure a stable ClusterIP type Service for the etcd cluster on K8S, and configure ETCD_ENDPOINTS with the etcd cluster's ClusterIP type Service domain:port
@@ -583,19 +597,19 @@ ModelOrch process is running (PID: 18942), --daemon is not set, exit with 0
 
 #### Verify Deployment
 
-After starting the ModelOrch service, execute the following command to check if the ModelOrch health check is normal:
+After starting the RouteServer service, execute the following command to check if the RouteServer health check is normal:
 
 ```bash
 curl -iX GET "http://x.x.x.x:9800/status" -H "Content-Type:application/json"
 ```
 
-If it returns code 200, the current node's connection to ModelOrch is normal.
+If it returns code 200, the current node's connection to RouteServer is normal.
 
-Confirm that both Candidate and Worker ModelOrch instances have the following logs indicating successful startup and connection to ETCD, knowing the latest leader.
+Confirm that both Candidate and Worker RouteServer instances have the following logs indicating successful startup and connection to ETCD, knowing the latest leader.
 
 #### View Logs
 
-To view ModelOrch service logs:
+To view RouteServer service logs:
 ```bash
-tail -f $MO_INSTALL_DIR/candidate_${HOST}_${PORT}/DistributedScheduler/log/model-orch.log
+tail -f $RS_INSTALL_DIR/candidate_${HOST}_${PORT}/route-server/log/route-server.log
 ```

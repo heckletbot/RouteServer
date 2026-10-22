@@ -92,6 +92,7 @@ func main() {
 	engine.GET("/metrics", infer.Collector.HandleMetricsRequest)
 	engine.POST("/metrics/update", infer.Collector.UpdateMetricsValue)
 	engine.GET("/mock_error", infer.MockErrorInstanceHandler)
+	engine.POST("/mock_error", infer.MockErrorInstanceHandler)
 	engine.GET("/remove_error", infer.RemoveErrorInstanceHandler)
 	engine.GET("/hang", infer.HangInstanceHandler)
 	engine.GET("/unhang", infer.UnHangErrorInstanceHandler)
@@ -137,7 +138,7 @@ func main() {
 		}
 
 		fmt.Println("start HTTPS server, listen and serve at ", fmt.Sprintf("%s:%s", addr, port))
-		err = httpServer.ListenAndServeTLS(certFile, keyFile) // 使用文件路径，TLSConfig会覆盖
+		err = httpServer.ListenAndServeTLS(certFile, keyFile)
 	} else {
 		httpServer := &http.Server{
 			Addr:         fmt.Sprintf("%s:%s", addr, port),

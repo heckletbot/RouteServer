@@ -32,7 +32,7 @@ import (
 )
 
 type LeaderEventListener interface {
-	OnRequestEvents(workerId string, requestEvents []*utils.RequestEventMsg)
+	OnRequestEvents(workerId string, workerBootId string, requestEvents []*utils.RequestEventMsg)
 
 	OnInstanceTokenEvent(workerId string, instanceEvents []*utils.InstanceEventMsg)
 	OnAllInstancesRenewed(available, unavailable map[string]*client.Instance)
@@ -193,17 +193,17 @@ func (lhc *LeaderHealthChecker) OnAllInstancesRenewed(available, unavailable map
 	lhc.linkBlacklistCheckerModule.OnAllInstancesRenewed(available, unavailable)
 }
 
-func (lhc *LeaderHealthChecker) OnRequestEvents(workerId string, requestEvents []*utils.RequestEventMsg) {
+func (lhc *LeaderHealthChecker) OnRequestEvents(workerId string, workerBootId string, requestEvents []*utils.RequestEventMsg) {
 	nonTestingEvents := make([]*utils.RequestEventMsg, 0, len(requestEvents))
 	for _, event := range requestEvents {
 		if !event.InternalTestingReq {
 			nonTestingEvents = append(nonTestingEvents, event)
 		}
 	}
-	lhc.failureCheckerModule.OnRequestEvents(workerId, nonTestingEvents)
-	lhc.linkDownCheckerModule.OnRequestEvents(workerId, nonTestingEvents)
-	lhc.hangCheckerModule.OnRequestEvents(workerId, nonTestingEvents)
-	lhc.linkBlacklistCheckerModule.OnRequestEvents(workerId, nonTestingEvents)
+	lhc.failureCheckerModule.OnRequestEvents(workerId, workerBootId, nonTestingEvents)
+	lhc.linkDownCheckerModule.OnRequestEvents(workerId, workerBootId, nonTestingEvents)
+	lhc.hangCheckerModule.OnRequestEvents(workerId, workerBootId, nonTestingEvents)
+	lhc.linkBlacklistCheckerModule.OnRequestEvents(workerId, workerBootId, nonTestingEvents)
 }
 
 func (lhc *LeaderHealthChecker) OnInstanceTokenEvent(workerId string, instanceEvents []*utils.InstanceEventMsg) {

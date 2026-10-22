@@ -19,7 +19,7 @@ go install github.com/jstemmer/go-junit-report@latest
 go install github.com/alexec/junit2html@latest
 export PATH=$PATH:/root/go/bin/:/usr/local/go/bin
 
-# 进入项目根目录（DistributedScheduler/）
+# 进入项目根目录（RouteServer/）
 cd $(dirname "$0")/../ || {
   echo "错误：无法进入项目根目录"
   exit 1
@@ -36,7 +36,7 @@ mkdir -p Coverage-Report
 echo "mode: set" > begin.out
 
 # 执行测试（路径简化为 ./...，基于根目录）
-echo "--> go test DistributedScheduler（当前目录：$(pwd)）"
+echo "--> go test RouteServer（当前目录：$(pwd)）"
 if ! go test -tags debug ./cmd/config-tool -v -failfast=false -coverprofile=dbops.out -cover > test-output.txt 2>&1; then
   echo "测试失败，日志："
   cat test-output.txt

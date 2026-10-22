@@ -26,6 +26,7 @@ type SLOInterval struct {
 
 type WorkerEventsRequest struct {
 	WorkerId       string              `json:"id"`
+	WorkerBootId   string              `json:"bootId"`
 	RequestEvents  []*RequestEventMsg  `json:"reqs"`
 	InstanceEvents []*InstanceEventMsg `json:"inst"`
 }
@@ -147,14 +148,14 @@ type ChatContent struct {
 
 type GenerateRequest interface {
 	GetRequestId() string
-	GetType() string // prefill 或者 decode
+	GetType() string // target instance type, e.g. prefill, decode
 	GetSLOTag() string
 	GetSLOInterval() *SLOInterval
-	GetChat() []ChatContent     // 请求内容，如果是completion就是长度为1，role为空；如果是chat接口就可能长度大于1
-	GetMaxToken() int32         // 请求中的MaxToken
-	GetPromptTokenCount() int32 // 如果是Decode请求，则是从prefill response中读出来值；如果是Prefill请求，则为GetPrompt总String长度 + 配置的系统Prompt长度
+	GetChat() []ChatContent     // Request content. If the request is a completion request, the length is 1 and the role is empty. If the request is a chat interface, the length may be greater than 1.
+	GetMaxToken() int32         // max-tokens in req
+	GetPromptTokenCount() int32 // For a decode request, the value is read from the prefill response. For a prefill request, the value is the total length of the GetPrompt string.
 	IsStream() bool
-	GetModel() string // 请求中的model参数
+	GetModel() string // model in req
 	GetPromptCacheKey() string
 	GetApcStrategyType() string
 }

@@ -36,7 +36,7 @@ else
     } >> version.info
 fi
 
-name="model-orch"
+name="route-server"
 ROOT_PATH=$(cd "$(dirname "$0")"/..; pwd)
 PROJECT_PATH=${ROOT_PATH}
 
@@ -54,12 +54,12 @@ prepare_go_mod(){
 init_buildenv(){
   export GOPATH=$PROJECT_PATH/../..
   mkdir -p $GOPATH/src
-  rm -rf $GOPATH/src/DistributedScheduler
-  cp -r $PROJECT_PATH $GOPATH/src/DistributedScheduler
+  rm -rf $GOPATH/src/RouteServer
+  cp -r $PROJECT_PATH $GOPATH/src/RouteServer
 }
 
-build_model_orch_binary(){
-    echo "start build DistributedScheduler binary"
+build_route_server_binary(){
+    echo "start build RouteServer binary"
 
     pushd "$PROJECT_PATH/cmd/route_server"
     goldflags="-s -linkmode=external -extldflags '-Wl,-z,now' \
@@ -76,15 +76,15 @@ build_model_orch_binary(){
     CGO_CFLAGS="-D_FORTIFY_SOURCE=2 -O2 -fstack-protector-strong" go build -o config_generator -buildmode=pie -ldflags "${goldflags}"
     popd
 
-    echo "end build DistributedScheduler binary"
+    echo "end build RouteServer binary"
 }
 
 prepare_go_mod
-build_model_orch_binary
+build_route_server_binary
 
-mkdir -p output/DistributedScheduler/bin
-cp "$PROJECT_PATH"/cmd/route_server/model-orch output/DistributedScheduler/bin/
-mv version.info output/DistributedScheduler/
+mkdir -p output/RouteServer/bin
+cp "$PROJECT_PATH"/cmd/route_server/route-server output/RouteServer/bin/
+mv version.info output/RouteServer/
 cp "$PROJECT_PATH"/Dockerfile output/
 cp "$PROJECT_PATH"/cmd/config-tool/config_generator output/
 cp -r "$PROJECT_PATH"/deploy/* output/

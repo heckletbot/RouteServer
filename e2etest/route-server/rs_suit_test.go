@@ -17,16 +17,24 @@
 package route_server
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"testing"
 	"time"
 
+	"infer-dp-scheduler/pkg/common/constant"
+	"infer-dp-scheduler/pkg/route-server/instances"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 )
 
@@ -36,12 +44,13 @@ func DisableHTTPSConfig(params []string) []string {
 		"-ops-enable-https", "false",
 		"-client-https-enable", "false",
 		"-etcd-tls-enable", "false",
+		"-enable-ops-apis-on-service-port", "true",
 	)
 }
 
 const (
-	ROUTE_SERVER_TEMPLATE = "model-orch-template.yaml"
-	TEMP_TEMPLATE         = "temp-template.yaml"
+	ROUTE_SERVER_TEMPLATE = "route-server-template.yaml"
+	TEMP_TEMPLATE       = "temp-template.yaml"
 )
 
 var (
@@ -51,6 +60,13 @@ var (
 
 	projectRoot string
 )
+
+type SuiteData struct {
+	RsPath         string
+	MockVLLMPath   string
+	ConfigToolPath string
+	ProjectRoot    string
+}
 
 func TestRouteServer(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -64,7 +80,7 @@ func TestRouteServer(t *testing.T) {
 	RunSpecs(t, "RouteServer Suite", suiteConfig, reporterConfig)
 }
 
-var _ = BeforeSuite(func() {
+var _ = SynchronizedBeforeSuite(func() []byte {
 	var err error
 	projectRoot = getProjectRoot()
 
@@ -80,11 +96,42 @@ var _ = BeforeSuite(func() {
 	configToolPath, err = gexec.Build("infer-dp-scheduler/cmd/config-tool")
 	Expect(err).NotTo(HaveOccurred())
 
+	data := SuiteData{
+		RsPath:         rsPath,
+		MockVLLMPath:   mockVLLMPath,
+		ConfigToolPath: configToolPath,
+		ProjectRoot:    projectRoot,
+	}
+
+	// Serialize to bytes and pass to all processes
+	bytes, err := json.Marshal(data)
+	Expect(err).NotTo(HaveOccurred())
+	return bytes
+
+}, func(bytes []byte) {
+	// [Phase 2: All Nodes (1, 2, 3, 4) execute]
+	var data SuiteData
+	err := json.Unmarshal(bytes, &data)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Assign to global variables in each process's own memory
+	rsPath = data.RsPath
+	mockVLLMPath = data.MockVLLMPath
+	configToolPath = data.ConfigToolPath
+	projectRoot = data.ProjectRoot
+
+	fmt.Printf(">>> [Node %d], local initialization complete\n", GinkgoParallelProcess())
 })
 
-var _ = AfterSuite(func() {
-	// cleanup
+var _ = SynchronizedAfterSuite(func() {
+	// [Function 1]: All-process cleanup phase (Process 1, 2, 3, 4 all execute)
+	fmt.Printf(">>> [Node %d] finished\n", GinkgoParallelProcess())
+
+}, func() {
+	// [Function 2]: Global cleanup phase (only Process 1 executes)
+	// After all processes' [Function 1] complete, Process 1 handles final cleanup.
 	gexec.CleanupBuildArtifacts()
+	fmt.Println(">>> [Node 1] Performing global teardown, runs once!")
 })
 
 // getProjectRoot gets project root directory (by finding go.mod file)
@@ -164,6 +211,86 @@ func restartProcess(psession **gexec.Session) error {
 	session.Wait()
 	time.Sleep(time.Second * 2)
 	command := exec.Command(params[0], params[1:]...)
-	*psession, err = gexec.Start(command, GinkgoWriter, os.Stderr)
+	*psession, err = gexec.Start(command, io.Discard, os.Stderr)
 	return err
+}
+
+func checkRsListenSucceess(session *gexec.Session) {
+	Eventually(session.Out, 5*time.Second).Should(gbytes.Say("Start HTTP server on"))
+	Eventually(session.Out, 5*time.Second).Should(gbytes.Say("Start OPS HTTP server on"))
+	// All log levels of RS are output to StdOut
+	Consistently(session.Out, 5*time.Second).ShouldNot(gbytes.Say("failed to init server"))
+	Consistently(session.Out, 5*time.Second).ShouldNot(gbytes.Say("ops server error"))
+}
+
+func checkMockVllmListenSucceess(session *gexec.Session) {
+	Eventually(session.Out, 5*time.Second).Should(gbytes.Say("start.*server, listen and serve at"))
+	Consistently(session.Err, 5*time.Second).ShouldNot(gbytes.Say("mock engine listen error"))
+}
+
+type HealthStatus string
+
+const (
+	HealthStatusUnavailable HealthStatus = "unavailable"
+	HealthStatusAvailable   HealthStatus = "available"
+)
+
+func WaitForInstanceHealthStatus(leaderSession *gexec.Session, instanceID string, endpoint string, expectedStatus HealthStatus, timeout time.Duration) {
+	desc := "unavailable"
+	if expectedStatus == HealthStatusAvailable {
+		desc = "available"
+	}
+	pattern := regexp.MustCompile(fmt.Sprintf(`instance \[%s\] .* move to %s status`, regexp.QuoteMeta(endpoint), desc))
+	var lastIdx int
+	Eventually(func() bool {
+		content := leaderSession.Out.Contents()
+		if len(content) > lastIdx {
+			matched := pattern.Match(content[lastIdx:])
+			lastIdx = len(content)
+			return matched
+		}
+		return false
+	}, timeout).Should(BeTrue())
+}
+
+// -------------------------------------------------------
+// Status verification
+// -------------------------------------------------------
+
+// VerifyInstanceStatus verifies RS leader's /status API returns the specified cluster status and instance counts.
+//   - client: RSClient instance
+//   - expectedStatus: Expected cluster status (running/concerning/fault/deploying)
+//   - runningPrefill: Expected running prefill instance count
+//   - runningDecode: Expected running decode instance count
+func VerifyInstanceStatus(client *RSClient, expectedStatus string, runningPrefill, runningDecode int) {
+	statusResp, err := client.GetStatus()
+	Expect(err).NotTo(HaveOccurred())
+	defer statusResp.Body.Close()
+	Expect(statusResp.StatusCode).To(Equal(http.StatusOK))
+	body, _ := io.ReadAll(statusResp.Body)
+	GinkgoWriter.Printf("[verify] /status response: %s\n", string(body))
+
+	var statusRespObj instances.InstanceStatusRsp
+	Expect(json.Unmarshal(body, &statusRespObj)).To(BeNil())
+	Expect(statusRespObj.Status).To(Equal(expectedStatus),
+		"status should be %s", expectedStatus)
+
+	prefillRunning := 0
+	decodeRunning := 0
+	for role, instances := range statusRespObj.InstanceStatus {
+		for _, inst := range instances {
+			if inst.Status == constant.RunningStatus {
+				switch role {
+				case "prefill":
+					prefillRunning++
+				case "decode":
+					decodeRunning++
+				}
+			}
+		}
+	}
+	Expect(prefillRunning).To(Equal(runningPrefill),
+		"prefill running instance count should be %d", runningPrefill)
+	Expect(decodeRunning).To(Equal(runningDecode),
+		"decode running instance count should be %d", runningDecode)
 }

@@ -47,7 +47,7 @@ func (lrt *LogRequestTracer) Init(ctx context.Context, traceCfg *config.TraceCon
 }
 
 func (lrt *LogRequestTracer) Event(spanName string, eventName string, eventMsg string) {
-	logger.Log().Infof("Trace Event [%s] request_id: %s, x-span-id: %s, x-user-alias: %s, event details: %s",
+	logger.Log().InfoSkipf(2, "Trace Event [%s] request_id: %s, x-span-id: %s, x-user-alias: %s, event details: %s",
 		eventName, lrt.reqId, lrt.spanId, lrt.userAlias, eventMsg)
 }
 
@@ -86,7 +86,7 @@ func (lrt *LogRequestTracer) TraceTokenLog(spanName string, usage *openai.Usage,
 }
 
 func (lrt *LogRequestTracer) logSpan(event string, eventStage string, extraInfo string) {
-	logger.Log().Infof("Trace Span [%s] stage [%s] request_id: %s, x-span-id: %s, x-user-alias: %s, %s",
+	logger.Log().InfoSkipf(3, "Trace Span [%s] stage [%s] request_id: %s, x-span-id: %s, x-user-alias: %s, %s",
 		event, eventStage, lrt.reqId, lrt.spanId, lrt.userAlias, extraInfo)
 }
 

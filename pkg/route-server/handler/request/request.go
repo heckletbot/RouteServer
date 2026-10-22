@@ -177,9 +177,12 @@ func (req *GenerateRequestImpl) parseCompletion(bodyBytes []byte) error {
 
 	req.prefillBody = raw
 	req.decodeBody = raw.ShadowCopy()
-	if maxTokens, exists := raw.GetInt(openai.MaxTokenKey); exists {
-		req.originMaxTokens = int32(maxTokens)
+
+	maxTokens, err := parseMaxTokens(raw, false)
+	if err != nil {
+		return err
 	}
+	req.originMaxTokens = maxTokens
 
 	if isStream, exists := raw.GetBool(openai.StreamKey); exists {
 		req.originIsStream = isStream
@@ -218,9 +221,12 @@ func (req *GenerateRequestImpl) parseChatCompletion(bodyBytes []byte) error {
 
 	req.prefillBody = raw
 	req.decodeBody = raw.ShadowCopy()
-	if maxTokens, exists := raw.GetInt(openai.MaxTokenKey); exists {
-		req.originMaxTokens = int32(maxTokens)
+
+	maxTokens, err := parseMaxTokens(raw, true)
+	if err != nil {
+		return err
 	}
+	req.originMaxTokens = maxTokens
 
 	if isStream, exists := raw.GetBool(openai.StreamKey); exists {
 		req.originIsStream = isStream
@@ -499,9 +505,11 @@ func NewMMGenerateRequestImpl(request *http.Request, inferType string, isChat bo
 	}
 	impl.sloInterval = &utils.SLOInterval{PromptStrLengthMax: strconv.Itoa(int(impl.promptLength))}
 
-	if maxTokens, exists := raw.GetInt(openai.MaxTokenKey); exists {
-		impl.originMaxTokens = int32(maxTokens)
+	maxTokens, err := parseMaxTokens(raw, isChat)
+	if err != nil {
+		return nil, err
 	}
+	impl.originMaxTokens = maxTokens
 
 	if isStream, exists := raw.GetBool(openai.StreamKey); exists {
 		impl.originIsStream = isStream

@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	RuntimeConfigFileName = "model-orch.yaml"
+	RuntimeConfigFileName = "route-server.yaml"
 )
 
 var config commoncfg.Config

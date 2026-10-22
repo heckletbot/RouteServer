@@ -109,11 +109,13 @@ func (s *SchedulePhase) ExecutePhase(ctx *PipelineContext) (rsError *errs.RSErro
 			return errs.NewRSMaError(
 				errs.GatewayTimeoutErr.BuildArgs(fmt.Sprintf("Decode wait timeout after %d ms", s.ReqTimeoutMS), "timeout waiting for MetaServer"),
 				s.StageName(),
+				errs.FailureTypeTimeout,
 			)
 		}
 		if ctx.RequestContext.CancelCtx.IsCancel.Load() {
 			return errs.NewRSMaError(
 				errs.RequestForcedCancelledErr.BuildArgs("Decode", "decode request is aborted"), s.StageName(),
+				errs.FailureTypeCanceled,
 			)
 		}
 	}
@@ -206,7 +208,7 @@ func ScheduleInstanceRequest(ctx *PipelineContext, instanceType string, stageNam
 
 	scheduleRes, err := ctx.InferManager.SchedulerMgr.
 		DispatchRequest(ctx.ClientGinCtx.Request.Context(), subCtx, nil,
-			ctx.GetTracer().Tracer, "", scheduler.RemoteRequestInfo{IsLocal: true})
+			ctx.GetTracer().Tracer, ctx.BlackId(instanceType), scheduler.RemoteRequestInfo{IsLocal: true})
 
 	if scheduleRes != nil {
 		instanceId = scheduleRes.Result

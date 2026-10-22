@@ -293,23 +293,31 @@ func extractNonStreamBody(buf []byte) (*openai.Usage, string) {
 func RsErrorFromResponse(stream bool, details *utils.InstanceFailureDetails, insId string, stage string) *errs.RSError {
 	if details != nil {
 		if details.IsClientErr {
-			return errs.NewRSMaError(errs.ClientConnectionErr.BuildArgs(details.ErrorMessage), stage)
+			return errs.NewRSMaError(errs.ClientConnectionErr.BuildArgs(details.ErrorMessage), stage, errs.FailureTypeClient)
 		}
 		if details.IsCanceledErr {
-			return errs.NewRSMaError(&errs.RequestCancelledByUserErr, stage)
+			return errs.NewRSMaError(&errs.RequestCancelledByUserErr, stage, errs.FailureTypeCanceled)
 		}
 		if details.IsTimeout {
 			return errs.NewRSMaError(errs.GatewayTimeoutErr.BuildArgs(
-				fmt.Sprintf("timeout when write response from backend [%s]", insId)), stage)
-		} else if details.IsConnectionErr {
+				fmt.Sprintf("timeout when write response from backend [%s]", insId)), stage, errs.FailureTypeTimeout)
+		}
+		if details.IsConnectionErr {
 			return errs.NewRSMaError(errs.BadGatewayErr.BuildArgs(
-				fmt.Sprintf("connection error from backend [%s]", insId)), stage)
-		} else if stream && details.StatusCode != http.StatusOK {
-			return errs.NewRSStreamError(&errs.EngineError{
+				fmt.Sprintf("connection error from backend [%s]", insId)), stage, errs.FailureTypeConnection)
+		}
+		if details.IsKVTransferErr {
+			return errs.NewRSMaError(errs.InternalErr.BuildArgs(
+				fmt.Sprintf("kv transfer error from backend [%s]: %s", insId, details.ErrorMessage)), stage, errs.FailureTypeKVTransfer)
+		}
+		if stream && details.StatusCode != http.StatusOK {
+			rsErr := errs.NewRSStreamError(&errs.EngineError{
 				EngineErrBody: []byte(details.ErrorMessage),
 				EngineStatus:  details.StatusCode,
 				InstanceID:    insId,
 			}, stage)
+			rsErr.FailureType = errs.FailureTypeEngine
+			return rsErr
 		}
 		return errs.NewRSMaError(errs.InternalErr.BuildArgs(
 			fmt.Sprintf("failed to write response: err msg: %s", details.ErrorMessage)), stage)
@@ -590,8 +598,8 @@ func ProcessRequestError(ctx *gin.Context, rsErr *errs.RSError, tracer trace.Req
 	ctx.Writer.Header().Del(constant.HeaderContentLength)
 	if rsErr.EngineErr != nil {
 		retCode = rsErr.EngineErr.EngineStatus
-		tracer.ErrorSpan(trace.RequestSpanE2E, fmt.Errorf("%s, finish_reason = %s, err_stage = %s",
-			string(rsErr.EngineErr.EngineErrBody), finishReason, rsErr.ErrorStage), trace.GtLogPermission)
+		tracer.ErrorSpan(trace.RequestSpanE2E, fmt.Errorf("%s, finish_reason = %s, err_stage = %s, failure_type = %s",
+			string(rsErr.EngineErr.EngineErrBody), finishReason, rsErr.ErrorStage, rsErr.FailureType), trace.GtLogPermission)
 		ctx.Writer.WriteHeader(retCode)
 		reader := bytes.NewReader(rsErr.EngineErr.EngineErrBody)
 		_, err := io.Copy(ctx.Writer, reader)
@@ -604,13 +612,13 @@ func ProcessRequestError(ctx *gin.Context, rsErr *errs.RSError, tracer trace.Req
 		retCode = rsErr.EngineStreamErr.EngineStatus
 		// just record error when stream write error
 		tracer.ErrorSpan(trace.RequestSpanE2E, fmt.Errorf("error during streaming writing from decode [%s], "+
-			"status_code in body is [%v], err = %s, finish_reason = %s, err_stage = %s",
-			rsErr.EngineStreamErr.InstanceID, retCode, rsErr.EngineStreamErr.EngineErrBody,
+			"status_code in body is [%v], err = %s, finish_reason = %s, err_stage = %s, failure_type = %s",
+			rsErr.EngineStreamErr.InstanceID, retCode, rsErr.EngineStreamErr.EngineErrBody, rsErr.FailureType,
 			finishReason, rsErr.ErrorStage), trace.GtLogPermission)
 	} else {
 		retCode = rsErr.MaErr.Status
-		tracer.ErrorSpan(trace.RequestSpanE2E, fmt.Errorf("%s, finish_reason = %s, err_stage = %s",
-			rsErr.MaErr.Error(), finishReason, rsErr.ErrorStage), trace.GtLogPermission)
+		tracer.ErrorSpan(trace.RequestSpanE2E, fmt.Errorf("%s, finish_reason = %s, err_stage = %s, failure_type = %s",
+			rsErr.MaErr.Error(), finishReason, rsErr.ErrorStage, rsErr.FailureType), trace.GtLogPermission)
 		ctx.JSON(retCode, rsErr.MaErr.Json())
 	}
 	return
@@ -633,8 +641,8 @@ func ProcessStreamRequestError(ctx *gin.Context, rsErr *errs.RSError, tracer tra
 	if rsErr.EngineErr != nil {
 		logger.Log().Warnf("non-streaming error occured for a stream request, this should not happen")
 		retCode = rsErr.EngineErr.EngineStatus
-		tracer.ErrorSpan(trace.RequestSpanE2E, fmt.Errorf("%s, finish_reason = %s, err_stage = %s",
-			string(rsErr.EngineErr.EngineErrBody), finishReason, rsErr.ErrorStage), trace.GtLogPermission)
+		tracer.ErrorSpan(trace.RequestSpanE2E, fmt.Errorf("%s, finish_reason = %s, err_stage = %s, failure_type = %s",
+			string(rsErr.EngineErr.EngineErrBody), finishReason, rsErr.ErrorStage, rsErr.FailureType), trace.GtLogPermission)
 		ctx.Writer.WriteHeader(retCode)
 		reader := bytes.NewReader(rsErr.EngineErr.EngineErrBody)
 		_, err := io.Copy(ctx.Writer, reader)
@@ -646,13 +654,13 @@ func ProcessStreamRequestError(ctx *gin.Context, rsErr *errs.RSError, tracer tra
 	} else if rsErr.EngineStreamErr != nil {
 		retCode = rsErr.EngineStreamErr.EngineStatus
 		tracer.ErrorSpan(trace.RequestSpanE2E, fmt.Errorf("error during streaming writing from prefill [%s], "+
-			"status_code in body is [%v], err = %s, finish_reason = %s, err_stage = %s",
+			"status_code in body is [%v], err = %s, finish_reason = %s, err_stage = %s, failure_type = %s",
 			rsErr.EngineStreamErr.InstanceID, retCode, rsErr.EngineStreamErr.EngineErrBody,
-			finishReason, rsErr.ErrorStage), trace.GtLogPermission)
+			finishReason, rsErr.ErrorStage, rsErr.FailureType), trace.GtLogPermission)
 	} else {
 		retCode = rsErr.MaErr.Status
-		tracer.ErrorSpan(trace.RequestSpanE2E, fmt.Errorf("%s, finish_reason = %s, err_stage = %s",
-			rsErr.MaErr.Error(), finishReason, rsErr.ErrorStage), trace.GtLogPermission)
+		tracer.ErrorSpan(trace.RequestSpanE2E, fmt.Errorf("%s, finish_reason = %s, err_stage = %s, failure_type = %s",
+			rsErr.MaErr.Error(), finishReason, rsErr.ErrorStage, rsErr.FailureType), trace.GtLogPermission)
 		streamBody := rsErr.MaErr.StreamJson()
 		errBytes, err := utils.SonicApi.Marshal(streamBody)
 		if err != nil {

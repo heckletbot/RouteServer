@@ -43,7 +43,7 @@ type Metrics struct {
 	NumRequestsWithErrorCode *prometheus.CounterVec // Number of requests with different error codes, including successful requests
 
 	NumFallbackScheduled             prometheus.Counter // Fallback scheduled requests counter
-	NumLeaderRemoveScheduledRequests prometheus.Counter // Remote scheduled requests counter
+	NumLeaderRemoteScheduledRequests prometheus.Counter // Remote scheduled requests counter
 
 	NumDiscardedUnreachableRsWorkers prometheus.Counter     // Number of rs workers discarded due to unreachable
 	NumDiscardedUnreachableEndpoints *prometheus.CounterVec // Number of inference endpoints discarded due to unreachable (labels by role: e.g. prefill/decode)
@@ -95,7 +95,7 @@ func InitMetrics(cfg *commoncfg.MetricsCfg) {
 			NumSuccessedRequests:             newNumSuccessedRequestsCounter(),
 			NumScheduledRequests:             newScheduledRequestsCounter(),
 			NumFallbackScheduled:             newNumFallbackScheduledCounter(),
-			NumLeaderRemoveScheduledRequests: newNumLeaderRemoteScheduledCounter(),
+			NumLeaderRemoteScheduledRequests: newNumLeaderRemoteScheduledCounter(),
 
 			NumDiscardedUnreachableRsWorkers: newNumDiscardedUnreachableRsWorkers(),
 			NumDiscardedUnreachableEndpoints: newNumDiscardedUnreachableEndpoints(), // Labels: role
@@ -318,7 +318,7 @@ func newLeaderChangeCounter() *prometheus.CounterVec {
 func newNodeRoleGauge() prometheus.Gauge {
 	return promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "rs:node_role",
-		Help: "Current role of the ModelOrch node (0: worker, 1: leader, 2: candidate).",
+		Help: "Current role of the RouteServer node (0: worker, 1: leader, 2: candidate).",
 	})
 }
 
@@ -380,7 +380,7 @@ func RecordFallBackScheduled() {
 }
 
 func RecordRemoteScheduled() {
-	metrics.NumLeaderRemoveScheduledRequests.Inc()
+	metrics.NumLeaderRemoteScheduledRequests.Inc()
 }
 
 func RecordFailedRequestStatus(statusCode string, url string) {
@@ -583,6 +583,74 @@ func GetNumScheduledRequests() float64 {
 		return 0
 	}
 	return metric.Counter.GetValue()
+}
+
+// GetNumTotalRequestsWithErrorCode Get total request count across all status codes from NumRequestsWithErrorCode
+func GetNumTotalRequestsWithErrorCode() float64 {
+	if metrics == nil || metrics.NumRequestsWithErrorCode == nil {
+		logger.Log().Warnf("[Metrics] GetNumTotalRequestsWithErrorCode called but metrics not initialized, returning 0")
+		return 0
+	}
+	mfs, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		return 0
+	}
+	var total float64
+	for _, mf := range mfs {
+		if mf.GetName() == "rs:infer_requests_failure_status_total" {
+			for _, m := range mf.GetMetric() {
+				if m.Counter != nil {
+					total += m.Counter.GetValue()
+				}
+			}
+			break
+		}
+	}
+	return total
+}
+
+// GetNumErrorRequestsWithErrorCode Get request count for non-2xx and non-4xx status codes from NumRequestsWithErrorCode
+func GetNumErrorRequestsWithErrorCode() float64 {
+	if metrics == nil || metrics.NumRequestsWithErrorCode == nil {
+		logger.Log().Warnf("[Metrics] GetNumErrorRequestsWithErrorCode called but metrics not initialized, returning 0")
+		return 0
+	}
+	mfs, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		return 0
+	}
+	var errorCount float64
+	for _, mf := range mfs {
+		if mf.GetName() == "rs:infer_requests_failure_status_total" {
+			for _, m := range mf.GetMetric() {
+				if m.Counter == nil {
+					continue
+				}
+				var statusCode string
+				for _, label := range m.GetLabel() {
+					if label.GetName() == "status_code" {
+						statusCode = label.GetValue()
+						break
+					}
+				}
+				if !is2xxStatusCode(statusCode) && !is4xxStatusCode(statusCode) {
+					errorCount += m.Counter.GetValue()
+				}
+			}
+			break
+		}
+	}
+	return errorCount
+}
+
+// is2xxStatusCode Check if status code is 2xx
+func is2xxStatusCode(code string) bool {
+	return len(code) == 3 && code[0] == '2'
+}
+
+// is4xxStatusCode Check if status code is 4xx
+func is4xxStatusCode(code string) bool {
+	return len(code) == 3 && code[0] == '4'
 }
 
 // SetWorkerReadinessState sets the worker readiness state metric

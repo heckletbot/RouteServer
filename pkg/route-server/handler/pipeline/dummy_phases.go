@@ -56,6 +56,7 @@ func (d *DummyPhase) ExecutePhase(ctx *PipelineContext) *errs.RSError {
 			return errs.NewRSMaError(
 				errs.RequestForcedCancelledErr.BuildArgs(fmt.Sprintf("DummyPhase [%s] aborted due to other phase error for request [%s]", d.PhaseName(), ctx.RequestId())),
 				"MetaServer",
+				errs.FailureTypeCanceled,
 			)
 		}
 		return nil
@@ -63,6 +64,7 @@ func (d *DummyPhase) ExecutePhase(ctx *PipelineContext) *errs.RSError {
 		return errs.NewRSMaError(
 			errs.GatewayTimeoutErr.BuildArgs(fmt.Sprintf("DummyPhase [%s] wait timeout after %d ms for request [%s]", d.PhaseName(), d.ReqTimeoutMS, ctx.RequestId())),
 			"MetaServer",
+			errs.FailureTypeTimeout,
 		)
 	}
 }

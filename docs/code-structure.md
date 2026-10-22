@@ -1,9 +1,9 @@
 # Code base structure
 
-ModelOrch is implemented with go. Structure of code base is organized as follows:
+RouteServer is implemented with go. Structure of code base is organized as follows:
 
 ```
-DistributedScheduler/
+RouteServer/
 ├── cmd/                                    # Executable entry points
 │   ├── route_server/server/                # RESTful API gateway main entry
 │   ├── metrics-collector/                  # Aggregated metrics collector

@@ -70,7 +70,7 @@ func (r InstanceStatusRsp) MarshalJSON() ([]byte, error) {
 	buf = append(buf, '{')
 
 	for i, key := range orderKeys {
-			// Serialize key name
+		// Serialize key name
 		keyBytes, err := utils.SonicApi.Marshal(key)
 		if err != nil {
 			return nil, fmt.Errorf("marshal key %s error: %v", key, err)
@@ -78,14 +78,14 @@ func (r InstanceStatusRsp) MarshalJSON() ([]byte, error) {
 		buf = append(buf, keyBytes...)
 		buf = append(buf, ':')
 
-			// Serialize value
+		// Serialize value
 		valueBytes, err := utils.SonicApi.Marshal(result[key])
 		if err != nil {
 			return nil, fmt.Errorf("marshal key %s value error: %v", key, err)
 		}
 		buf = append(buf, valueBytes...)
 
-			// Add comma for non-last element
+		// Add comma for non-last element
 		if i < len(orderKeys)-1 {
 			buf = append(buf, ',')
 		}
@@ -102,7 +102,7 @@ func (r *InstanceStatusRsp) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("unmarshal data error: %v", err)
 	}
 
-		// Extract status
+	// Extract status
 	if status, exists := tmpMap["status"]; exists {
 		if err := utils.SonicApi.Unmarshal(status, &r.Status); err != nil {
 			return fmt.Errorf("unmarshal status error: %v", err)
@@ -113,7 +113,7 @@ func (r *InstanceStatusRsp) UnmarshalJSON(data []byte) error {
 	// Assign remaining key-value pairs to InstanceStatus (restore original Map structure)
 	r.InstanceStatus = make(map[string][]InstanceStatus, len(tmpMap))
 	for role, instanceStatus := range tmpMap {
-				// Parse []InstanceStatus
+		// Parse []InstanceStatus
 		var status []InstanceStatus
 		if err := utils.SonicApi.Unmarshal(instanceStatus, &status); err != nil {
 			return fmt.Errorf("unmarshal instance status error: %v", err)
@@ -163,7 +163,7 @@ func (m *InstanceManager) GetInstanceStatus(ctx *gin.Context) {
 
 	m.collectAvailableInstances(&rsp)
 
-		// Check if service is available
+	// Check if service is available
 	canService := m.canService(rsp)
 	isFaultExists := false
 	isDeployingExists := false
@@ -264,10 +264,10 @@ func getClusterStatus(isFaultExists bool, isDeployingExists bool, canService boo
 	} else if canService {
 		rspStatus = constant.ConcerningStatus
 	} else if !isFaultExists && isDeployingExists {
-			// All instances have no fault, must have deploying, and cannot serve externally, considered as deploy state
+		// All instances have no fault, must have deploying, and cannot serve externally, considered as deploy state
 		rspStatus = constant.DeployingStatus
 	} else {
-			// Cannot provide service and has fault, considered as cluster fault state
+		// Cannot provide service and has fault, considered as cluster fault state
 		rspStatus = constant.FaultStatus
 	}
 	return rspStatus
@@ -310,7 +310,7 @@ func NewInstanceHealthCache(clusterService cluster.ClusterService, healthCfg *co
 
 // GetOrFetchHealthStats get healthy instance statistics information
 func (c *InstanceHealthCache) GetOrFetchHealthStats() *InstanceHealthStats {
-		// First check if cache is expired
+	// First check if cache is expired
 	c.mutex.RLock()
 	if time.Since(c.cache.UpdateTime) <= c.expireTime {
 		result := c.cache
@@ -322,21 +322,21 @@ func (c *InstanceHealthCache) GetOrFetchHealthStats() *InstanceHealthStats {
 	logger.Log().Warnf("Health stats cache expired, last update: %v, expire: %v",
 		c.cache.UpdateTime, c.expireTime)
 
-		// Read lock released, can safely get write lock
+	// Read lock released, can safely get write lock
 	etcdCache := c.GetHealthStatsFromClusterService()
 	if etcdCache == nil {
 		logger.Log().Errorf("Failed to get health stats from etcd or expired")
 		return nil
 	}
 
-		// Update cache (internally gets write lock), using EveryRoleAvailableCountMap and UpdateTime from etcd
+	// Update cache (internally gets write lock), using EveryRoleAvailableCountMap and UpdateTime from etcd
 	err := c.UpdateHealthStats(etcdCache.EveryRoleAvailableCountMap, &etcdCache.UpdateTime)
 	if err != nil {
 		logger.Log().Debugf("Failed to update health stats: %v", err)
 		return nil
 	}
 
-		// Read again and return
+	// Read again and return
 	c.mutex.RLock()
 	result := c.cache
 	c.mutex.RUnlock()
@@ -348,7 +348,7 @@ func (c *InstanceHealthCache) UpdateHealthStats(roleHealthyCounts map[string]int
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-		// Update cache
+	// Update cache
 	c.cache.RoleHealthyCounts = make(map[string]int)
 	for role, count := range roleHealthyCounts {
 		c.cache.RoleHealthyCounts[role] = count
@@ -369,14 +369,14 @@ func (c *InstanceHealthCache) GetHealthStatsFromClusterService() *cluster.EtcdHe
 		return nil
 	}
 
-		// Get health statistics through clusterService
+	// Get health statistics through clusterService
 	cache, err := c.clusterService.GetHealthStats()
 	if err != nil {
 		logger.Log().Errorf("Failed to get health stats from clusterService: %v", err)
 		return nil
 	}
 
-		// Check if result is valid (UpdateTime zero value means invalid/uninitialized)
+	// Check if result is valid (UpdateTime zero value means invalid/uninitialized)
 	if cache.UpdateTime.IsZero() {
 		logger.Log().Warn("Health stats from clusterService is invalid (zero update time)")
 		return nil
@@ -471,12 +471,12 @@ func (m *InstanceManager) checkHealthCache(readiness map[string]int) *ReadinessS
 		return nil
 	}
 
-		// Has valid information, restore circuit breaker state
+	// Has valid information, restore circuit breaker state
 	if m.circuitBreaker != nil {
 		m.circuitBreaker.Reset()
 	}
 
-		// Check if healthy instance count for each role meets requirements
+	// Check if healthy instance count for each role meets requirements
 	ready := true
 	for _, role := range m.requiredRoles {
 		leastNum := readiness[role]
@@ -518,12 +518,12 @@ func (m *InstanceManager) checkHealthFromAvailable(readiness map[string]int) *Re
 
 	m.routeMapMutex.RUnlock()
 
-		// Restore circuit breaker state (routeMapMutex released, avoid calling Reset while holding lock)
+	// Restore circuit breaker state (routeMapMutex released, avoid calling Reset while holding lock)
 	if m.circuitBreaker != nil {
 		m.circuitBreaker.Reset()
 	}
 
-		// Check if healthy instance count for each role meets requirements
+	// Check if healthy instance count for each role meets requirements
 	ready := true
 	for _, role := range m.requiredRoles {
 		leastNum := readiness[role]
@@ -552,6 +552,8 @@ func (m *InstanceManager) checkHealthFromAvailable(readiness map[string]int) *Re
 
 // checkCircuitBreaker check circuit breaker state
 func (m *InstanceManager) checkCircuitBreaker() ReadinessStatus {
+	// Activate circuit breaker: mark system as degraded to Level 3, enabling timer and probe-triggered failure rate checks
+	m.circuitBreaker.SetDegraded(true)
 	shouldBreak := m.circuitBreaker.CheckShouldTrip()
 	if shouldBreak {
 		return ReadinessStatus{

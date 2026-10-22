@@ -1,6 +1,6 @@
 # Inference Instance Health
 
-ModelOrch provides multi-granularity fault detection, isolation, and automatic recovery for inference engine (vLLM) instances. The health check system is orchestrated by `LeaderHealthChecker` and spans both leader and worker nodes.
+RouteServer provides multi-granularity fault detection, isolation, and automatic recovery for inference engine (vLLM) instances. The health check system is orchestrated by `LeaderHealthChecker` and spans both leader and worker nodes.
 
 ---
 

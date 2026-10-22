@@ -84,8 +84,9 @@ type ScheduleResponse struct {
 }
 
 type RemoteRequestInfo struct {
-	IsLocal  bool
-	WorkerId string
+	IsLocal      bool
+	WorkerId     string
+	WorkerBootId string
 }
 
 type Manager interface {
@@ -106,7 +107,7 @@ type Manager interface {
 	// this is thread-safe
 	DispatchRequest(reqCtx context.Context, request utils.GenerateRequest, params map[string]string,
 		tracer trace.RequestTracer, blackID string, remoteRequestInfo RemoteRequestInfo) (*ScheduleResponse, error)
-	OnRequestEvent(workerId string, events []*utils.RequestEventMsg)
+	OnRequestEvent(workerId string, workerBootId string, events []*utils.RequestEventMsg)
 	GetStatsRegistrations() map[string][]string
 	ClearAlgorithmLoadsAndEvents()
 	ReportLoads(includeRequests bool, includeUnavailable bool, roles []string) map[string]*scheduler.SLOLoadInfo
@@ -122,7 +123,12 @@ type Manager interface {
 	Close()
 }
 
+// NewManager for local test
 func NewManager(rootCfg *config.Config, clusterService cluster.ClusterService, peerClient *peer_client.PeerClient, pm *health.PDLinkBlacklistManager, rm *RemoteScheduledRequestManager) (Manager, error) {
+	return NewManagerWithBootId(rootCfg, "", clusterService, peerClient, pm, rm)
+}
+
+func NewManagerWithBootId(rootCfg *config.Config, workerBootId string, clusterService cluster.ClusterService, peerClient *peer_client.PeerClient, pm *health.PDLinkBlacklistManager, rm *RemoteScheduledRequestManager) (Manager, error) {
 	cfg := &rootCfg.SchedulersCfg
 	var workerId string
 	if clusterService != nil {
@@ -135,6 +141,7 @@ func NewManager(rootCfg *config.Config, clusterService cluster.ClusterService, p
 		pdLinkBlackListManager: pm,
 		remoteReqMgr:           rm,
 		workerId:               workerId,
+		workerBootId:           workerBootId,
 	}
 	var remoteScheduler *RemoteScheduler
 	var err error
@@ -163,9 +170,10 @@ type Context struct {
 }
 
 type SchedulersManager struct {
-	workerId  string
-	cfg       *config.SchedulersCfg
-	closeChan chan struct{}
+	workerId     string
+	workerBootId string
+	cfg          *config.SchedulersCfg
+	closeChan    chan struct{}
 
 	sloManager *SLOManager
 
@@ -270,12 +278,24 @@ func (s *SchedulersManager) GetStatsRegistrations() map[string][]string {
 	return res
 }
 
-func (s *SchedulersManager) OnRequestEvent(workerId string, events []*utils.RequestEventMsg) {
+func (s *SchedulersManager) OnRequestEvent(workerId string, bootId string, events []*utils.RequestEventMsg) {
 	s.insIdLookupMutex.RLock()
 	defer s.insIdLookupMutex.RUnlock()
 
 	s.remoteReqMgr.mu.Lock()
 	defer s.remoteReqMgr.mu.Unlock()
+
+	// Check if the worker's bootId has changed, indicating a worker restart.
+	// If so, clean up all previous request loads for this worker.
+	if s.remoteReqMgr.setWorkerBootIdIfChanged(workerId, bootId) {
+		oldEvents := s.remoteReqMgr.GetAllEventsByWorkerIDWithLock(workerId)
+		if len(oldEvents) > 0 {
+			logger.Log().Warnf("worker [%s] bootId changed, cleaning up [%d] stale request loads (worker was restarted ungracefully)",
+				workerId, len(oldEvents))
+			s.cleanUpEventMsg(oldEvents)
+			s.remoteReqMgr.cleanUpAllEventsByWorkerIDWithNoLock(workerId)
+		}
+	}
 
 	start := time.Now()
 	for _, event := range events {
@@ -287,8 +307,8 @@ func (s *SchedulersManager) OnRequestEvent(workerId string, events []*utils.Requ
 			return
 		}
 		ctx.Algorithm.OnRequestEvent(event)
-		if !s.clusterService.IsSingleton() {
-			s.remoteReqMgr.OnRequestEventWithNoLock(workerId, event)
+		if s.clusterService != nil && !s.clusterService.IsSingleton() {
+			s.remoteReqMgr.onRequestEventWithNoLock(workerId, event)
 		}
 	}
 
@@ -710,6 +730,25 @@ func (s *SchedulersManager) DispatchRequest(reqCtx context.Context, request util
 		duration := time.Since(start).Seconds()
 		metrics.RecordScheduleDuration(request.GetType(), duration)
 	}()
+
+	// For requests forwarded from remote workers, check if the worker bootId has changed (worker restarted).
+	// If so, clean up the stale request payloads from that worker to prevent them from lingering in the scheduler.
+	if !remoteRequestInfo.IsLocal {
+		s.insIdLookupMutex.RLock()
+		s.remoteReqMgr.mu.Lock()
+		if s.remoteReqMgr.setWorkerBootIdIfChanged(remoteRequestInfo.WorkerId, remoteRequestInfo.WorkerBootId) {
+			oldEvents := s.remoteReqMgr.GetAllEventsByWorkerIDWithLock(remoteRequestInfo.WorkerId)
+			if len(oldEvents) > 0 {
+				logger.Log().Warnf("worker [%s] bootId changed, cleaning up [%d] stale request loads (worker was restarted ungracefully)",
+					remoteRequestInfo.WorkerId, len(oldEvents))
+				s.cleanUpEventMsg(oldEvents)
+				s.remoteReqMgr.cleanUpAllEventsByWorkerIDWithNoLock(remoteRequestInfo.WorkerId)
+			}
+		}
+		s.remoteReqMgr.mu.Unlock()
+		s.insIdLookupMutex.RUnlock()
+	}
+
 	res, err := s.doDispatch(reqCtx, request, params, tracer, blackId)
 
 	// worker only maintains FallbackAlgo stats(See UpdateFallbackAlgoStats), it doesn't UpdateStats for Algorithm(e.g. ABC6).
@@ -730,7 +769,7 @@ func (s *SchedulersManager) DispatchRequest(reqCtx context.Context, request util
 			FailureDetails: nil,
 			TimeStamp:      time.Now().UnixMilli(),
 		}
-		s.remoteReqMgr.OnRequestEventNew(remoteRequestInfo.WorkerId, event)
+		s.remoteReqMgr.OnRequestEventNew(remoteRequestInfo.WorkerId, remoteRequestInfo.WorkerBootId, event)
 	}
 
 	return res, nil
@@ -882,7 +921,7 @@ func (s *SchedulersManager) doDispatch(reqCtx context.Context, request utils.Gen
 	if local {
 		return s.dispatchLocally(request, params, blackId)
 	}
-	return s.remoteScheduler.Schedule(request, reqCtx, params, tracer, blackId, s.workerId)
+	return s.remoteScheduler.Schedule(request, reqCtx, params, tracer, blackId, s.workerId, s.workerBootId)
 }
 
 // only leader do dispatch locally

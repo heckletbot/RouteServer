@@ -29,7 +29,7 @@ func TestError_Basic(t *testing.T) {
 		MsgEn: "Test error",
 		Args:  nil,
 	}
-	expected := "ModelOrch.123:Test error"
+	expected := "RouteServer.123:Test error"
 	assert.Equal(t, expected, e.Error())
 }
 
@@ -49,7 +49,7 @@ func TestError_FormatArgs(t *testing.T) {
 		MsgEn: "Test error: %s",
 		Args:  []interface{}{"test"},
 	}
-	expected := "ModelOrch.123:Test error: test"
+	expected := "RouteServer.123:Test error: test"
 	assert.Equal(t, expected, e.Error())
 }
 
@@ -58,7 +58,7 @@ func TestError_NoCode(t *testing.T) {
 		MsgEn: "Test error",
 		Args:  nil,
 	}
-	expected := "ModelOrch.:Test error"
+	expected := "RouteServer.:Test error"
 	assert.Equal(t, expected, e.Error())
 }
 
@@ -69,7 +69,7 @@ func TestJson_Basic(t *testing.T) {
 		Args:  nil,
 	}
 	expected := ErrorBody{
-		Code:    "ModelOrch.123",
+		Code:    "RouteServer.123",
 		Message: "Test error",
 	}
 	assert.Equal(t, expected, e.Json())
@@ -95,7 +95,7 @@ func TestJson_FormatArgs(t *testing.T) {
 		Args:  []interface{}{"test"},
 	}
 	expected := ErrorBody{
-		Code:    "ModelOrch.123",
+		Code:    "RouteServer.123",
 		Message: "Test error: test",
 	}
 	assert.Equal(t, expected, e.Json())
@@ -107,7 +107,7 @@ func TestJson_NoCode(t *testing.T) {
 		Args:  nil,
 	}
 	expected := ErrorBody{
-		Code:    "ModelOrch.",
+		Code:    "RouteServer.",
 		Message: "Test error",
 	}
 	assert.Equal(t, expected, e.Json())
@@ -119,7 +119,7 @@ func TestError_FormatArgs_MultipleArgs(t *testing.T) {
 		MsgEn: "Test error: %s, %d, %f",
 		Args:  []interface{}{"test", 123, 45.67},
 	}
-	expected := "ModelOrch.123:Test error: test, 123, 45.670000"
+	expected := "RouteServer.123:Test error: test, 123, 45.670000"
 	assert.Equal(t, expected, e.Error())
 }
 
@@ -129,7 +129,7 @@ func TestError_FormatArgs_NoArgs(t *testing.T) {
 		MsgEn: "Test error:",
 		Args:  nil,
 	}
-	expected := "ModelOrch.123:Test error:"
+	expected := "RouteServer.123:Test error:"
 	assert.Equal(t, expected, e.Error())
 }
 
@@ -139,7 +139,7 @@ func TestError_FormatArgs_ExcessArgs(t *testing.T) {
 		MsgEn: "Test error: %s",
 		Args:  []interface{}{"test", 123},
 	}
-	expected := "ModelOrch.123:Test error: test%!(EXTRA int=123)"
+	expected := "RouteServer.123:Test error: test%!(EXTRA int=123)"
 	assert.Equal(t, expected, e.Error())
 }
 
@@ -149,7 +149,7 @@ func TestError_FormatArgs_NotEnoughArgs(t *testing.T) {
 		MsgEn: "Test error: %s, %d",
 		Args:  []interface{}{"test"},
 	}
-	expected := "ModelOrch.123:Test error: test, %!d(MISSING)"
+	expected := "RouteServer.123:Test error: test, %!d(MISSING)"
 	assert.Equal(t, expected, e.Error())
 }
 
@@ -159,7 +159,7 @@ func TestError_FormatArgs_ZeroArgs(t *testing.T) {
 		MsgEn: "Test error",
 		Args:  nil,
 	}
-	expected := "ModelOrch.123:Test error"
+	expected := "RouteServer.123:Test error"
 	assert.Equal(t, expected, e.Error())
 }
 
@@ -172,7 +172,7 @@ func TestJson_FormatArgs_MultipleArgs(t *testing.T) {
 		Args:  []interface{}{"test", 123, 45.67},
 	}
 	expected := ErrorBody{
-		Code:    "ModelOrch.123",
+		Code:    "RouteServer.123",
 		Message: "Test error: test, 123, 45.670000",
 	}
 	assert.Equal(t, expected, e.Json())
@@ -185,7 +185,7 @@ func TestJson_FormatArgs_NoArgs(t *testing.T) {
 		Args:  nil,
 	}
 	expected := ErrorBody{
-		Code:    "ModelOrch.123",
+		Code:    "RouteServer.123",
 		Message: "Test error: ",
 	}
 	assert.Equal(t, expected, e.Json())
@@ -197,7 +197,7 @@ func TestJson_FormatArgs_ExcessArgs(t *testing.T) {
 		MsgEn: "Test error: %s",
 	}
 	expected := ErrorBody{
-		Code:    "ModelOrch.123",
+		Code:    "RouteServer.123",
 		Message: "Test error: test",
 	}
 	assert.Equal(t, expected, e.BuildArgs("test").Json())
@@ -210,7 +210,7 @@ func TestJson_FormatArgs_NotEnoughArgs(t *testing.T) {
 	}
 
 	expected := ErrorBody{
-		Code:    "ModelOrch.123",
+		Code:    "RouteServer.123",
 		Message: "Test error: test 123",
 	}
 	assert.Equal(t, expected, e.BuildArgs("test", 123).Json())
@@ -223,7 +223,7 @@ func TestJson_FormatArgs_ZeroArgs(t *testing.T) {
 		Args:  nil,
 	}
 	expected := ErrorBody{
-		Code:    "ModelOrch.123",
+		Code:    "RouteServer.123",
 		Message: "Test error",
 	}
 	assert.Equal(t, expected, e.Json())

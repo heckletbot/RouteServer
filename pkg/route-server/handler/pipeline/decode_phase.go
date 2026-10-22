@@ -51,7 +51,7 @@ func RemoveMessageRequestBody(context *PipelineContext, copiedBody *utils.JSONMo
 
 func PostDecodeProcessResponse(res *http.Response, ctx *PipelineContext, phase Phase) (rsError *errs.RSError, details *utils.InstanceFailureDetails) {
 	if ctx.RequestContext.CancelCtx != nil && ctx.RequestContext.CancelCtx.IsCancel.Load() {
-		return errs.NewRSMaError(&errs.RequestForcedCancelledErr, phase.StageName()), nil
+		return errs.NewRSMaError(&errs.RequestForcedCancelledErr, phase.StageName(), errs.FailureTypeCanceled), nil
 	}
 	return writeResToClient(res, ctx, phase)
 }
@@ -102,6 +102,11 @@ func writeResToClient(res *http.Response, ctx *PipelineContext, phase Phase) (rs
 		}
 	}()
 
+	if ctx.HasMainErr() {
+		return nil, nil
+	}
+	ctx.GetGinCtxMutex().Lock()
+	defer ctx.GetGinCtxMutex().Unlock()
 	writerResponseHeaders(res, ctx)
 
 	if reqCtx.ParsedRequest.IsStream() {

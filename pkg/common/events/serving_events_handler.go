@@ -46,7 +46,7 @@ func (seh *ServingEventsHandler) DoHandleRequestEvents(events *utils.WorkerEvent
 
 	for _, listener := range seh.listeners {
 		if len(events.RequestEvents) > 0 {
-			listener.OnRequestEvents(events.WorkerId, events.RequestEvents)
+			listener.OnRequestEvents(events.WorkerId, events.WorkerBootId, events.RequestEvents)
 		}
 		if len(events.InstanceEvents) > 0 {
 			listener.OnInstanceTokenEvent(events.WorkerId, events.InstanceEvents)

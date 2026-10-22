@@ -39,6 +39,10 @@ import (
 const (
 	MockContent = "test"
 	Model       = "deepseek-r1"
+
+	LinkDownVersionOmni       = "omni"
+	LinkDownVersionVllmAscend = "vllm_ascend"
+	LinkDownVersionVllmNew    = "vllm_new"
 )
 
 type MMChatCompletionRequest struct {
@@ -75,22 +79,23 @@ type MMChatCompletionRequest struct {
 }
 
 type InferPara struct {
-	TTFT         uint
-	TPOT         uint
-	Addr         string
-	Port         string
-	Collector    *Collector
-	IsError      bool
-	ErrorCode    int
-	IsHang       bool
-	IsHealth     bool
-	IsLinkDown   bool
-	LinkDownList map[string]struct{}
-	IsEncoder    bool
-	IsHybrid     bool
-	// Support for hanging specific request_id
-	HangRequestIds   map[string]struct{}
-	HangRequestIdsMu sync.Mutex
+	TTFT                     uint
+	TPOT                     uint
+	Addr                     string
+	Port                     string
+	Collector                *Collector
+	IsError                  bool
+	ErrorCode                int
+	IsHang                   bool
+	IsHealth                 bool
+	IsLinkDown               bool
+	LinkDownList             map[string]struct{}
+	LinkDownVersion          string
+	LinkDownTokenBeforeError int
+	IsEncoder                bool
+	IsHybrid                 bool
+	HangRequestIds           map[string]struct{}
+	HangRequestIdsMu         sync.Mutex
 }
 
 type StreamError struct {
@@ -125,7 +130,9 @@ type KVMetaData struct {
 }
 
 type LinkDownBody struct {
-	MetaDataList []KVMetaData `json:"meta_data_list"`
+	MetaDataList     []KVMetaData `json:"meta_data_list"`
+	Version          string       `json:"version"`
+	TokenBeforeError int          `json:"token_before_error"`
 }
 
 type MockErrorBody struct {
@@ -199,35 +206,76 @@ func (i *InferPara) dealChatCompletion(ctx *gin.Context) {
 		}
 
 		if i.IsLinkDown {
-			response := openai.ChatCompletionResponse{
-				ID:      requestId,
-				Object:  "chat.completion",
-				Created: 1,
-				Model:   Model,
-				Choices: []openai.ChatCompletionChoice{
-					{
-						Index: 0,
-						Message: openai.ChatCompletionMessage{
-							Role: "assistant",
-						},
-						FinishReason: "abort",
-						StopReason:   "Abort for KV loading failure",
+			switch i.LinkDownVersion {
+			case LinkDownVersionVllmAscend:
+				errData := map[string]any{
+					"error": map[string]any{
+						"message": "pd link is down!",
+						"type":    "InternalServerError",
+						"param":   nil,
+						"code":    500,
 					},
-				},
-				KvTransferParams: map[string]any{
-					"address": i.Addr,
-					"port":    i.Port,
-				},
-				Usage: openai.Usage{
-					PromptTokens:            2000,
-					CompletionTokens:        request.MaxTokens,
-					TotalTokens:             2000 + request.MaxTokens,
-					PromptTokensDetails:     &openai.PromptTokensDetails{CachedTokens: 1000},
-					CompletionTokensDetails: nil,
-				},
+				}
+				bytes, err := utils.SonicApi.Marshal(errData)
+				if err != nil {
+					fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+					ctx.JSON(http.StatusInternalServerError, err)
+					return
+				}
+				ctx.Writer.WriteHeader(http.StatusInternalServerError)
+				ctx.Writer.Write(bytes)
+				ctx.Writer.Flush()
+				return
+			case LinkDownVersionVllmNew:
+				errData := map[string]any{
+					"error": map[string]any{
+						"message": "KV cache load failed for one or more remote blocks. The request can be retried.",
+						"type":    "InternalServerError",
+						"param":   nil,
+						"code":    500,
+					},
+				}
+				bytes, err := utils.SonicApi.Marshal(errData)
+				if err != nil {
+					fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+					ctx.JSON(http.StatusInternalServerError, err)
+					return
+				}
+				ctx.Writer.WriteHeader(http.StatusInternalServerError)
+				ctx.Writer.Write(bytes)
+				ctx.Writer.Flush()
+				return
+			default:
+				response := openai.ChatCompletionResponse{
+					ID:      requestId,
+					Object:  "chat.completion",
+					Created: 1,
+					Model:   Model,
+					Choices: []openai.ChatCompletionChoice{
+						{
+							Index: 0,
+							Message: openai.ChatCompletionMessage{
+								Role: "assistant",
+							},
+							FinishReason: "abort",
+							StopReason:   "Abort for KV loading failure",
+						},
+					},
+					KvTransferParams: map[string]any{
+						"address": i.Addr,
+						"port":    i.Port,
+					},
+					Usage: openai.Usage{
+						PromptTokens:            2000,
+						CompletionTokens:        request.MaxTokens,
+						TotalTokens:             2000 + request.MaxTokens,
+						PromptTokensDetails:     &openai.PromptTokensDetails{CachedTokens: 1000},
+						CompletionTokensDetails: nil,
+					},
+				}
+				ctx.JSON(http.StatusOK, response)
+				return
 			}
-			ctx.JSON(200, response)
-			return
 		}
 
 		response := openai.ChatCompletionResponse{
@@ -278,15 +326,19 @@ func (i *InferPara) dealChatCompletion(ctx *gin.Context) {
 	ctx.Header("X-Request-Id", ctx.Request.Header.Get("X-Request-Id"))
 	ctx.Writer.WriteHeader(http.StatusOK)
 
+	maxTokens := request.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = 4
+	}
 	usage := &openai.Usage{
 		PromptTokens:            2000,
-		CompletionTokens:        request.MaxTokens,
-		TotalTokens:             2000 + request.MaxTokens,
+		CompletionTokens:        maxTokens,
+		TotalTokens:             2000 + maxTokens,
 		PromptTokensDetails:     &openai.PromptTokensDetails{CachedTokens: 1000},
 		CompletionTokensDetails: nil,
 	}
 	kvTransferMetaData := fmt.Sprintf("%s:%s", request.KvTransferParams["address"], request.KvTransferParams["port"])
-	i.writeRes(ctx, request.MaxTokens, i.getChatResToken, usage, kvTransferMetaData, requestId)
+	i.writeRes(ctx, maxTokens, i.getChatResToken, usage, kvTransferMetaData, requestId, request.MaxTokens > 0, len(request.Tools) > 0)
 }
 
 func (i *InferPara) dealMMChatCompletion(ctx *gin.Context) {
@@ -347,6 +399,80 @@ func (i *InferPara) dealMMChatCompletion(ctx *gin.Context) {
 		if i.shouldHang(requestId) {
 			i.hangingWithRequestId(requestId)
 		}
+
+		if i.IsLinkDown {
+			switch i.LinkDownVersion {
+			case LinkDownVersionVllmAscend:
+				errData := map[string]any{
+					"error": map[string]any{
+						"message": "pd link is down!",
+						"type":    "InternalServerError",
+						"param":   nil,
+						"code":    500,
+					},
+				}
+				bytes, err := utils.SonicApi.Marshal(errData)
+				if err != nil {
+					fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+					ctx.JSON(http.StatusInternalServerError, err)
+					return
+				}
+				ctx.Writer.WriteHeader(http.StatusInternalServerError)
+				ctx.Writer.Write(bytes)
+				ctx.Writer.Flush()
+				return
+			case LinkDownVersionVllmNew:
+				errData := map[string]any{
+					"error": map[string]any{
+						"message": "KV cache load failed for one or more remote blocks. The request can be retried.",
+						"type":    "InternalServerError",
+						"param":   nil,
+						"code":    500,
+					},
+				}
+				bytes, err := utils.SonicApi.Marshal(errData)
+				if err != nil {
+					fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+					ctx.JSON(http.StatusInternalServerError, err)
+					return
+				}
+				ctx.Writer.WriteHeader(http.StatusInternalServerError)
+				ctx.Writer.Write(bytes)
+				ctx.Writer.Flush()
+				return
+			default:
+				response := openai.ChatCompletionResponse{
+					ID:      requestId,
+					Object:  "chat.completion",
+					Created: 1,
+					Model:   Model,
+					Choices: []openai.ChatCompletionChoice{
+						{
+							Index: 0,
+							Message: openai.ChatCompletionMessage{
+								Role: "assistant",
+							},
+							FinishReason: "abort",
+							StopReason:   "Abort for KV loading failure",
+						},
+					},
+					KvTransferParams: map[string]any{
+						"address": i.Addr,
+						"port":    i.Port,
+					},
+					Usage: openai.Usage{
+						PromptTokens:            2000,
+						CompletionTokens:        request.MaxTokens,
+						TotalTokens:             2000 + request.MaxTokens,
+						PromptTokensDetails:     &openai.PromptTokensDetails{CachedTokens: 1000},
+						CompletionTokensDetails: nil,
+					},
+				}
+				ctx.JSON(http.StatusOK, response)
+				return
+			}
+		}
+
 		response := openai.ChatCompletionResponse{
 			ID:      "test",
 			Object:  "test",
@@ -390,22 +516,57 @@ func (i *InferPara) dealMMChatCompletion(ctx *gin.Context) {
 		return
 	}
 
+	maxTokens := request.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = 4
+	}
 	ctx.Header("Content-Type", "text/event-stream")
 	ctx.Header("Transfer-Encoding", "chunked")
 	ctx.Writer.WriteHeader(http.StatusOK)
 
 	usage := &openai.Usage{
 		PromptTokens:            2000,
-		CompletionTokens:        request.MaxTokens,
-		TotalTokens:             2000 + request.MaxTokens,
+		CompletionTokens:        maxTokens,
+		TotalTokens:             2000 + maxTokens,
 		PromptTokensDetails:     nil,
 		CompletionTokensDetails: nil,
 	}
 	kvTransferMetaData := fmt.Sprintf("%s:%s", request.KvTransferParams["address"], request.KvTransferParams["port"])
-	i.writeRes(ctx, request.MaxTokens, i.getChatResToken, usage, kvTransferMetaData, requestId)
+	i.writeRes(ctx, maxTokens, i.getChatResToken, usage, kvTransferMetaData, requestId, request.MaxTokens > 0, len(request.Tools) > 0)
 }
 
-func (i *InferPara) getChatResToken(reqID string, tokenIdx int, usage *openai.Usage) ([]byte, error) {
+func (i *InferPara) getChatResToken(reqID string, tokenIdx int, usage *openai.Usage, isLastToken bool, hasMaxTokens bool, hasTools bool) ([]byte, error) {
+	var finishReason *openai.FinishReason
+	if isLastToken {
+		if hasTools {
+			reason := openai.FinishReasonToolCalls
+			finishReason = &reason
+		} else {
+			reason := openai.FinishReasonStop
+			if hasMaxTokens {
+				reason = openai.FinishReasonLength
+			}
+			finishReason = &reason
+		}
+	}
+
+	var delta openai.ChatCompletionStreamChoiceDelta
+	if isLastToken && hasTools {
+		delta = openai.ChatCompletionStreamChoiceDelta{
+			ToolCalls: []openai.ToolCall{
+				{
+					ID:       fmt.Sprintf("call_%s_%d", reqID, tokenIdx),
+					Type:     "function",
+					Function: openai.FunctionCall{Name: "get_current_time", Arguments: "{}"},
+				},
+			},
+		}
+	} else {
+		delta = openai.ChatCompletionStreamChoiceDelta{
+			Content: fmt.Sprintf("%s_%v", MockContent, tokenIdx),
+		}
+	}
+
 	var response openai.ChatCompletionStreamResponse
 	if usage == nil {
 		response = openai.ChatCompletionStreamResponse{
@@ -415,10 +576,9 @@ func (i *InferPara) getChatResToken(reqID string, tokenIdx int, usage *openai.Us
 			Model:   Model,
 			Choices: []openai.ChatCompletionStreamChoice{
 				{
-					Index: 0,
-					Delta: openai.ChatCompletionStreamChoiceDelta{
-						Content: fmt.Sprintf("%s_%v", MockContent, tokenIdx),
-					},
+					Index:        0,
+					Delta:        delta,
+					FinishReason: finishReason,
 				},
 			},
 			Usage: usage,
@@ -449,7 +609,16 @@ func (i *InferPara) getChatResToken(reqID string, tokenIdx int, usage *openai.Us
 	return responseBytes, nil
 }
 
-func (i *InferPara) getCompletionResToken(reqID string, tokenIdx int, usage *openai.Usage) ([]byte, error) {
+func (i *InferPara) getCompletionResToken(reqID string, tokenIdx int, usage *openai.Usage, isLastToken bool, hasMaxTokens bool, hasTools bool) ([]byte, error) {
+	var finishReason string
+	if isLastToken {
+		if hasMaxTokens {
+			finishReason = "length"
+		} else {
+			finishReason = "stop"
+		}
+	}
+
 	var response openai.CompletionResponse
 	if usage == nil {
 		response = openai.CompletionResponse{
@@ -459,8 +628,9 @@ func (i *InferPara) getCompletionResToken(reqID string, tokenIdx int, usage *ope
 			Model:   Model,
 			Choices: []openai.CompletionChoice{
 				{
-					Index: 0,
-					Text:  fmt.Sprintf("%s_%v", MockContent, tokenIdx),
+					Index:        0,
+					Text:         fmt.Sprintf("%s_%v", MockContent, tokenIdx),
+					FinishReason: finishReason,
 				},
 			},
 			Usage: usage,
@@ -471,8 +641,14 @@ func (i *InferPara) getCompletionResToken(reqID string, tokenIdx int, usage *ope
 			Object:  "test",
 			Created: 1,
 			Model:   Model,
-			Choices: []openai.CompletionChoice{},
-			Usage:   usage,
+			Choices: []openai.CompletionChoice{
+				{
+					Index:        0,
+					Text:         fmt.Sprintf("%s_%v", MockContent, tokenIdx),
+					FinishReason: finishReason,
+				},
+			},
+			Usage: usage,
 		}
 	}
 
@@ -546,6 +722,70 @@ func (i *InferPara) CompletionsInfer(ctx *gin.Context) {
 		if i.shouldHang(requestId) {
 			i.hangingWithRequestId(requestId)
 		}
+
+		if i.IsLinkDown {
+			switch i.LinkDownVersion {
+			case LinkDownVersionVllmAscend:
+				errData := map[string]any{
+					"error": map[string]any{
+						"message": "pd link is down!",
+						"type":    "InternalServerError",
+						"param":   nil,
+						"code":    500,
+					},
+				}
+				bytes, err := utils.SonicApi.Marshal(errData)
+				if err != nil {
+					fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+					ctx.JSON(http.StatusInternalServerError, err)
+					return
+				}
+				ctx.Writer.WriteHeader(http.StatusInternalServerError)
+				ctx.Writer.Write(bytes)
+				ctx.Writer.Flush()
+				return
+			case LinkDownVersionVllmNew:
+				errData := map[string]any{
+					"error": map[string]any{
+						"message": "KV cache load failed for one or more remote blocks. The request can be retried.",
+						"type":    "InternalServerError",
+						"param":   nil,
+						"code":    500,
+					},
+				}
+				bytes, err := utils.SonicApi.Marshal(errData)
+				if err != nil {
+					fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+					ctx.JSON(http.StatusInternalServerError, err)
+					return
+				}
+				ctx.Writer.WriteHeader(http.StatusInternalServerError)
+				ctx.Writer.Write(bytes)
+				ctx.Writer.Flush()
+				return
+			default:
+				response := openai.CompletionResponse{
+					ID:      "cmpl-" + requestId,
+					Object:  "chat.completion",
+					Created: 1,
+					Model:   Model,
+					Choices: []openai.CompletionChoice{
+						{
+							Index:        0,
+							Text:         "",
+							FinishReason: "abort",
+						},
+					},
+					KvTransferParams: map[string]any{
+						"address": i.Addr,
+						"port":    i.Port,
+					},
+				}
+				ctx.JSON(http.StatusOK, response)
+				return
+			}
+		}
+
 		response := openai.CompletionResponse{
 			ID:      "cmpl-" + requestId,
 			Object:  "test",
@@ -590,7 +830,7 @@ func (i *InferPara) CompletionsInfer(ctx *gin.Context) {
 		CompletionTokensDetails: nil,
 	}
 	kvTransferMetaData := fmt.Sprintf("%s:%s", request.KvTransferParams["address"], request.KvTransferParams["port"])
-	i.writeRes(ctx, request.MaxTokens, i.getCompletionResToken, usage, kvTransferMetaData, requestId)
+	i.writeRes(ctx, request.MaxTokens, i.getCompletionResToken, usage, kvTransferMetaData, requestId, request.MaxTokens > 0, false)
 }
 
 // hangingWithRequestId hangs in specific request_id scenario
@@ -690,8 +930,20 @@ func (i *InferPara) writeInitialResponse(ctx *gin.Context) error {
 	return nil
 }
 
-func (i *InferPara) writeRes(ctx *gin.Context, maxTokens int, tokenBytes func(string, int, *openai.Usage) ([]byte, error),
-	usage *openai.Usage, kvTransferMetaData string, requestId string) {
+func writeSSEData(ctx *gin.Context, data []byte) {
+	ctx.Writer.Write([]byte("data: "))
+	ctx.Writer.Write(data)
+	ctx.Writer.Write([]byte("\n\n"))
+}
+
+func writeSSEDone(ctx *gin.Context) {
+	ctx.Writer.Write([]byte("data: "))
+	ctx.Writer.Write([]byte{'[', 'D', 'O', 'N', 'E', ']', '\n', '\n'})
+	ctx.Writer.Flush()
+}
+
+func (i *InferPara) writeRes(ctx *gin.Context, maxTokens int, tokenBytes func(string, int, *openai.Usage, bool, bool, bool) ([]byte, error),
+	usage *openai.Usage, kvTransferMetaData string, requestId string, hasMaxTokens bool, hasTools bool) {
 	var err error
 
 	err = i.writeInitialResponse(ctx)
@@ -702,67 +954,21 @@ func (i *InferPara) writeRes(ctx *gin.Context, maxTokens int, tokenBytes func(st
 
 	for j := 0; j < maxTokens; j++ {
 		if i.IsError {
-			streamErr := StreamError{
-				StreamErrorBody: &StreamErrorBody{
-					Object: "error",
-					Message: fmt.Sprintf("mock error happened in instance [%s:%s] with code %v",
-						i.Addr, i.Port, i.ErrorCode),
-					Type: "err",
-					Code: i.ErrorCode,
-				},
-			}
-			bytes, err := utils.SonicApi.Marshal(streamErr)
-			if err != nil {
-				fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
-				ctx.JSON(http.StatusInternalServerError, err)
-				return
-			}
-			_, err = ctx.Writer.Write([]byte("data: "))
-			_, err = ctx.Writer.Write(bytes)
-			_, err = ctx.Writer.Write([]byte("\n\n"))
-			_, err = ctx.Writer.Write([]byte("data: "))
-			_, err = ctx.Writer.Write([]byte{'[', 'D', 'O', 'N', 'E', ']', '\n', '\n'})
-			ctx.Writer.Flush()
+			i.writeErrorStreamResponse(ctx)
 			return
 		}
 		if i.IsLinkDown {
-			_, exist := i.LinkDownList[kvTransferMetaData]
-			if len(i.LinkDownList) == 0 || exist {
-				streamErr := StreamError{
-					StreamErrorBody: &StreamErrorBody{
-						Object:  "error",
-						Message: "pd link is down!",
-						Type:    "PDLinkDownError",
-						Code:    500,
-					},
-				}
-				bytes, err := utils.SonicApi.Marshal(streamErr)
-				if err != nil {
-					fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
-					ctx.JSON(http.StatusInternalServerError, err)
-					return
-				}
-				_, err = ctx.Writer.Write([]byte("data: "))
-				_, err = ctx.Writer.Write(bytes)
-				_, err = ctx.Writer.Write([]byte("\n\n"))
-				_, err = ctx.Writer.Write([]byte("data: "))
-				_, err = ctx.Writer.Write([]byte{'[', 'D', 'O', 'N', 'E', ']', '\n', '\n'})
-				ctx.Writer.Flush()
+			if handled := i.writeLinkDownResponse(ctx, maxTokens, tokenBytes, kvTransferMetaData, requestId, hasMaxTokens, hasTools, j); handled {
 				return
 			}
 		}
 		if i.shouldHang(requestId) {
 			i.hangingWithRequestId(requestId)
 		}
-		if i.IsHybrid && j == 0 {
-			time.Sleep(time.Duration(i.TTFT) * time.Millisecond)
-			i.Collector.TimePerOutputToken.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
-		} else {
-			time.Sleep(time.Duration(i.TPOT) * time.Millisecond)
-			i.Collector.TimePerOutputToken.WithLabelValues(Model).Observe(float64(i.TPOT) / 1000.0)
-		}
+		i.sleepAndObserveTokenLatency(j)
 
-		responseBytes, err := tokenBytes(ctx.Request.Header.Get("X-Request-Id"), j, nil)
+		isLastToken := j == maxTokens-1
+		responseBytes, err := tokenBytes(ctx.Request.Header.Get("X-Request-Id"), j, nil, isLastToken, hasMaxTokens, hasTools)
 		if err != nil {
 			fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -778,7 +984,7 @@ func (i *InferPara) writeRes(ctx *gin.Context, maxTokens int, tokenBytes func(st
 		ctx.Writer.Flush()
 	}
 
-	lastResponse, err := tokenBytes(ctx.Request.Header.Get("X-Request-Id"), 0, usage)
+	lastResponse, err := tokenBytes(ctx.Request.Header.Get("X-Request-Id"), 0, usage, true, hasMaxTokens, hasTools)
 	// For streaming interface, when max token is not provided or is 1, one token will be output
 	// Native vLLM seems to not support max token being 0
 	if maxTokens == 0 || maxTokens == 1 {
@@ -789,15 +995,192 @@ func (i *InferPara) writeRes(ctx *gin.Context, maxTokens int, tokenBytes func(st
 		totalTime := i.TTFT + i.TPOT*(uint(maxTokens)-1)
 		i.Collector.End2EndTime.WithLabelValues(Model).Observe(float64(totalTime) / 1000.0)
 	}
-	_, err = ctx.Writer.Write(lastResponse)
-	_, err = ctx.Writer.Write([]byte("data: "))
-	_, err = ctx.Writer.Write([]byte{'[', 'D', 'O', 'N', 'E', ']', '\n', '\n'})
+	ctx.Writer.Write(lastResponse)
+	writeSSEDone(ctx)
+}
+
+func (i *InferPara) writeErrorStreamResponse(ctx *gin.Context) {
+	streamErr := StreamError{
+		StreamErrorBody: &StreamErrorBody{
+			Object: "error",
+			Message: fmt.Sprintf("mock error happened in instance [%s:%s] with code %v",
+				i.Addr, i.Port, i.ErrorCode),
+			Type: "err",
+			Code: i.ErrorCode,
+		},
+	}
+	bytes, err := utils.SonicApi.Marshal(streamErr)
 	if err != nil {
 		fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
 		ctx.JSON(http.StatusInternalServerError, err)
 		return
 	}
-	ctx.Writer.Flush()
+	writeSSEData(ctx, bytes)
+	writeSSEDone(ctx)
+}
+
+func (i *InferPara) sleepAndObserveTokenLatency(j int) {
+	if i.IsHybrid && j == 0 {
+		time.Sleep(time.Duration(i.TTFT) * time.Millisecond)
+		i.Collector.TimePerOutputToken.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
+	} else {
+		time.Sleep(time.Duration(i.TPOT) * time.Millisecond)
+		i.Collector.TimePerOutputToken.WithLabelValues(Model).Observe(float64(i.TPOT) / 1000.0)
+	}
+}
+
+func (i *InferPara) writeLinkDownResponse(ctx *gin.Context, maxTokens int, tokenBytes func(string, int, *openai.Usage, bool, bool, bool) ([]byte, error),
+	kvTransferMetaData string, requestId string, hasMaxTokens bool, hasTools bool, j int) (handled bool) {
+
+	linkDownTokenBeforeError := i.LinkDownTokenBeforeError
+	if linkDownTokenBeforeError > 0 && linkDownTokenBeforeError >= maxTokens {
+		linkDownTokenBeforeError = maxTokens - 1
+		if linkDownTokenBeforeError < 0 {
+			linkDownTokenBeforeError = 0
+		}
+	}
+	_, exist := i.LinkDownList[kvTransferMetaData]
+	if len(i.LinkDownList) == 0 || exist {
+		if linkDownTokenBeforeError > 0 && j < linkDownTokenBeforeError {
+			i.sleepAndObserveTokenLatency(j)
+			isLastToken := j == maxTokens-1
+			responseBytes, err := tokenBytes(ctx.Request.Header.Get("X-Request-Id"), j, nil, isLastToken, hasMaxTokens, hasTools)
+			if err != nil {
+				fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return true
+			}
+			_, err = ctx.Writer.Write(responseBytes)
+			if err != nil {
+				fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+				ctx.JSON(http.StatusInternalServerError, err)
+				return true
+			}
+			ctx.Writer.Flush()
+			return false
+		}
+		switch i.LinkDownVersion {
+		case LinkDownVersionOmni:
+			i.writeLinkDownOmni(ctx, requestId)
+		case LinkDownVersionVllmNew:
+			i.writeLinkDownVllmNew(ctx, requestId)
+		default:
+			i.writeLinkDownVllmAscend(ctx)
+		}
+		return true
+	}
+	return false
+}
+
+func (i *InferPara) writeLinkDownOmni(ctx *gin.Context, requestId string) {
+	omniAbortChunk := map[string]any{
+		"id":      "chatcmpl-" + requestId,
+		"object":  "chat.completion.chunk",
+		"created": time.Now().Unix(),
+		"model":   Model,
+		"choices": []map[string]any{
+			{
+				"index": 0,
+				"delta": map[string]any{
+					"content":           "",
+					"reasoning_content": nil,
+				},
+				"finish_reason": "abort",
+				"stop_reason":   "Abort for KV loading failure",
+				"token_ids":     nil,
+			},
+		},
+	}
+	omniErrBytes, err := utils.SonicApi.Marshal(omniAbortChunk)
+	if err != nil {
+		fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusInternalServerError, err)
+		return
+	}
+	writeSSEData(ctx, omniErrBytes)
+
+	omniUsageChunk := map[string]any{
+		"id":      "chatcmpl-" + requestId,
+		"object":  "chat.completion.chunk",
+		"created": time.Now().Unix(),
+		"model":   Model,
+		"choices": []map[string]any{},
+		"usage": map[string]any{
+			"prompt_tokens":     6,
+			"total_tokens":      6,
+			"completion_tokens": 0,
+		},
+	}
+	usageBytes, err := utils.SonicApi.Marshal(omniUsageChunk)
+	if err != nil {
+		fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusInternalServerError, err)
+		return
+	}
+	writeSSEData(ctx, usageBytes)
+	writeSSEDone(ctx)
+}
+
+func (i *InferPara) writeLinkDownVllmNew(ctx *gin.Context, requestId string) {
+	vllmNewChunk := map[string]any{
+		"id":      "chatcmpl-" + requestId,
+		"object":  "chat.completion.chunk",
+		"created": time.Now().Unix(),
+		"model":   Model,
+		"choices": []map[string]any{
+			{
+				"index": 0,
+				"delta": map[string]any{
+					"reasoning_content": nil,
+				},
+				"finish_reason": nil,
+				"token_ids":     nil,
+			},
+		},
+	}
+	vllmNewErrBytes, err := utils.SonicApi.Marshal(vllmNewChunk)
+	if err != nil {
+		fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusInternalServerError, err)
+		return
+	}
+	writeSSEData(ctx, vllmNewErrBytes)
+
+	vllmNewErrData := map[string]any{
+		"error": map[string]any{
+			"message": "KV cache load failed for one or more remote blocks. The request can be retried.",
+			"type":    "InternalServerError",
+			"param":   nil,
+			"code":    500,
+		},
+	}
+	errBytes, err := utils.SonicApi.Marshal(vllmNewErrData)
+	if err != nil {
+		fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusInternalServerError, err)
+		return
+	}
+	writeSSEData(ctx, errBytes)
+	writeSSEDone(ctx)
+}
+
+func (i *InferPara) writeLinkDownVllmAscend(ctx *gin.Context) {
+	vllmAscendErrData := map[string]any{
+		"error": map[string]any{
+			"message": "pd link is down!",
+			"type":    "PDLinkDownError",
+			"param":   nil,
+			"code":    500,
+		},
+	}
+	bytes, err := utils.SonicApi.Marshal(vllmAscendErrData)
+	if err != nil {
+		fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusInternalServerError, err)
+		return
+	}
+	writeSSEData(ctx, bytes)
+	writeSSEDone(ctx)
 }
 
 func (i *InferPara) Health(ctx *gin.Context) {
@@ -848,17 +1231,26 @@ func (i *InferPara) LinkDownHandler(ctx *gin.Context) {
 		return
 	}
 	i.IsLinkDown = true
+	if linkDownBody.Version != "" {
+		i.LinkDownVersion = linkDownBody.Version
+	}
+	if linkDownBody.TokenBeforeError > 0 {
+		i.LinkDownTokenBeforeError = linkDownBody.TokenBeforeError
+	}
 	for _, metaData := range linkDownBody.MetaDataList {
 		key := fmt.Sprintf("%s:%s", metaData.Address, metaData.Port)
 		i.LinkDownList[key] = struct{}{}
 	}
-	logger.Log().Infof("instance %s:%s status: link -> linkdown with %+v", i.Addr, i.Port, linkDownBody.MetaDataList)
+	logger.Log().Infof("instance %s:%s status: link -> linkdown with %+v, version=%s, token_before_error=%d",
+		i.Addr, i.Port, linkDownBody.MetaDataList, i.LinkDownVersion, i.LinkDownTokenBeforeError)
 	ctx.JSON(200, fmt.Sprintf("instance %s:%s status: link -> linkdown", i.Addr, i.Port))
 }
 
 func (i *InferPara) LinkUpHandler(ctx *gin.Context) {
 	i.IsLinkDown = false
 	i.LinkDownList = make(map[string]struct{})
+	i.LinkDownVersion = ""
+	i.LinkDownTokenBeforeError = 0
 	logger.Log().Infof("instance %s:%s status: linkdown -> link", i.Addr, i.Port)
 	ctx.JSON(200, fmt.Sprintf("instance %s:%s status: linkdown -> link", i.Addr, i.Port))
 }

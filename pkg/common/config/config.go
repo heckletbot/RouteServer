@@ -34,7 +34,7 @@ const (
 	TraceTypeNone              = "none"
 	TraceTypeOtel              = "otel"
 	TraceCompose               = "compose"
-	DefaultJaegerServiceName   = "ModelOrch"
+	DefaultJaegerServiceName   = "RouteServer"
 	DefaultJaegerEndpoint      = ""
 
 	DefaultCircuitBreakerFailureRateThreshold = 0.6
@@ -93,21 +93,22 @@ type TLSCertificateConfig struct {
 }
 
 type ServerConfig struct {
-	Addr                    string                `yaml:"addr"`
-	HttpPort                string                `yaml:"http-port"`
-	OpsPort                 string                `yaml:"ops-port"`
-	Name                    string                `yaml:"name"`
-	InferMode               string                `yaml:"infer-mode"`
-	InferenceModuleType     string                `yaml:"inference-module-type"`
-	RateLimitCfg            *RateLimitCfg         `yaml:"rate-limit"`
-	TraceCfg                *TraceConfig          `yaml:"trace,omitempty"`
-	V1StreamWritingEnable   bool                  `yaml:"v1-stream-writing-enabled"`
-	ResponseHeaderBlacklist []HeaderMatchMode     `yaml:"response-header-blacklist"`
-	ClientWriteTimeoutMs    int64                 `yaml:"client-write-timeout-ms"`
-	ReWriteRequestID        bool                  `yaml:"rewrite-request-id"`
-	TLSConfig               *TLSCertificateConfig `yaml:"tls,omitempty"`
-	OpsTLSConfig            *TLSCertificateConfig `yaml:"ops-tls,omitempty"`
-	MaxRequestBodySizeMB    int64                 `yaml:"max-request-body-size-mb"`
+	Addr                       string                `yaml:"addr"`
+	HttpPort                   string                `yaml:"http-port"`
+	OpsPort                    string                `yaml:"ops-port"`
+	Name                       string                `yaml:"name"`
+	InferMode                  string                `yaml:"infer-mode"`
+	InferenceModuleType        string                `yaml:"inference-module-type"`
+	RateLimitCfg               *RateLimitCfg         `yaml:"rate-limit"`
+	TraceCfg                   *TraceConfig          `yaml:"trace,omitempty"`
+	V1StreamWritingEnable      bool                  `yaml:"v1-stream-writing-enabled"`
+	ResponseHeaderBlacklist    []HeaderMatchMode     `yaml:"response-header-blacklist"`
+	ClientWriteTimeoutMs       int64                 `yaml:"client-write-timeout-ms"`
+	ReWriteRequestID           bool                  `yaml:"rewrite-request-id"`
+	TLSConfig                  *TLSCertificateConfig `yaml:"tls,omitempty"`
+	OpsTLSConfig               *TLSCertificateConfig `yaml:"ops-tls,omitempty"`
+	MaxRequestBodySizeMB       int64                 `yaml:"max-request-body-size-mb"`
+	EnableOpsAPIsOnServicePort bool                  `yaml:"enable-ops-apis-on-service-port"`
 }
 
 type HttpConfig struct {

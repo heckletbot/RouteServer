@@ -21,14 +21,14 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/dgraph-io/ristretto"
+	"github.com/dgraph-io/ristretto/v2"
 	"infer-dp-scheduler/pkg/common/config"
 	"infer-dp-scheduler/pkg/common/logger"
 )
 
 // RistrettoCache is the Ristretto cache implementation
 type RistrettoCache struct {
-	cache *ristretto.Cache
+	cache *ristretto.Cache[string, any]
 }
 
 // RistrettoStats holds Ristretto statistics
@@ -43,7 +43,7 @@ type RistrettoStats struct {
 // NewRistrettoCache creates a Ristretto cache instance
 func NewRistrettoCache(config config.APCStrategyMemoryConfig) (*RistrettoCache, error) {
 	// Create Ristretto config
-	ristrettoConfig := &ristretto.Config{
+	ristrettoConfig := &ristretto.Config[string, any]{
 		NumCounters: 10 * config.MaxEntries,           // Default 10x
 		MaxCost:     config.MaxMemoryMB * 1024 * 1024, // Convert to bytes
 		BufferItems: 64,                               // Default value
@@ -51,7 +51,7 @@ func NewRistrettoCache(config config.APCStrategyMemoryConfig) (*RistrettoCache, 
 	}
 
 	// Create cache instance
-	cache, err := ristretto.NewCache(ristrettoConfig)
+	cache, err := ristretto.NewCache[string, any](ristrettoConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ristretto cache: %v", err)
 	}

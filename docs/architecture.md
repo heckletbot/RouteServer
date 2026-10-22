@@ -1,10 +1,10 @@
-# ModelOrch Architecture
+# RouteServer Architecture
 
-ModelOrch is a distributed OpenAI inference orchestration frontend, designed for Large Language Model (LLM) service scenarios. It supports inference workflows across various vLLM deployment patterns. Aiming to provide distributed high-availability inference request execution workflows, it achieves efficient, scalable, and reliable inference load-balancing services through centralized request scheduling, inference engine fault awareness and isolation, and cluster state coordination.
+RouteServer is a distributed OpenAI inference orchestration frontend, designed for Large Language Model (LLM) service scenarios. It supports inference workflows across various vLLM deployment patterns. Aiming to provide distributed high-availability inference request execution workflows, it achieves efficient, scalable, and reliable inference load-balancing services through centralized request scheduling, inference engine fault awareness and isolation, and cluster state coordination.
 
 - Supports two deployment modes:
   - **Standalone deployment**: Simple single-machine deployment, suitable for scenarios where inference instance addresses are fixed in advance.
-  - **Distributed deployment**: Supports distributed request processing with horizontal scaling to prevent ModelOrch from becoming an inference performance bottleneck. Through leader election, it provides centralized and unified inference request scheduling to avoid scheduling conflict performance issues caused by distributed routers scheduling independently.
+  - **Distributed deployment**: Supports distributed request processing with horizontal scaling to prevent RouteServer from becoming an inference performance bottleneck. Through leader election, it provides centralized and unified inference request scheduling to avoid scheduling conflict performance issues caused by distributed routers scheduling independently.
 
 - Supports multiple vLLM deployment modes:
   - [PD Hybrid](docs/orchestrations/pd-hybrid.md): Prefill and Decode stages run in the same vLLM instance.
@@ -96,7 +96,7 @@ block
 
 ## Architecture Overview
 
-The architecture of ModelOrch is organized into six layers, from top to bottom:
+The architecture of RouteServer is organized into six layers, from top to bottom:
 
 - **Interfaces Layer** — Entry points for external access, including OpenAI-compatible inference APIs and operational management APIs.
 - **Middlewares Layer** — Common HTTP processing logic such as HTTPS termination, request ID rewriting, and rate limiting.
@@ -110,18 +110,18 @@ The architecture of ModelOrch is organized into six layers, from top to bottom:
 
 ## 1. Interfaces Layer
 
-ModelOrch exposes two categories of external interfaces:
+RouteServer exposes two categories of external interfaces:
 
 ### OpenAI Inference APIs
 
-ModelOrch is compatible with the OpenAI API specification and provides the following core inference endpoints:
+RouteServer is compatible with the OpenAI API specification and provides the following core inference endpoints:
 
 | Endpoint | Description |
 |---|---|
 | `POST /v1/chat/completions` | Chat completions — the primary endpoint for interactive LLM chat scenarios |
 | `POST /v1/completions` | Text completions — for traditional text completion tasks |
 
-These endpoints accept the same request/response format as OpenAI's API. ModelOrch handles the request by routing it through the configured pipeline, scheduling appropriate inference instances, and returning responses in the OpenAI-compatible streaming or non-streaming format.
+These endpoints accept the same request/response format as OpenAI's API. RouteServer handles the request by routing it through the configured pipeline, scheduling appropriate inference instances, and returning responses in the OpenAI-compatible streaming or non-streaming format.
 
 ### Ops APIs
 
@@ -167,7 +167,7 @@ Additionally, a **request body size limiter** (`pkg/route-server/middleware/body
 
 ## 3. Orchestrated Pipeline Layer
 
-This is the core inference workflow engine of ModelOrch. It provides a **configuration-driven, DAG-based execution framework** that assembles inference workflows by declaring Phases and their dependencies in YAML configuration files.
+This is the core inference workflow engine of RouteServer. It provides a **configuration-driven, DAG-based execution framework** that assembles inference workflows by declaring Phases and their dependencies in YAML configuration files.
 
 See [About Infer Pipeline](docs/orchestrations/about-infer-pipeline.md) for a detailed explanation of the pipeline framework.
 
@@ -223,7 +223,7 @@ See [Inference Instance Health](infer-instance-health.md) for a detailed explana
 
 ## 6. Cluster State Manager Layer
 
-The cluster manager provides distributed coordination for multi-node ModelOrch deployments. It is built on top of Etcd and supports two modes: standalone (singleton) and distributed (Etcd-based).
+The cluster manager provides distributed coordination for multi-node RouteServer deployments. It is built on top of Etcd and supports two modes: standalone (singleton) and distributed (Etcd-based).
 
 ### Cluster Service Interface
 
@@ -246,7 +246,7 @@ Defined in `pkg/common/cluster/types.go`, the `ClusterService` interface provide
 ### Cluster State Consistency
 
 The cluster state (`ClusterState` in `types.go`) includes:
-- **Peers**: All active ModelOrch nodes in the cluster
+- **Peers**: All active RouteServer nodes in the cluster
 - **InstanceRoutes**: Mapping of inference instances to their hosting nodes
 - **Version**: State version for consistency checking
 

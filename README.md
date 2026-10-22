@@ -1,12 +1,12 @@
-# ModelOrch
+# RouteServer
 
 # About
 
-ModelOrch is a distributed OpenAI inference orchestration frontend, designed for Large Language Model (LLM) service scenarios. It supports inference workflows across various vLLM deployment patterns. Aims to provide distributed high-availability inference request execution workflows, it achieves efficient, scalable, and reliable inference load-balancing services through centralized request scheduling, inference engine fault awareness and isolation, and cluster state coordination.
+RouteServer is a distributed OpenAI inference orchestration frontend, designed for Large Language Model (LLM) service scenarios. It supports inference workflows across various vLLM deployment patterns. Aims to provide distributed high-availability inference request execution workflows, it achieves efficient, scalable, and reliable inference load-balancing services through centralized request scheduling, inference engine fault awareness and isolation, and cluster state coordination.
 
 - Supports two deployment modes
   - Standalone deployment: Simple single-machine deployment, suitable for scenarios where inference instance addresses are fixed in advance
-  - Distributed deployment: Supports distributed request processing with horizontal scaling to prevent ModelOrch from becoming an inference performance bottleneck. Through leader election, it provides centralized and unified inference request scheduling to avoid scheduling conflict performance issues caused by distributed routers scheduling independently
+  - Distributed deployment: Supports distributed request processing with horizontal scaling to prevent RouteServer from becoming an inference performance bottleneck. Through leader election, it provides centralized and unified inference request scheduling to avoid scheduling conflict performance issues caused by distributed routers scheduling independently
 - Supports multiple vLLM deployment modes:
   - [PD hybrid](docs/orchestrations/pd-hybrid.md): prefill and decode stage runs in same vLLM instance.
   - [PD separation](docs/orchestrations/pd-disaggregate.md): prefill and decode stages disaggregated into separate vLLM instances for independent scaling.
@@ -20,10 +20,6 @@ see our [architecture docs](docs/architecture.md) and [code-base structure](docs
 
 # Getting Started
 
-TODO: go & make
-
-## Compile & packing
-
 ## Quickstart
 
 ### Prerequisites
@@ -33,19 +29,20 @@ TODO: go & make
 
 ### Build and Package
 
-1. Move to the root directory of the project
-
-2. make the deploy package:
 ```bash
-# Clean previous builds and create the package
+# Clean previous builds and create the deploy package
 make clean && make package
 ```
+
+This will produce a zip package at `output/ModelOrch-<version>-<timestamp>.zip`.
+
+For detailed build instructions and available Makefile targets, see the [Build Guide](docs/build.md).
 
 ### Deploy with PD Separation Example
 
 1. Navigate to the package directory:
 ```bash
-cd output/DistributedScheduler
+cd output/RouteServer
 ```
 
 2. Set environment variables for your inference framework instances (OpenAI format compatible):
@@ -54,9 +51,16 @@ export PREFILL_SERVERS="<YOUR_PREFILL_IP>:<PORT>"
 export DECODE_SERVERS="<YOUR_DECODE_IP>:<PORT>"
 ```
 
-3. Deploy a single ModelOrch in local:
+3. Deploy a single RouteServer in local:
 ```bash
-bash deploy.sh --port 9800 --mode singleton --host <YOUR_IP>
+bash deploy.sh \
+    --port 9800 \
+    --mode singleton \
+    --host <YOUR_IP>  \
+    --enable-https false \
+    --ops-enable-https false \
+    --client-https-enable false \
+    --etcd-tls-enable false
 ```
 
 4. Check the status of cluster:
@@ -64,7 +68,7 @@ bash deploy.sh --port 9800 --mode singleton --host <YOUR_IP>
 curl -X GET http://<YOUR_IP>:9800/status
 ```
 
-> For more deployment options and configurations, see our [deploying script reference](docs/deploy.md)
+For more deployment options and configurations, see our [deploying script reference](docs/deploy.md)
 
 ## Security
 
@@ -78,8 +82,23 @@ visit our [Config reference](docs/config-spec.md) for developers
 
 ## Contributing
 
-TBD
+We welcome contributions! Please follow these steps:
+
+1. **Fork** the repository
+2. **Create a feature branch** (`git checkout -b feature/my-feature`)
+3. **Make your changes** and ensure code quality:
+   ```bash
+   # Format and lint your code
+   make fmt
+   make vet
+   # Run tests
+   make test
+   ```
+4. **Commit your changes** with a clear commit message
+5. **Submit a Pull Request** against the main branch
+
+For major changes, please open an issue first to discuss what you would like to change.
 
 ## License
 
-ModelOrch is licensed under Apache License 2.0
+RouteServer is licensed under Apache License 2.0

@@ -13,7 +13,7 @@ server:
       - log
     otel-config:
       jaeger-endpoint:
-      jaeger-service-name: ModelOrch
+      jaeger-service-name: RouteServer
       span-update-seconds: 5
       trace-sample-rate: 1.0
   response-header-blacklist:
@@ -48,9 +48,10 @@ server:
     cert-file:
     key-file:
     ca-cert-file:
+  enable-ops-apis-on-service-port: false
 logger:
   enabled: true
-  filename: <dir_to_log>/model-orch.log
+  filename: <dir_to_log>/route-server.log
   max-size: 1024
   max-age: 15
   max-backups: 10
@@ -95,7 +96,7 @@ instance-manager:
       rest-health:
         enable: true
         fail-on-500-directly: true
-        consecutive-time: 3 # 连续发送几次
+        consecutive-time: 3
       request-failures:
         enable: true
         consecutive-failure: false

@@ -182,7 +182,7 @@ func tryParseErrFromOmini(statusCode int, body []byte) (*InstanceFailureDetails,
 		stopReason := fmt.Sprintf("%v", omini.ChoicesBody[0].StopReason)
 		if strings.Contains(strings.ToLower(stopReason), OminiKVTransferErr) {
 			details := &InstanceFailureDetails{
-				StatusCode:      http.StatusInternalServerError, //omini原生是200，内部行为和ascend vllm一致为500
+				StatusCode:      http.StatusInternalServerError, // change 200 to 500 for consistency.
 				IsTimeout:       false,
 				IsConnectionErr: false,
 				IsKVTransferErr: true,
