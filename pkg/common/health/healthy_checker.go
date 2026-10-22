@@ -380,12 +380,12 @@ func (hcm *HealthyCheckerModule) shouldMoveToUnhealthy(instance *client.Instance
 	if instance.Stats.GetStatus() == instance_metrics.Available {
 		if instance.ConsecutiveHealthFailed < int32(hcm.availableCfg.ConsecutiveTime) {
 			logger.Log().Infof("instance [%s] /health check failed [%v] times, "+
-				"will be move to unavaiable after [%v] consecutive failures, last err = %v",
+				"will be move to unavailable after [%v] consecutive failures, last err = %v",
 				instance.Client.GetEndpoint(), instance.ConsecutiveHealthFailed, hcm.availableCfg.ConsecutiveTime, instance.LastError)
 			return false
 		} else {
 			logger.Log().Warnf("instance [%s] /health check failed [%v] times, "+
-				"reach [%v] consecutive failures, move to unavilable status",
+				"reach [%v] consecutive failures, move to unavailable status",
 				instance.Client.GetEndpoint(), instance.ConsecutiveHealthFailed, hcm.availableCfg.ConsecutiveTime)
 			return true
 		}

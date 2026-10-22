@@ -54,7 +54,7 @@ $$l_q \approx \text{length}(q)$$
 $$\text{Load} = \text{total\_len} \times \frac{\lceil \text{req\_num} / \text{batchsize} \rceil + 1}{2}$$
 
 - 当 `req_num < batchsize` 时，负载等于 Token 长度之和。
-- 当 `req_num >= batchsize` 时，负载等于 Token 长度之和乘以 1.5 倍（假设 `req_num` 刚好超过 `batchsize`），起到软惩罚作用，避免向 BatchSize 已满的实例继续发送请求。
+- 当 `req_num >= batchsize` 时，负载等于 Token 长度之和乘以 1.5 倍（假设 `req_num` 刚好超过 `batchsize`），起到软惩罚作用，避免向 BatchSize 已满的实例继续发送请求。每轮计算以当时请求数为准，决定是否乘上惩罚系数。
 
 **记忆修正：** 调度器在分发请求后立即累加预估负载（请求个数 +1、Token 长度加上当前请求长度），请求完成时再减去。即使指标反馈存在延迟，调度决策仍基于最新的负载估计，避免短时间内将大量请求集中到同一实例。
 
@@ -63,10 +63,10 @@ $$\text{Load} = \text{total\_len} \times \frac{\lceil \text{req\_num} / \text{ba
 
 ### 2. 调度逻辑
 
-1. 请求到来时，按负载公式计算各实例负载并升序排序。
+1. 请求到来时，按负载公式计算各实例负载并升序排序，不计入当前新增请求。
 2. 选择负载最低的实例分发请求；若存在黑名单实例则跳过。
 3. 分发后立即更新该实例的请求计数和 Token 长度累计（记忆修正）。
-4. 请求完成时，从对应实例减去该请求的负载。
+4. 请求完成时，从对应实例减去该请求的负载，及时更新负载估计。
 
 ### 3. 配置参数
 
@@ -88,7 +88,7 @@ APC（Aware Prefix Cache）算法在 least-total-load 的基础上增加了前�
 1. **APCScheduler**：调度器层，负责负载计算、实例选择和负载增减管理。
 2. **APCManager**：全局管理器，负责缓存查找、匹配、更新和持久化，支持多调度器通过共享内存协同。
 
-**缓存匹配策略：** 当前支持 RollingHash 策略——将 Prompt 按固定大小分块（`block_size_bytes`），计算每块的滚动哈希值，通过哈希值在缓存中查找与当前 Prompt 前缀匹配的实例，返回匹配比例（`matched_ratio`）。支持 Progressive Block 策略，以更大粒度块先做粗筛，再细粒度匹配。
+**缓存匹配策略：** 当前支持 RollingHash 策略——将 Prompt 按固定大小分块（`block-size-bytes`），计算每块的滚动哈希值，通过哈希值在缓存中查找与当前 Prompt 前缀匹配的实例，返回匹配比例（`matched_ratio`）。支持 Progressive Block 策略，以更大粒度块先做粗筛，再细粒度匹配。
 
 **负载建模：** 在 least-total-load 公式基础上，将请求的 Prompt Token 长度按匹配比例折减：
 
@@ -123,12 +123,12 @@ $$\text{Load} = \text{total\_len} \times \frac{\lceil \text{req\_num} / \text{ba
 | 参数 | 说明 | 默认值 |
 |---|---|---|
 | enable | 是否启用 APC | false |
-| strategies.hash.block_size_bytes | 分块大小（字节） | 64 |
-| strategies.hash.max_blocks | 最大分块数 | 128 |
-| strategies.hash.max_entries | 缓存最大条目数 | 100000 |
-| strategies.hash.max_memory_mb | 缓存最大内存（MB） | 512 |
-| strategies.hash.cache_ttl_sec | 缓存 TTL（秒） | 3600 |
-| strategies.hash.progressive_base_block_size_bytes | 渐进分块基础大小 | 256 |
+| strategies.hash.block-size-bytes | 分块大小（字节） | 64 |
+| strategies.hash.max-blocks | 最大分块数 | 128 |
+| strategies.hash.max-entries | 缓存最大条目数 | 100000 |
+| strategies.hash.max-memory-mb | 缓存最大内存（MB） | 512 |
+| strategies.hash.cache-ttl-sec | 缓存 TTL（秒） | 3600 |
+| strategies.hash.progressive-base-block-size-bytes | 渐进分块基础大小 | 256 |
 | persistence.enable | 是否启用持久化 | false |
 | persistence.provider | 持久化提供者 | - |
 
@@ -150,17 +150,18 @@ $$\text{Load} = \text{total\_len} \times \frac{\lceil \text{req\_num} / \text{ba
 
 **记忆修正：** 从请求分发到实际执行、再到负载指标反馈存在时延，仅依赖反馈指标会导致短时间内请求集中到"看起来负载最低"的实例。abc6 的记忆修正机制如下：
 
-- 分发请求时，立即将预估负载累加到目标实例（Token 长度 +1，运行队列 / 等待队列 +1）。
-- 请求完成时，减去对应的预估负载。
-- 若反馈指标已被刷新，则跳过减操作，避免出现负数。
+- 分发请求时，立即将预估负载累加到目标实例，根据当前系统状态，分为两种更新方式：
+  - 当排序类型为 TokenLoads（部分过载/全部不过载）时：`TokenLoads += reqLen`，`RunningQueue += 1`
+  - 当排序类型为 WaitingQueue（全部过载）时：`WaitingQueue += 1`，TokenLoads 和 RunningQueue 不变
+- 当采集数据更新后，更新负载估计数据为最新的采集数据。
 
-**过载判定与惩罚：** 判定实例过载的条件：
+**过载判定与惩罚：** 当某个实例出现排队或快要排队情况，则认为该实例过载/即将过载，需要减少发送请求。根据实际经验，实例过载往往发生过快，所以需要提前预判。判定实例过载的条件：
 
 ```
-waiting_queue >= 2  或  running_queue >= batchsize - 1
+WaitingQueue >= 2  或  RunningQueue >= batchsize - 1
 ```
 
-过载实例在排序时施加惩罚值（默认 1,280,000），使其排序靠后。
+过载实例在排序时施加惩罚值，使其排序靠后。
 
 ![调度算法示意图](imgs/dp.jpg)
 <center>abc6 调度算法示意图</center>
@@ -168,21 +169,19 @@ waiting_queue >= 2  或  running_queue >= batchsize - 1
 ### 2. 调度逻辑
 
 1. 检查所有实例是否过载：
-   - **全部过载**：按等待队列数（`waiting_queue`）排序，选择等待请求最少的实例，退化为基于请求个数的均衡策略。
+   - **全部过载**：按等待请求数（`WaitingQueue`）排序，选择等待请求最少的实例，退化为基于请求个数的均衡策略。
    - **部分过载**：按 Token 长度负载排序，对过载实例施加惩罚，选择负载最低的未过载实例。
 2. 在排序结果中跳过黑名单实例，选择第一个可用实例。
 3. 分发后更新记忆负载。
-4. 请求完成时，减去对应的预估负载。
+4. 采集数据发生更新后，及时更新负载估计。
 
-**指标过期机制：** 采集的指标如果超过 `metrics_overdue_interval_ms`（默认 1000ms）未更新，则判定为过期，不采纳该指标，保留上一次的有效值。当检测到实例的运行队列从大于 0 变为 0，且距上次更新超过 5 秒时，强制更新指标。
+
 
 ### 3. 配置参数
 
 | 参数 | 说明 | 默认值 |
 |---|---|---|
 | max_num_seqs | 实例最大 BatchSize | 16 |
-| update_interval_ms | 指标同步间隔（ms），-1 表示仅在节点变化时更新 | -1 |
-| metrics_overdue_interval_ms | 指标过期阈值（ms） | 1000 |
 
 ---
 
@@ -194,22 +193,22 @@ waiting_queue >= 2  或  running_queue >= batchsize - 1
 
 ```yaml
 schedulers:
-  - instance_role: decode
-    scheduler_name: abc6
+  - instance-role: decode
+    scheduler-name: abc6
     params:
       max_num_seqs: 32
-      update_interval_ms: 500
-      metrics_overdue_interval_ms: 1000
+      update-interval-ms: 500
+      metrics-overdue-int-ms: 1000
 
-  - instance_role: prefill
-    scheduler_name: least-total-load
+  - instance-role: prefill
+    scheduler-name: least-total-load
     params:
       max_num_seqs: 16
       verbose: false
 
   # 带缓存感知的 Prefill 调度
-  - instance_role: prefill
-    scheduler_name: apc
+  - instance-role: prefill
+    scheduler-name: apc
     params:
       default-batch-size: 16
       prefix-load-base: 1
@@ -230,7 +229,7 @@ schedulers:
 | 维度 | round-robin | least-total-load | apc | abc6 |
 |---|---|---|---|---|
 | 负载感知 | 无 | Token 长度 + BatchSize 惩罚 | Token 长度 + 缓存匹配 + BatchSize 惩罚 | Token 长度 + 队列状态 + 过载惩罚 |
-| 指标采集 | 无 | 无（自维护） | 自维护 + 缓存查找 | 4 项指标 |
+| 指标采集 | 无 | 无（自维护） | 4 项指标 + 缓存查找 | 4 项指标 |
 | 适用阶段 | 任意 | Prefill | Prefill（KV Cache 复用场景） | Decode |
 | 缓存感知 | 无 | 无 | 有（RollingHash 策略） | 无 |
 | 过载保护 | 无 | 软惩罚（公式系数） | 软惩罚（公式系数） | 硬判定 + 惩罚值 |

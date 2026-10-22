@@ -16,7 +16,7 @@
 
 umask 077
 DEPLOY_ROOT_PATH=$(cd "$(dirname "$0")"; pwd)
-MO_NAME=""
+RS_NAME=""
 PORT=9800
 MAXPROCS=0
 HOST=""
@@ -24,7 +24,7 @@ REMOTE_SCHEDULER_TYPE="disable"
 REMOTE_SCHEDULER_ENDPOINT=""
 DAEMON=""
 LOG_FILE_FULL_PATH=""
-PACKAGE_DIR=DistributedScheduler
+PACKAGE_DIR=route-server
 CANDIDATE_SWITCH="true"
 ETCD_ENDPOINTS=${ETCD_ENDPOINTS}
 SHOW_STD_OUTPUT="false"
@@ -58,29 +58,29 @@ ETCD_KEY_FILE=""
 ETCD_CA_CERT_FILE=""
 
 show_help() {
-  echo "Usage: $0 [OPTIONS], Script used to deploy model orch"
+  echo "Usage: $0 [OPTIONS], Script used to deploy route server"
   echo ""
   echo "Options:"
-  echo "  --mo_name     name of the model orch instance (default: ModelOrch_<IP>_<PORT>)"
-  echo "  --port        port of the http server of ModelOrch (default: 9800)"
-  echo "  --host        specify the IP address of this ModelOrch instance (default: auto-detect)"
+  echo "  --rs_name     name of the route server instance (default: RouteServer_<IP>_<PORT>)"
+  echo "  --port        port of the http server of route server (default: 9800)"
+  echo "  --host        specify the IP address of this route server instance (default: auto-detect)"
   echo "  --max-procs   env GOMAXPROCS value, default (0, ignored)"
   echo "  --remote-scheduler-type, accept <leader> or <endpoint> or disable, defaults to be disable"
   echo "  --remote-scheduler-endpoint remote endpoint of scheduler, eg. http://x.x.x.x:xxxx . \
 will change remote-scheduler-type to endpoint if this option is set"
   echo "  --daemon      whether running as daemon mode, if set to true, then this script will \
-wait until model orch process exists"
+wait until route-server process exists"
   echo "  --collect-metrics-unique-ip whether collecting metrics from unique instance per ip. eg. true. \
 if it not set, then collecting metrics from all instances."
-  echo "  --log-file-path path to model orch log file, if not set, then it will use \
-MO_INSTALL_DIR/<mo_name>/DistributedScheduler/log/model-orch.log, must give full real path"
+  echo "  --log-file-path path to route server log file, if not set, then it will use \
+RS_INSTALL_DIR/<rs_name>/RouteServer/log/route-server.log, must give full real path"
   echo "  --domain      domain of leader IP , eg. localhost (default: "")"
   echo "  --use_domain_for_leader    whether to use domain to find leader (true/false) (default:false)"
-  echo "  --candidate switch to config this model orch instance to candidate, accept true or false, (default: true)"
+  echo "  --candidate switch to config this route-server instance to candidate, accept true or false, (default: true)"
   echo "  --etcd-endpoints endpoints for etcd, separate with comma, (e.g. localhost:2379,localhost:2480 )"
-  echo "  --show-std-output show model orch process stdout and stderr, takes true if shows (default: false)"
-  echo "  --mode set the cluster mode of model orch (singleton/etcd) (default: "")"
-  echo "  --infer-mode infer deploy mode (PD/PD-AM/EPD/Hybrid/Layerwise-CDCP/Layerwise-CPCD) (default: PD)"
+  echo "  --show-std-output show route-server process stdout and stderr, takes true if shows (default: false)"
+  echo "  --mode set the cluster mode of the route server (singleton/etcd) (default: "")"
+  echo "  --infer-mode infer deploy mode (PD/PD-AM/EPD/Hybrid/Layerwise-CDCP/Layerwise-CPCD/VA-PD) (default: PD)"
   echo "  --infer-module-version infer module version(v0/pipeline) (default: pipeline)"
   echo "  --readiness-cfg readiness config, set the least number of instances for each role, separate with # (default: prefill:1#decode:1)"
   echo "  --reuse-prefilled-tokens enable this flag to reuse prefilled tokens for layerwise mode (default: false)"
@@ -109,7 +109,7 @@ MO_INSTALL_DIR/<mo_name>/DistributedScheduler/log/model-orch.log, must give full
   echo "  --help        Show this help message"
   echo ""
   echo "Example:"
-  echo "  $0 --mo_name route1 --port 30000"
+  echo "  $0 --rs_name route1 --port 30000"
   echo "Env information: "
   echo "Required Env (Only in the mode of route-table is in yaml configs)"
   echo "  PREFILL_SERVERS: prefill server list, format as <ip1:port1>,<ip2:port2>" \
@@ -123,7 +123,7 @@ MO_INSTALL_DIR/<mo_name>/DistributedScheduler/log/model-orch.log, must give full
   echo "  ENCODE_SERVERS: encode server list, format as <ip1:port1>,<ip2:port2>, " \
        "it is required if infer-mode is EPD"
   echo "Optional Env "
-  echo "  MO_INSTALL_DIR: install dir for model orch, default: /opt/model_orch"
+  echo "  RS_INSTALL_DIR: install dir for route server, default: /opt/route_server"
   exit 0
 }
 
@@ -132,12 +132,10 @@ CPU_COUNT=$(nproc)
 
 validate_max_procs() {
     local procs=$1
-    # 检查是否为数字
     if [[ ! "$procs" =~ ^[0-9]+$  ]]; then
         echo "max-procs must be number" >&2
         return 1
     fi
-    # 检查范围
     if (( procs < 0 || procs > CPU_COUNT )); then
         echo "max procs must be in [0, ${CPU_COUNT}], (0 is not set)" >&2
         return 1
@@ -147,12 +145,12 @@ validate_max_procs() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --mo_name)
+    --rs_name)
         if [ -n "$2" ] && [[ "$2" != --* ]]; then
-          MO_NAME="$2"
+          RS_NAME="$2"
           shift 2
         else
-          echo "Error: --mo_name requires a name arg"
+          echo "Error: --rs_name requires a name arg"
           exit 1
         fi
         ;;
@@ -300,8 +298,8 @@ while [[ $# -gt 0 ]]; do
       if [ -n "$2" ] && [[ "$2" != --* ]]; then
           INFER_MODE="$2"
           shift 2
-          if [[ "$INFER_MODE" != "PD" && "$INFER_MODE" != "EPD" && "$INFER_MODE" != "PD-AM" && "$INFER_MODE" != "Hybrid" && "$INFER_MODE" != "Layerwise-CDCP" && "$INFER_MODE" != "Layerwise-CPCD" ]]; then
-              echo "Error: --infer-mode must be one of: PD, PD-AM, EPD, Hybrid, Layerwise-CDCP, Layerwise-CPCD, got '$INFER_MODE'"
+          if [[ "$INFER_MODE" != "PD" && "$INFER_MODE" != "EPD" && "$INFER_MODE" != "PD-AM" && "$INFER_MODE" != "Hybrid" && "$INFER_MODE" != "Layerwise-CDCP" && "$INFER_MODE" != "Layerwise-CPCD" && "$INFER_MODE" != "VA-PD" ]]; then
+              echo "Error: --infer-mode must be one of: PD, PD-AM, EPD, Hybrid, Layerwise-CDCP, Layerwise-CPCD, VA-PD, got '$INFER_MODE'"
               exit 1
           fi
       else
@@ -603,15 +601,15 @@ get_ip() {
   echo "$ip"
 }
 
-if [ -z "${MO_NAME}" ]; then
-  echo Failed: MO_NAME is required
+if [ -z "${RS_NAME}" ]; then
+  echo Failed: RS_NAME is required
   ip=$(get_ip)
   if [ -z "$ip" ]; then
-    echo "Failed: No mo_name is given, failed to get host ip to assign name"
+    echo "Failed: No rs_name is given, failed to get host ip to assign name"
     exit 1
   fi
-  MO_NAME=ModelOrch_"${ip//./_}"_"${PORT}"
-  echo mo_name is not given, assigning default name to "${MO_NAME}"
+  RS_NAME=RouteServer_"${ip//./_}"_"${PORT}"
+  echo rs_name is not given, assigning default name to "${RS_NAME}"
 fi
 
 if [ ! -d "${DEPLOY_ROOT_PATH}/${PACKAGE_DIR}" ]; then
@@ -619,8 +617,8 @@ if [ ! -d "${DEPLOY_ROOT_PATH}/${PACKAGE_DIR}" ]; then
   exit 1
 fi
 
-if [ ! -f "${DEPLOY_ROOT_PATH}/model-orch-template.yaml" ]; then
-  echo Failed: "${DEPLOY_ROOT_PATH}/model-orch-template.yaml" not found in deploy dir, check release pkg version
+if [ ! -f "${DEPLOY_ROOT_PATH}/route-server-template.yaml" ]; then
+  echo Failed: "${DEPLOY_ROOT_PATH}/route-server-template.yaml" not found in deploy dir, check release pkg version
   exit 1
 fi
 
@@ -636,12 +634,12 @@ fi
 
 if [ -z "${PORT}" ]; then
   PORT=9800
-  echo "ModelOrch serving port not set, set to default ${PORT}"
+  echo "RouteServer serving port not set, set to default ${PORT}"
 fi
 
-if [ -z "${MO_INSTALL_DIR}" ]; then
-  MO_INSTALL_DIR="/opt/model_orch"
-  echo "Env MO_INSTALL_DIR not set, set to default location ${MO_INSTALL_DIR}"
+if [ -z "${RS_INSTALL_DIR}" ]; then
+  RS_INSTALL_DIR="/opt/huawei"
+  echo "Env RS_INSTALL_DIR not set, set to default location ${RS_INSTALL_DIR}"
 fi
 
 if [ -z "${USE_DOMAIN_FOR_LEADER}" ]; then
@@ -664,39 +662,39 @@ if [ "${INFER_MODE}" = "EPD" ] && [ -z "${ENCODE_SERVERS}" ] ; then
     exit 1
 fi
 
-MO_PATH=${MO_INSTALL_DIR}/${MO_NAME}
+RS_PATH=${RS_INSTALL_DIR}/${RS_NAME}
 
-if [ ! -d "${MO_PATH}" ]; then
-  mkdir -p "${MO_PATH}"
+if [ ! -d "${RS_PATH}" ]; then
+  mkdir -p "${RS_PATH}"
 fi
 
-echo install ModelOrch to "${MO_PATH}"
-if [ -d "${MO_PATH}/${PACKAGE_DIR}/bin" ]; then
-  chmod u+w "${MO_PATH}/${PACKAGE_DIR}/bin"
+echo install RouteServer to "${RS_PATH}"
+if [ -d "${RS_PATH}/${PACKAGE_DIR}/bin" ]; then
+  chmod u+w "${RS_PATH}/${PACKAGE_DIR}/bin"
 fi
-cp -rf "${DEPLOY_ROOT_PATH}/${PACKAGE_DIR}" "${MO_PATH}/"
+cp -rf "${DEPLOY_ROOT_PATH}/${PACKAGE_DIR}" "${RS_PATH}/"
 
-export ENV_MODEL_ORCH_CONFIG_PATH="${MO_PATH}/${PACKAGE_DIR}/config"
-export ENV_MODEL_ORCH_LOG_PATH="${MO_PATH}/${PACKAGE_DIR}/log"
-mkdir -p "${ENV_MODEL_ORCH_CONFIG_PATH}"
-mkdir -p "${ENV_MODEL_ORCH_LOG_PATH}"
+export ENV_ROUTE_SERVER_CONFIG_PATH="${RS_PATH}/${PACKAGE_DIR}/config"
+export ENV_ROUTE_SERVER_LOG_PATH="${RS_PATH}/${PACKAGE_DIR}/log"
+mkdir -p "${ENV_ROUTE_SERVER_CONFIG_PATH}"
+mkdir -p "${ENV_ROUTE_SERVER_LOG_PATH}"
 
-echo kill existing model orch if exists
-ps -ef | grep "${MO_PATH}/${PACKAGE_DIR}" | grep -v grep | awk -F ' ' '{print $2}' | xargs kill
+echo kill existing route server if exists
+ps -ef | grep "${RS_PATH}/${PACKAGE_DIR}" | grep -v grep | awk -F ' ' '{print $2}' | xargs kill
 
 echo wait for kill to take effect
 sleep 1
 
-MO_CONFIG_DIR="${MO_PATH}/${PACKAGE_DIR}"/config
-cp "${DEPLOY_ROOT_PATH}"/metrics_config*.yaml "${MO_PATH}"/DistributedScheduler/config/
-rm -rf "${ENV_MODEL_ORCH_CONFIG_PATH}"/pipelines/*
-cp -rf "${DEPLOY_ROOT_PATH}"/pipelines "${ENV_MODEL_ORCH_CONFIG_PATH}/"
+RS_CONFIG_DIR="${RS_PATH}/${PACKAGE_DIR}"/config
+cp "${DEPLOY_ROOT_PATH}"/metrics_config*.yaml "${RS_PATH}"/route-server/config/
+rm -rf "${ENV_ROUTE_SERVER_CONFIG_PATH}"/pipelines/*
+cp -rf "${DEPLOY_ROOT_PATH}"/pipelines "${ENV_ROUTE_SERVER_CONFIG_PATH}/"
 
 # Always process pipeline configs for prefill token settings
-metaserver_cdcp_config="${ENV_MODEL_ORCH_CONFIG_PATH}/pipelines/metaserver_cdcp.yaml"
-layerwise_cdcp_config="${ENV_MODEL_ORCH_CONFIG_PATH}/pipelines/layerwise_cdcp.yaml"
-metaserver_cpcd_config="${ENV_MODEL_ORCH_CONFIG_PATH}/pipelines/metaserver_cpcd.yaml"
-layerwise_cpcd_config="${ENV_MODEL_ORCH_CONFIG_PATH}/pipelines/layerwise_cpcd.yaml"
+metaserver_cdcp_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/metaserver_cdcp.yaml"
+layerwise_cdcp_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/layerwise_cdcp.yaml"
+metaserver_cpcd_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/metaserver_cpcd.yaml"
+layerwise_cpcd_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/layerwise_cpcd.yaml"
 
 if [ "${REUSE_PREFILLED_TOKENS}" = "true" ]; then
   echo "REUSE_PREFILLED_TOKENS is enabled, setting prefill_stream functions..."
@@ -728,15 +726,27 @@ else
   fi
 fi
 
-if [ -z "$COLLECT_METRICS_UNIQUE_IP" ] || [ "$COLLECT_METRICS_UNIQUE_IP" = "false" ]; then
-  echo "collect-metrics-unique-ip is null, so collect metrics form all instances."
-  sed -i 's/collect_from_uniq_ip: .*/collect_from_uniq_ip: false/' "${MO_PATH}"/DistributedScheduler/config/metrics_config*.yaml
-else
-  echo "collect-metrics-unique-ip is true, so collect metrics form one unique instances per node."
-  sed -i 's/collect_from_uniq_ip: .*/collect_from_uniq_ip: true/' "${MO_PATH}"/DistributedScheduler/config/metrics_config*.yaml
+pd_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/pd_separate.yaml"
+
+if [ "${INFER_MODE}" = "VA-PD" ]; then
+  echo "VA-PD mode enabled, applying vllm_ascend pipeline customizations..."
+  if [ -f "$pd_config" ]; then
+    sed -i '/- prefill_prepare_request$/a\          - vllm_ascend_prepare_request' "$pd_config"
+    sed -i '/- prefill_stream_prepare_request$/a\          - vllm_ascend_prepare_request' "$pd_config"
+    sed -i 's/type: default_fail/type: vllm_ascend_fail/g' "$pd_config"
+  fi
+  INFER_MODE="PD"
 fi
 
-# 证书校验：enable-https=true 时 cert-file 和 key-file 为必须
+if [ -z "$COLLECT_METRICS_UNIQUE_IP" ] || [ "$COLLECT_METRICS_UNIQUE_IP" = "false" ]; then
+  echo "collect-metrics-unique-ip is null, so collect metrics form all instances."
+  sed -i 's/collect_from_uniq_ip: .*/collect_from_uniq_ip: false/' "${RS_PATH}"/route-server/config/metrics_config*.yaml
+else
+  echo "collect-metrics-unique-ip is true, so collect metrics form one unique instances per node."
+  sed -i 's/collect_from_uniq_ip: .*/collect_from_uniq_ip: true/' "${RS_PATH}"/route-server/config/metrics_config*.yaml
+fi
+
+# when enable-https=true, cert-file and key-file is required
 if [[ "${ENABLE_HTTPS}" == "true" ]]; then
   if [[ -z "${TLS_CERT_FILE}" || -z "${TLS_KEY_FILE}" ]]; then
     echo "Error: --tls-cert-file and --tls-key-file are required when --enable-https=true"
@@ -751,7 +761,7 @@ if [[ "${ENABLE_HTTPS}" == "true" && "${ENABLE_MTLS}" == "true" ]]; then
   fi
 fi
 
-# ops-tls 证书校验：ops-enable-https=true 时 cert-file 和 key-file 为必须
+# when ops-enable-https=true, cert-file and key-file is required
 if [[ "${OPS_ENABLE_HTTPS}" == "true" ]]; then
   if [[ -z "${OPS_TLS_CERT_FILE}" || -z "${OPS_TLS_KEY_FILE}" ]]; then
     echo "Error: --ops-tls-cert-file and --ops-tls-key-file are required when --ops-enable-https=true"
@@ -766,16 +776,16 @@ if [[ "${OPS_ENABLE_HTTPS}" == "true" && "${OPS_ENABLE_MTLS}" == "true" ]]; then
   fi
 fi
 
-if [ -f "${MO_CONFIG_DIR}"/model-orch.yaml ]; then
-  echo "model-orch.yaml exists in config dir, backup and regenerate"
-  mv "${MO_CONFIG_DIR}"/model-orch.yaml "${MO_CONFIG_DIR}"/model-orch.yaml.bak
+if [ -f "${RS_CONFIG_DIR}"/route-server.yaml ]; then
+  echo "route-server.yaml exists in config dir, backup and regenerate"
+  mv "${RS_CONFIG_DIR}"/route-server.yaml "${RS_CONFIG_DIR}"/route-server.yaml.bak
 fi
 
 chmod +x "${DEPLOY_ROOT_PATH}"/config_generator
 "${DEPLOY_ROOT_PATH}"/config_generator \
-  --name "${MO_NAME}" \
-  --template "${DEPLOY_ROOT_PATH}"/model-orch-template.yaml \
-  --target "${MO_PATH}/${PACKAGE_DIR}" \
+  --name "${RS_NAME}" \
+  --template "${DEPLOY_ROOT_PATH}"/route-server-template.yaml \
+  --target "${RS_PATH}/${PACKAGE_DIR}" \
   --port "${PORT}" \
   --host "${HOST}" \
   --encodes "${ENCODE_SERVERS}" \
@@ -817,28 +827,28 @@ chmod +x "${DEPLOY_ROOT_PATH}"/config_generator
   --etcd-key-file "${ETCD_KEY_FILE}" \
   --etcd-ca-cert-file "${ETCD_CA_CERT_FILE}"
 
-cp "${DEPLOY_ROOT_PATH}/prometheus-template.yaml" "${MO_PATH}/${PACKAGE_DIR}/config"
+cp "${DEPLOY_ROOT_PATH}/prometheus-template.yaml" "${RS_PATH}/${PACKAGE_DIR}/config"
 
-export ENV_MODEL_ORCH_CONFIG_PATH="${MO_PATH}/DistributedScheduler/config"
+export ENV_ROUTE_SERVER_CONFIG_PATH="${RS_PATH}/route-server/config"
 
-echo "config file path is ${ENV_MODEL_ORCH_CONFIG_PATH}" > "${ENV_MODEL_ORCH_LOG_PATH}/start.log"
+echo "config file path is ${ENV_ROUTE_SERVER_CONFIG_PATH}" > "${ENV_ROUTE_SERVER_LOG_PATH}/start.log"
 
 if (( MAXPROCS > 0 ));then
   export GOMAXPROCS="${MAXPROCS}"
-  echo "GOMAXPROCS is set to ${MAXPROCS}" >> "${ENV_MODEL_ORCH_LOG_PATH}/start.log"
+  echo "GOMAXPROCS is set to ${MAXPROCS}" >> "${ENV_ROUTE_SERVER_LOG_PATH}/start.log"
 else
-  echo "GOMAXPROCS is ${GOMAXPROCS}" >> "${ENV_MODEL_ORCH_LOG_PATH}/start.log"
+  echo "GOMAXPROCS is ${GOMAXPROCS}" >> "${ENV_ROUTE_SERVER_LOG_PATH}/start.log"
 fi
 
-chmod 500 "${MO_PATH}/${PACKAGE_DIR}"/bin
-chmod 500 "${MO_PATH}/${PACKAGE_DIR}"/bin/model-orch
+chmod 500 "${RS_PATH}/${PACKAGE_DIR}"/bin
+chmod 500 "${RS_PATH}/${PACKAGE_DIR}"/bin/route-server
 
 if [[ "${SHOW_STD_OUTPUT}" == "true" ]];then
   echo "SHOW_STD_OUTPUT is set to true, output to stdout and stderr"
-  "${MO_PATH}/${PACKAGE_DIR}"/bin/model-orch &
+  "${RS_PATH}/${PACKAGE_DIR}"/bin/route-server &
 else
   echo "SHOW_STD_OUTPUT is false, output to dev/null"
-  nohup "${MO_PATH}/${PACKAGE_DIR}"/bin/model-orch > /dev/null 2>&1 &
+  nohup "${RS_PATH}/${PACKAGE_DIR}"/bin/route-server > /dev/null 2>&1 &
 fi
 
 PID=$!
@@ -850,12 +860,12 @@ sleep 5
 if ! ps -p "${PID}" > /dev/null; then
   wait "${PID}"
   status=$?
-  echo "Failed: ModelOrch process exit, retCode: $status (previous PID: ${PID}), check logs at ${ENV_MODEL_ORCH_LOG_PATH}"
+  echo "Failed: RouteServer process exit, retCode: $status (previous PID: ${PID}), check logs at ${ENV_ROUTE_SERVER_LOG_PATH}"
   exit 1
 fi
 
 if [ -z "$DAEMON" ]; then
-  echo "ModelOrch process is running (PID: ${PID}), --daemon is not set, exit with 0"
+  echo "RouteServer process is running (PID: ${PID}), --daemon is not set, exit with 0"
   exit 0
 else
   echo "--daemon is on, waiting for process ${PID} to exit"

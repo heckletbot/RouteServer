@@ -162,6 +162,50 @@ func (l *Logger) writeMsgf(event *zerolog.Event, format string, args ...interfac
 	l.writeMsg(event, fmt.Sprintf(format, args...))
 }
 
+func (l *Logger) writeMsgWithSkip(event *zerolog.Event, extraSkip int, msg string) {
+	if event == nil {
+		return
+	}
+	event.CallerSkipFrame(extraSkip)
+	l.writeMsg(event, msg)
+}
+
+func (l *Logger) writeMsgfWithSkip(event *zerolog.Event, extraSkip int, format string, args ...interface{}) {
+	if event == nil {
+		return
+	}
+	event.CallerSkipFrame(extraSkip)
+	l.writeMsg(event, fmt.Sprintf(format, args...))
+}
+
+func (l *Logger) InfoSkipf(extraSkip int, format string, args ...interface{}) {
+	l.writeMsgfWithSkip(l.lg.Info(), extraSkip, format, args...)
+}
+
+func (l *Logger) InfoSkip(extraSkip int, msg string) {
+	l.writeMsgWithSkip(l.lg.Info(), extraSkip, msg)
+}
+
+func (l *Logger) WarnSkipf(extraSkip int, format string, args ...interface{}) {
+	l.writeMsgfWithSkip(l.lg.Warn(), extraSkip, format, args...)
+}
+
+func (l *Logger) ErrorSkipf(extraSkip int, format string, args ...interface{}) {
+	l.writeMsgfWithSkip(l.lg.Error(), extraSkip, format, args...)
+}
+
+func (l *Logger) ErrorSkip(extraSkip int, msg string) {
+	l.writeMsgWithSkip(l.lg.Error(), extraSkip, msg)
+}
+
+func (l *Logger) DebugSkipf(extraSkip int, format string, args ...interface{}) {
+	l.writeMsgfWithSkip(l.lg.Debug(), extraSkip, format, args...)
+}
+
+func (l *Logger) TraceSkipf(extraSkip int, format string, args ...interface{}) {
+	l.writeMsgfWithSkip(l.lg.Trace(), extraSkip, format, args...)
+}
+
 func writer(cfg *FileWriterCfg) io.Writer {
 	var wr io.Writer = os.Stdout
 	if cfg.Enabled {

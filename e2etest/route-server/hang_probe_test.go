@@ -39,7 +39,11 @@ import (
 
 const (
 	HangProbeTestContext = "hang-probe-test-context"
-	hangProbeListenPort  = "39877"
+	hangProbeListenPort  = "30200"
+	hangProbOpsPort      = "30210"
+	hangEncodePort       = "30201"
+	hangPrefillPort      = "30202"
+	hangDecodePort       = "30203"
 )
 
 var _ = Describe(HangProbeTestContext, Ordered, func() {
@@ -50,6 +54,7 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 	)
 
 	BeforeAll(func() {
+		EnsurePorts([]string{hangProbeListenPort, hangProbOpsPort, hangEncodePort, hangPrefillPort, hangDecodePort})
 		By("copy pipelines config")
 		configPath := filepath.Join(projectRoot, "e2etest", "environment", HangProbeTestContext, "config")
 		Expect(os.MkdirAll(filepath.Join(configPath, "pipelines"), 0755)).To(BeNil())
@@ -59,13 +64,13 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 
 		By("gen route-server config with hang probe enabled")
 		toolParam := DisableHTTPSConfig([]string{
-			"-template", filepath.Join(deployPath, "model-orch-template.yaml"),
+			"-template", filepath.Join(deployPath, "route-server-template.yaml"),
 			"-host", "127.0.0.1",
 			"-target", filepath.Join(projectRoot, "e2etest", "environment", HangProbeTestContext),
 			"-infer-mode", "PD",
-			"-encodes", "encode1#127.0.0.1:8080",
-			"-prefills", "prefill1#127.0.0.1:8081",
-			"-decodes", "decode1#127.0.0.1:8082",
+			"-encodes", fmt.Sprintf("encode1#127.0.0.1:%s", hangEncodePort),
+			"-prefills", fmt.Sprintf("prefill1#127.0.0.1:%s", hangPrefillPort),
+			"-decodes", fmt.Sprintf("decode1#127.0.0.1:%s", hangDecodePort),
 			"-name", "route-server-hang-probe-test",
 			"-remote-scheduler-type", "disable",
 			"-port", hangProbeListenPort,
@@ -74,7 +79,7 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 		Expect(exec.Command(configToolPath, toolParam...).Run()).To(BeNil())
 
 		// Modify config to enable pre-hang probe feature
-		configFile := filepath.Join(configPath, "model-orch.yaml")
+		configFile := filepath.Join(configPath, "route-server.yaml")
 		Expect(InjectHangProbeConfigToYaml(configFile)).To(BeNil())
 
 		Expect(os.Setenv(constant.EnvServerConfigPath, configPath)).To(BeNil())
@@ -149,7 +154,7 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 			time.Sleep(2 * time.Second)
 
 			GinkgoWriter.Println("Step 2: Set Decode instance to Hang state")
-			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:8082/hang"))
+			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:%s/hang", hangDecodePort))
 			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 			fmt.Println("Set decode1 to hang state")
@@ -188,14 +193,14 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 			Eventually(session.Out, 20*time.Second).Should(gbytes.Say("\\[recover\\] send probe infer request to instance .* error, reset ConsecutiveHealthSuccess to 0"))
 
 			GinkgoWriter.Println("Step 2: Set Decode instance to Hang state")
-			resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:8082/hang"))
+			resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%s/hang", hangDecodePort))
 			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 			time.Sleep(2 * time.Second)
 			Eventually(session.Out, 5*time.Second).ShouldNot(gbytes.Say("instance .* is back online due to healthcheck success, previously in fault status"))
 
 			GinkgoWriter.Println("Step 3: Call /unhang endpoint to recover instance")
-			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:8082/unhang"))
+			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:%s/unhang", hangDecodePort))
 			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 			fmt.Println("Set decode1 to unhang state")
@@ -241,7 +246,7 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 
 			GinkgoWriter.Printf("%s, Step 2: Set up false hang scenario - set specific request_id to hang\n", time.Now().String())
 			testRequestId := "test-false-hang-" + uuid.NewString()
-			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:8082/hang_request?request_id=%s", testRequestId))
+			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:%s/hang_request?request_id=%s", hangDecodePort, testRequestId))
 			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 			fmt.Printf("Set request_id %s to hang state\n", testRequestId)
@@ -273,7 +278,7 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 			Consistently(session.Out, 30*time.Second).ShouldNot(gbytes.Say("\\[HangCheck\\] instance .* is hang"))
 
 			GinkgoWriter.Printf("%s, Step 7: Cleanup - release hang state for specific request\n", time.Now().String())
-			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:8082/unhang_request?request_id=%s", testRequestId))
+			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:%s/unhang_request?request_id=%s", hangDecodePort, testRequestId))
 			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 			fmt.Printf("Unset request_id %s from hang state\n", testRequestId)
@@ -320,7 +325,7 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 			time.Sleep(2 * time.Second)
 
 			GinkgoWriter.Println("Step 2: T0 moment - construct Decode Hang")
-			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:8082/hang"))
+			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:%s/hang", hangDecodePort))
 			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 			fmt.Println("Set decode1 to hang state")
@@ -345,7 +350,7 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 
 			GinkgoWriter.Println("Step 4: Construct Prefill Hang to make 1st probe fail")
 			time.Sleep(5 * time.Second)
-			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:8081/hang"))
+			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:%s/hang", hangPrefillPort))
 			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 			fmt.Println("Set prefill1 to hang state")
@@ -365,10 +370,10 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 			GinkgoWriter.Println("Step 10: Cleanup test environment - close request that triggered hang")
 			respTrigger.Body.Close()
 
-			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:8082/unhang"))
+			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:%s/unhang", hangDecodePort))
 			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
-			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:8081/unhang"))
+			resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:%s/unhang", hangPrefillPort))
 			Expect(err).NotTo(HaveOccurred())
 			resp.Body.Close()
 			fmt.Println("Clean up: set decode1 and prefill1 to unhang state")
@@ -394,7 +399,7 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 	})
 })
 
-// InjectHangProbeConfigToYaml modifies model-orch.yaml config file to enable pre-hang probe
+// InjectHangProbeConfigToYaml modifies route-server.yaml config file to enable pre-hang probe
 func InjectHangProbeConfigToYaml(configPath string) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {

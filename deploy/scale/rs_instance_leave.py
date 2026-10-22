@@ -61,18 +61,18 @@ def valid_port(port):
 
 def check_params(args):
     ip_pattern = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
-    if ":" not in args.mo_addr:
-        raise ValueError("param mo-addr format error")
-    # model orch address may be a domain name, only validate port
-    port = args.mo_addr.split(":")[1]
+    if ":" not in args.rs_addr:
+        raise ValueError("param rs-addr format error")
+    # router server address may be a domain name, only validate port
+    port = args.rs_addr.split(":")[1]
     if not valid_port(port):
-        raise ValueError(f"param mo-addr port {port} out of range")
+        raise ValueError(f"param rs-addr port {port} out of range")
     # validate instance-ips
     ips = args.instance_ips.replace(" ", "").split(",")
     for ip in ips:
         if not re.match(ip_pattern, ip):
             raise ValueError(f"param instance-ips ip {ip} is invalid")
-    # 校验api-server-ports
+    # Validate api-server-ports
     ports = args.api_server_ports.replace(" ", "").split(",")
     for port in ports:
         if not valid_port(port):
@@ -80,7 +80,7 @@ def check_params(args):
     if len(ports) != len(ips):
         raise ValueError(f"the array length of api-server-ports and instance-ips are different, "
                          f"api-server-ports: {ports}, instance-ips: {ips}")
-    # 校验num-api-servers
+    # Validate num-api-servers
     if args.num_api_servers is not None:
         num_api_servers = args.num_api_servers.replace(" ", "").split(",")
         if len(num_api_servers) != len(ips):
@@ -112,7 +112,7 @@ def wait_task_done(instance_addrs, args):
             try:
                 res = request_get(url)
             except Exception:
-                # 节点访问失败认为该节点没有任务执行，可以删除
+                # Node access failure means the node has no task executing, can be removed
                 unfinished_addrs.remove(inst_addr)
                 continue
             running_values = get_metric_values(res, 'vllm:num_requests_running')
@@ -127,12 +127,12 @@ def wait_task_done(instance_addrs, args):
 
 
 def parse_prometheus_line(line: str):
-    """解析单行Prometheus格式数据"""
-    # 忽略注释和空行
+    """Parse single line Prometheus format data"""
+    # Ignore comments and empty lines
     if line.startswith('#') or not line.strip():
         return None
 
-    # 匹配Prometheus指标格式
+    # Match Prometheus metric format
     pattern = r'^([\w:]+)(\{.*?\})?\s+([\d\.]+)\s*(\d+)?$'
     match = re.match(pattern, line.strip())
     if not match:
@@ -141,7 +141,7 @@ def parse_prometheus_line(line: str):
     labels_str = match.group(2)
     value = float(match.group(3))
 
-    # 解析标签
+    # Parse labels
     labels = {}
     if labels_str:
         labels_str = labels_str[1:-1]
@@ -156,7 +156,7 @@ def parse_prometheus_line(line: str):
 
 
 def parse_metrics_text(text: str):
-    """解析多行Prometheus格式文本"""
+    """Parse multi-line Prometheus format text"""
     metrics = []
     for line in text.split('\n'):
         parsed = parse_prometheus_line(line)
@@ -176,7 +176,7 @@ def get_metric_values(text, metric_name: str):
 
 
 def instance_leave(args):
-    base_url = "http://{}/".format(args.mo_addr)
+    base_url = "http://{}/".format(args.rs_addr)
     url = base_url + "/cluster/instance/leave"
     instance_ips = args.instance_ips.replace(" ", "").split(",")
     api_server_ports = args.api_server_ports.replace(" ", "").split(",")
@@ -196,11 +196,11 @@ def instance_leave(args):
             instance_name = generate_instance_name(args.role, ip, port)
             instance_names.append(instance_name)
             instances_addr.append(ip + ":" + str(port))
-    # 生成body
+    # Generate body
     body = {
         "instance_names": instance_names
     }
-    logging.info(f"begin remove instances {instances_addr} from model orch")
+    logging.info(f"begin remove instances {instances_addr} from router server")
     for i in range(RETRY_TIME):
         try:
             res = request_post(url, body)
@@ -208,9 +208,9 @@ def instance_leave(args):
             break
         except Exception as e:
             if i == RETRY_TIME - 1:
-                raise Exception(f"instances remove from model orch error after retrying {RETRY_TIME} times: {str(e)}")
+                raise Exception(f"instances remove from router server error after retrying {RETRY_TIME} times: {str(e)}")
 
-    # after instance is removed from model orch, check if there are still running tasks
+    # after instance is removed from router server, check if there are still running tasks
     logging.info(f"begin wait instance task done")
     unfinished_addrs = wait_task_done(instances_addr, args)
     logging.info(f"end wait instance task done, unfinished_addrs: {unfinished_addrs}")
@@ -220,10 +220,10 @@ def instance_leave(args):
         logging.info(f"begin wait {args.waiting_kvcache_pulled_completed_time} seconds to ensure the kvcache to be pulled completed")
         time.sleep(args.waiting_kvcache_pulled_completed_time)
     if unfinished_addrs:
-        logging.warning(f"instances {instances_addr} remove from model orch successfully, but there were unfinished "
+        logging.warning(f"instances {instances_addr} remove from router server successfully, but there were unfinished "
                         f"task on instances after {args.waiting_task_done_timeout} seconds timeout: {unfinished_addrs}")
     else:
-        logging.info(f"instances {instances_addr} remove from model orch successfully")
+        logging.info(f"instances {instances_addr} remove from router server successfully")
 
 
 def check_instance_leave_rs_result(res):
@@ -234,17 +234,17 @@ def check_instance_leave_rs_result(res):
             err_msg = res['error']
         else:
             err_msg = str(res)
-        raise Exception(f"instances remove from model orch error: {err_msg}")
+        raise Exception(f"instances remove from router server error: {err_msg}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mo-addr', type=str, required=True,
-                        help='model orch address, the format is {ip}:{port}')
+    parser.add_argument('--rs-addr', type=str, required=True,
+                        help='router server address, the format is {ip}:{port}')
     parser.add_argument('--role', type=str, required=True, choices=['prefill', 'decode'],
-                        help='instance role that need to join to the model orch')
+                        help='instance role that need to join to the router server')
     parser.add_argument('--instance-ips', type=str, required=True,
-                        help='instance ips that need to be removed from the model orch, multiple ips are separated '
+                        help='instance ips that need to be removed from the router server, multiple ips are separated '
                              'by commas')
     parser.add_argument('--api-server-ports', type=str, required=True,
                         help='api server port of prefill or api server start port of decode, multiple ports are '
@@ -269,5 +269,5 @@ if __name__ == "__main__":
         check_params(args)
         instance_leave(args)
     except Exception as e:
-        logging.exception("instances remove from model orch error")
+        logging.exception("instances remove from router server error")
         sys.exit(1)

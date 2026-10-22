@@ -99,7 +99,7 @@ func (p *BasePhase) StartSubSpan(context *PipelineContext, subSpanName string) {
 
 func (p *BasePhase) GetCancelContext(ctx *PipelineContext, instanceId string, tracer *trace.TracerWithContext) context.Context {
 	reqCancelCtx := ctx.GetRequestCancelCtx()
-	return reqCancelCtx.WrapContext(tracer.SubCtx[p.SpanName()], instanceId, p.PhaseName())
+	return reqCancelCtx.WrapContext(tracer.GetSubCtx(p.SpanName()), instanceId, p.PhaseName())
 }
 
 func (p *BasePhase) Init(phaseCfg *utils2.PhaseConfig) error {

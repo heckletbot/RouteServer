@@ -37,23 +37,23 @@ type TracerWithContext struct {
 	DecodeCtx  context.Context
 	// spanName -> context
 	subCtxMutex sync.Mutex
-	SubCtx      map[string]context.Context
+	subCtx      map[string]context.Context
 }
 
 func (t *TracerWithContext) GetSubCtx(spanName string) context.Context {
 	t.subCtxMutex.Lock()
 	defer t.subCtxMutex.Unlock()
-	ctx := t.SubCtx[spanName]
+	ctx := t.subCtx[spanName]
 	return ctx
 }
 
 func (t *TracerWithContext) NewSubCtx(spanName string) bool {
 	t.subCtxMutex.Lock()
 	defer t.subCtxMutex.Unlock()
-	if _, exist := t.SubCtx[spanName]; exist {
+	if _, exist := t.subCtx[spanName]; exist {
 		return false
 	}
-	t.SubCtx[spanName] = t.Tracer.StartSpan(t.E2ECtx, spanName, "", EnableOtelTrace)
+	t.subCtx[spanName] = t.Tracer.StartSpan(t.E2ECtx, spanName, "", EnableOtelTrace)
 	return true
 }
 
@@ -85,7 +85,7 @@ func TraceTokenLog(xSpanId string, xUserAlias string, traceId string,
 		tpot,
 		latency,
 	)
-	logger.Log().Info(logInfo)
+	logger.Log().InfoSkip(1, logInfo)
 	return logInfo
 }
 
@@ -153,7 +153,7 @@ func NewTracer(ctx context.Context, traceCfg *config.TraceConfig, reqId string, 
 	tracer.Init(ctx, traceCfg, reqId, header)
 	tracerWithContext := TracerWithContext{
 		Tracer: tracer,
-		SubCtx: make(map[string]context.Context),
+		subCtx: make(map[string]context.Context),
 	}
 	return tracerWithContext
 }

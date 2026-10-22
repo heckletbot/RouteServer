@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/goccy/go-yaml"
@@ -41,6 +42,10 @@ import (
 
 const (
 	LayerwiseCPCDTestContext = "layerwise-cpcd-test-context"
+	cpcdListenPort           = "30600"
+	cpcdOpsPort              = "30610"
+	cpcdPrefillPort          = "30601"
+	cpcdDecodePort           = "30602"
 )
 
 var _ = Describe(LayerwiseCPCDTestContext, Ordered, func() {
@@ -51,6 +56,7 @@ var _ = Describe(LayerwiseCPCDTestContext, Ordered, func() {
 	)
 
 	BeforeAll(func() {
+		EnsurePorts([]string{cpcdListenPort, cpcdOpsPort, cpcdPrefillPort, cpcdDecodePort})
 		By("copy pipelines config")
 		configPath := filepath.Join(projectRoot, "e2etest", "environment", LayerwiseCPCDTestContext, "config")
 		Expect(os.MkdirAll(filepath.Join(configPath, "pipelines"), 0755)).To(BeNil())
@@ -64,11 +70,11 @@ var _ = Describe(LayerwiseCPCDTestContext, Ordered, func() {
 			"-host", "127.0.0.1",
 			"-target", filepath.Join(projectRoot, "e2etest", "environment", LayerwiseCPCDTestContext),
 			"-infer-mode", "Layerwise-CPCD",
-			"-prefills", "prefill1#127.0.0.1:8081",
-			"-decodes", "decode1#127.0.0.1:8082",
+			"-prefills", fmt.Sprintf("prefill1#127.0.0.1:%s", cpcdPrefillPort),
+			"-decodes", fmt.Sprintf("decode1#127.0.0.1:%s", cpcdDecodePort),
 			"-name", "route-server-layerwise-cpcd-test",
 			"-remote-scheduler-type", "disable",
-			"-port", listenPort,
+			"-port", cpcdListenPort,
 			"-infer-module-version", "pipeline",
 		})
 		Expect(exec.Command(configToolPath, toolParam...).Run()).To(BeNil())
@@ -128,7 +134,7 @@ var _ = Describe(LayerwiseCPCDTestContext, Ordered, func() {
 		)
 
 		BeforeEach(func() {
-			clientRs = NewRSClient("http://localhost:" + listenPort)
+			clientRs = NewRSClient("http://localhost:" + cpcdListenPort)
 			spanId = uuid.NewString()
 			reqBody = openai.ChatCompletionRequestV1{
 				Model: "pangu",
@@ -200,6 +206,135 @@ var _ = Describe(LayerwiseCPCDTestContext, Ordered, func() {
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(body)).To(ContainSubstring("data: "))
+		})
+	})
+
+	Context("Finish Reason Log Verification", func() {
+		var (
+			clientRs          *RSClient
+			mockPrefillClient *MockServerClient
+		)
+
+		BeforeEach(func() {
+			clientRs = NewRSClient("http://localhost:" + cpcdListenPort)
+			mockPrefillClient = NewMockServerClient(cpcdPrefillPort)
+		})
+
+		It("finish reason: when max_tokens=2, finish_reason is length", func() {
+			reqId := "test-finish-length"
+			body := map[string]interface{}{
+				"model":      "pangu",
+				"messages":   []map[string]string{{"role": "user", "content": "Hello"}},
+				"max_tokens": 2,
+				"stream":     true,
+			}
+
+			resp, err := clientRs.SendChatCompletion(context.Background(), body, map[string]string{
+				constant.XRequestId: reqId,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			defer resp.Body.Close()
+
+			expectedRegexp := fmt.Sprintf(`request_id.*.%s.*finish_reason = length`, reqId)
+			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
+		})
+
+		It("finish reason: without max_tokens, finish_reason is stop", func() {
+			reqId := "test-finish-stop"
+			body := map[string]interface{}{
+				"model":    "pangu",
+				"messages": []map[string]string{{"role": "user", "content": "Hello"}},
+				"stream":   true,
+			}
+
+			resp, err := clientRs.SendChatCompletion(context.Background(), body, map[string]string{
+				constant.XRequestId: reqId,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			defer resp.Body.Close()
+
+			expectedRegexp := fmt.Sprintf(`request_id.*.%s.*finish_reason = stop`, reqId)
+			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
+		})
+
+		It("finish reason: with tools, finish_reason is tool_calls", func() {
+			reqId := "test-finish-tool"
+			body := map[string]interface{}{
+				"model":      "pangu",
+				"max_tokens": 12,
+				"messages":   []map[string]string{{"role": "user", "content": "Get Beijing weather in Celsius"}},
+				"tools": []map[string]interface{}{
+					{
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":        "get_weather",
+							"description": "Get the current weather in a given location",
+							"parameters": map[string]interface{}{
+								"type": "object",
+								"properties": map[string]interface{}{
+									"location": map[string]interface{}{
+										"type":        "string",
+										"description": "City Name",
+									},
+									"unit": map[string]interface{}{
+										"type": "string",
+										"enum": []string{"celsius", "fahrenheit"},
+									},
+								},
+								"required": []string{"location", "unit"},
+							},
+						},
+					},
+				},
+				"tool_choice": "auto",
+				"stream":      true,
+			}
+
+			resp, err := clientRs.SendChatCompletion(context.Background(), body, map[string]string{
+				constant.XRequestId: reqId,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			defer resp.Body.Close()
+
+			expectedRegexp := fmt.Sprintf(`request_id.*.%s.*finish_reason = tool_calls`, reqId)
+			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
+		})
+
+		It("finish reason: when prefill returns 500, finish_reason is unknown", func() {
+			By("set prefill1 instance to return 500 error")
+			errBody := strings.NewReader(`{"code": 500}`)
+			req, err := http.NewRequest("POST", fmt.Sprintf("http://127.0.0.1:%s/mock_error", cpcdPrefillPort), errBody)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := mockPrefillClient.HTTPClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			DeferCleanup(func() {
+				mockPrefillClient.RemoveError()
+			})
+
+			By("send request and verify finish_reason = unknown in logs")
+			reqId := "test-finish-unknown"
+			body := map[string]interface{}{
+				"model":    "pangu",
+				"messages": []map[string]string{{"role": "user", "content": "Get Beijing weather"}},
+				"stream":   true,
+			}
+
+			httpResp, err := clientRs.SendChatCompletion(context.Background(), body, map[string]string{
+				constant.XRequestId: reqId,
+				"x-span-id":         "p1",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			defer httpResp.Body.Close()
+
+			expectedRegexp := fmt.Sprintf(`request_id.*.%s.*finish_reason = unknown.*err_stage = Prefill`, reqId)
+			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
 		})
 	})
 

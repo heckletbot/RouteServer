@@ -31,8 +31,9 @@ import (
 )
 
 const (
-	SuccessPhaseName = "default_success"
-	FailPhaseName    = "default_fail"
+	SuccessPhaseName        = "default_success"
+	FailPhaseName           = "default_fail"
+	VllmAscendFailPhaseName = "vllm_ascend_fail"
 )
 
 func newInferSuccessPhase() Phase {
@@ -44,6 +45,14 @@ func newInferSuccessPhase() Phase {
 func newInferFailurePhase() Phase {
 	return &InferFailPhase{
 		BasePhase: NewBasePhase(FailPhaseName, constant.StageFinalize),
+	}
+}
+
+func newVllmAscendFailPhase() Phase {
+	return &VllmAscendFailPhase{
+		InferFailPhase: &InferFailPhase{
+			BasePhase: NewBasePhase(VllmAscendFailPhaseName, constant.StageFinalize),
+		},
 	}
 }
 
@@ -96,14 +105,16 @@ type InferFailPhase struct {
 func (i *InferFailPhase) ExecutePhase(ctx *PipelineContext) (rsError *errs.RSError) {
 	finalizeContext(ctx)
 
-	if ctx.RequestContext.RsErr != nil {
+	if ctx.HasMainErr() {
 		var retCode int
 
+		ctx.GetGinCtxMutex().Lock()
 		if ctx.GetRequestCtx().IsStreamResponse {
 			retCode = handler.ProcessStreamRequestError(ctx.ClientGinCtx, ctx.RequestContext.RsErr, ctx.GetTracer().Tracer, ctx.FinishReason, ctx.RequestContext.HasDoneWritten)
 		} else {
 			retCode = handler.ProcessRequestError(ctx.ClientGinCtx, ctx.RequestContext.RsErr, ctx.GetTracer().Tracer, ctx.FinishReason)
 		}
+		ctx.GetGinCtxMutex().Unlock()
 		if retCode != 0 {
 			metrics.RecordFailedRequestStatus(strconv.Itoa(retCode), ctx.RequestPath())
 		}
@@ -111,6 +122,24 @@ func (i *InferFailPhase) ExecutePhase(ctx *PipelineContext) (rsError *errs.RSErr
 		logger.Log().Warnf("request [%s] run fail phase but no rsError is found", ctx.RequestId())
 	}
 	return nil
+}
+
+type VllmAscendFailPhase struct {
+	*InferFailPhase
+}
+
+func (i *VllmAscendFailPhase) ExecutePhase(ctx *PipelineContext) (rsError *errs.RSError) {
+	if ctx.HasMainErr() {
+		rsErr := ctx.RequestContext.RsErr
+		if rsErr.ErrorStage == constant.StageDecode {
+			prefillerId := ctx.RequestContext.InferMsg.GetInstance(constant.Prefill)
+			if prefillerId != "" {
+				ctx.InferManager.RecordVllmAscendAbortedRequest(prefillerId, ctx.RequestId())
+			}
+		}
+	}
+
+	return i.InferFailPhase.ExecutePhase(ctx)
 }
 
 func finalizeContext(ctx *PipelineContext) {

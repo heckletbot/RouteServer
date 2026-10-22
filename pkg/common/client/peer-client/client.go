@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"infer-dp-scheduler/pkg/common/config"
+	"infer-dp-scheduler/pkg/common/constant"
 	http2 "infer-dp-scheduler/pkg/common/http"
 	"infer-dp-scheduler/pkg/common/logger"
 	"infer-dp-scheduler/pkg/common/utils"
@@ -114,8 +115,7 @@ func NewPeerClient(localName string, cfg *config.PeerClientConfig, opsCfg *confi
 		return nil, fmt.Errorf("failed to create peer Client, config is empty")
 	}
 
-	// peer-client 使用 server.tls 的密码环境变量（与 server 端证书一致）
-	client, err := http2.NewClient(cfg.HttpCfg, false, "TLS_PRIVATE_KEY_PASSWORD")
+	client, err := http2.NewClient(cfg.HttpCfg, false, constant.TLSPrivateKeyPasswordEnv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create peer Client: %w", err)
 	}

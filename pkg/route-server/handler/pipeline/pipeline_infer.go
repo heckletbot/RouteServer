@@ -19,6 +19,7 @@ package pipeline
 import (
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"infer-dp-scheduler/pkg/common/client"
@@ -43,6 +44,36 @@ type PipelineInfer struct {
 
 	pipeline     *Pipeline
 	subPipelines []*PipelineInfer
+
+	vllmAscendAbortedMu       sync.Mutex
+	vllmAscendAbortedRequests map[string]map[string]struct{}
+}
+
+func (pi *PipelineInfer) RecordVllmAscendAbortedRequest(prefillerInstanceId string, requestId string) {
+	pi.vllmAscendAbortedMu.Lock()
+	defer pi.vllmAscendAbortedMu.Unlock()
+	if pi.vllmAscendAbortedRequests == nil {
+		pi.vllmAscendAbortedRequests = make(map[string]map[string]struct{})
+	}
+	if _, ok := pi.vllmAscendAbortedRequests[prefillerInstanceId]; !ok {
+		pi.vllmAscendAbortedRequests[prefillerInstanceId] = make(map[string]struct{})
+	}
+	pi.vllmAscendAbortedRequests[prefillerInstanceId][requestId] = struct{}{}
+}
+
+func (pi *PipelineInfer) AcquireVllmAscendAbortedRequests(prefillerInstanceId string) []string {
+	pi.vllmAscendAbortedMu.Lock()
+	defer pi.vllmAscendAbortedMu.Unlock()
+	requests, ok := pi.vllmAscendAbortedRequests[prefillerInstanceId]
+	if !ok {
+		return nil
+	}
+	delete(pi.vllmAscendAbortedRequests, prefillerInstanceId)
+	result := make([]string, 0, len(requests))
+	for id := range requests {
+		result = append(result, id)
+	}
+	return result
 }
 
 func NewPipelineInferWithMode(inferMode string, isMain bool, instanceMgr instances.Manager, schedulerMgr scheduler.Manager,

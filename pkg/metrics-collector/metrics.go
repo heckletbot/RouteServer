@@ -31,7 +31,7 @@ var (
 	initOnce  sync.Once
 )
 
-// Mapping between ModelOrch metric names and vLLM native metric names
+// Mapping between RouteServer metric names and vLLM native metric names
 func initStaticMap() {
 	staticMap = map[string][]string{
 		"rs:time_to_first_token_sec":             {"vllm:time_to_first_token_seconds"},

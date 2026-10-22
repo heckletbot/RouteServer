@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/goccy/go-yaml"
@@ -41,7 +42,10 @@ import (
 const (
 	EPDTestContext = "epd-test-context"
 
-	listenPort = "39876"
+	epdListenPort  = "30000"
+	epdEncodePort  = "30001"
+	epdPrefillPort = "30002"
+	epdDecodePort  = "30003"
 )
 
 var _ = Describe(EPDTestContext, Ordered, func() {
@@ -65,12 +69,12 @@ var _ = Describe(EPDTestContext, Ordered, func() {
 			"-host", "127.0.0.1",
 			"-target", filepath.Join(projectRoot, "e2etest", "environment", EPDTestContext),
 			"-infer-mode", "EPD",
-			"-encodes", "encode1#127.0.0.1:8080",
-			"-prefills", "prefill1#127.0.0.1:8081",
-			"-decodes", "decode1#127.0.0.1:8082",
+			"-encodes", fmt.Sprintf("encode1#127.0.0.1:%s", epdEncodePort),
+			"-prefills", fmt.Sprintf("prefill1#127.0.0.1:%s", epdPrefillPort),
+			"-decodes", fmt.Sprintf("decode1#127.0.0.1:%s", epdDecodePort),
 			"-name", "route-server-epd-test",
 			"-remote-scheduler-type", "disable",
-			"-port", listenPort,
+			"-port", epdListenPort,
 			"-infer-module-version", "pipeline",
 		})
 		Expect(exec.Command(configToolPath, toolParam...).Run()).To(BeNil())
@@ -100,7 +104,7 @@ var _ = Describe(EPDTestContext, Ordered, func() {
 
 		By("start route-server")
 		command := exec.Command(rsPath)
-		session, err = gexec.Start(command, GinkgoWriter, os.Stderr)
+		session, err = gexec.Start(command, io.Discard, os.Stderr)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("wait for readiness")
@@ -130,7 +134,7 @@ var _ = Describe(EPDTestContext, Ordered, func() {
 			resp *http.Response
 		)
 		BeforeEach(func() {
-			clientRs = NewRSClient("http://localhost:" + listenPort)
+			clientRs = NewRSClient("http://localhost:" + epdListenPort)
 			extraHeaders = make(map[string]string)
 			spanId = uuid.NewString()
 			extraHeaders[constant.HeaderXSpanId] = spanId
@@ -205,6 +209,135 @@ var _ = Describe(EPDTestContext, Ordered, func() {
 			Expect(latency).To(BeNumerically(">=", 5))
 			Expect(latency).To(BeNumerically("<", 10))
 
+		})
+	})
+
+	Context("Finish Reason Log Verification Test", func() {
+		var (
+			clientRs          *RSClient
+			mockPrefillClient *MockServerClient
+		)
+
+		BeforeEach(func() {
+			clientRs = NewRSClient("http://localhost:" + epdListenPort)
+			mockPrefillClient = NewMockServerClient(epdPrefillPort)
+		})
+
+		It("finish reason verification: when max_tokens=2, finish_reason is length", func() {
+			reqId := "test-finish-length"
+			body := map[string]interface{}{
+				"model":      "pangu",
+				"messages":   []map[string]string{{"role": "user", "content": "Hello"}},
+				"max_tokens": 2,
+				"stream":     true,
+			}
+
+			resp, err := clientRs.SendChatCompletion(context.Background(), body, map[string]string{
+				constant.XRequestId: reqId,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			defer resp.Body.Close()
+
+			expectedRegexp := fmt.Sprintf(`request_id.*.%s.*finish_reason = length`, reqId)
+			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
+		})
+
+		It("finish reason verification: when no max_tokens, finish_reason is stop", func() {
+			reqId := "test-finish-stop"
+			body := map[string]interface{}{
+				"model":    "pangu",
+				"messages": []map[string]string{{"role": "user", "content": "Hello"}},
+				"stream":   true,
+			}
+
+			resp, err := clientRs.SendChatCompletion(context.Background(), body, map[string]string{
+				constant.XRequestId: reqId,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			defer resp.Body.Close()
+
+			expectedRegexp := fmt.Sprintf(`request_id.*.%s.*finish_reason = stop`, reqId)
+			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
+		})
+
+		It("finish reason verification: with tools, finish_reason is tool_calls", func() {
+			reqId := "test-finish-tool"
+			body := map[string]interface{}{
+				"model":      "pangu",
+				"max_tokens": 12,
+				"messages":   []map[string]string{{"role": "user", "content": "Get Beijing weather in Celsius"}},
+				"tools": []map[string]interface{}{
+					{
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":        "get_weather",
+							"description": "Get the current weather in a given location",
+							"parameters": map[string]interface{}{
+								"type": "object",
+								"properties": map[string]interface{}{
+									"location": map[string]interface{}{
+										"type":        "string",
+										"description": "City Name",
+									},
+									"unit": map[string]interface{}{
+										"type": "string",
+										"enum": []string{"celsius", "fahrenheit"},
+									},
+								},
+								"required": []string{"location", "unit"},
+							},
+						},
+					},
+				},
+				"tool_choice": "auto",
+				"stream":      true,
+			}
+
+			resp, err := clientRs.SendChatCompletion(context.Background(), body, map[string]string{
+				constant.XRequestId: reqId,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			defer resp.Body.Close()
+
+			expectedRegexp := fmt.Sprintf(`request_id.*.%s.*finish_reason = tool_calls`, reqId)
+			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
+		})
+
+		It("finish reason verification: when prefill returns 500, finish_reason is unknown", func() {
+			By("set prefill1 instance to return 500 error")
+			errBody := strings.NewReader(`{"code": 500}`)
+			req, err := http.NewRequest("POST", fmt.Sprintf("http://127.0.0.1:%s/mock_error", epdPrefillPort), errBody)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := mockPrefillClient.HTTPClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			DeferCleanup(func() {
+				mockPrefillClient.RemoveError()
+			})
+
+			By("send request and verify finish_reason = unknown in logs")
+			reqId := "test-finish-unknown"
+			body := map[string]interface{}{
+				"model":    "pangu",
+				"messages": []map[string]string{{"role": "user", "content": "Get Beijing weather"}},
+				"stream":   true,
+			}
+
+			httpResp, err := clientRs.SendChatCompletion(context.Background(), body, map[string]string{
+				constant.XRequestId: reqId,
+				"x-span-id":         "p1",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			defer httpResp.Body.Close()
+
+			expectedRegexp := fmt.Sprintf(`request_id.*.%s.*finish_reason = unknown.*err_stage = Prefill`, reqId)
+			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
 		})
 	})
 })

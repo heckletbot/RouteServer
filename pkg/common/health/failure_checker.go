@@ -101,7 +101,7 @@ func (fcm *FailureCheckerModule) OnAllInstancesRenewed(available, unavailable ma
 	fcm.instancesInfo = instanceInfo
 }
 
-func (fcm *FailureCheckerModule) OnRequestEvents(workerId string, requestEvents []*utils.RequestEventMsg) {
+func (fcm *FailureCheckerModule) OnRequestEvents(workerId string, workerBootId string, requestEvents []*utils.RequestEventMsg) {
 	if !fcm.cfg.Enable {
 		return
 	}

@@ -1895,7 +1895,7 @@ func testMainProcs(t *testing.T) {
 	UseDomainForLeader = "false"
 	IsCandidate = "True"
 
-	expectTargetFilePath := filepath.Join(testDir, "target_config", "config", "model-orch.yaml")
+	expectTargetFilePath := filepath.Join(testDir, "target_config", "config", "route-server.yaml")
 	err = os.WriteFile(filepath.Join(testDir, "config.yaml"), cfgBytes, 0o600)
 	assert.NoError(t, err)
 	success := mainProc(false)
@@ -1916,6 +1916,7 @@ func Test_applyServerConfig(t *testing.T) {
 	saveDomain := Domain
 	saveLogFilePath := LogFilePath
 	saveDeployTargetPath := DeployTargetPath
+	saveEnableOpsAPIsOnServicePort := EnableOpsAPIsOnServicePort
 	defer func() {
 		Name = saveName
 		Host = saveHost
@@ -1925,6 +1926,7 @@ func Test_applyServerConfig(t *testing.T) {
 		Domain = saveDomain
 		LogFilePath = saveLogFilePath
 		DeployTargetPath = saveDeployTargetPath
+		EnableOpsAPIsOnServicePort = saveEnableOpsAPIsOnServicePort
 	}()
 
 	Name = "test-rs"
@@ -2030,6 +2032,65 @@ func Test_applyServerConfig(t *testing.T) {
 		}
 		success := applyServerConfig(cfg)
 		assert.False(t, success)
+	})
+
+	t.Run("enable_ops_apis_on_service_port_empty", func(t *testing.T) {
+		originalOpsPort := OpsPort
+		OpsPort = 0
+		defer func() { OpsPort = originalOpsPort }()
+		UseDomainForLeader = "false"
+		EnableOpsAPIsOnServicePort = ""
+		cfg := &config.Config{
+			ServerConfig:  config.ServerConfig{},
+			PeerClientCfg: &config.PeerClientConfig{},
+		}
+		success := applyServerConfig(cfg)
+		assert.True(t, success)
+		assert.False(t, cfg.ServerConfig.EnableOpsAPIsOnServicePort, "EnableOpsAPIsOnServicePort should be false when empty")
+	})
+
+	t.Run("enable_ops_apis_on_service_port_true", func(t *testing.T) {
+		originalOpsPort := OpsPort
+		OpsPort = 0
+		defer func() { OpsPort = originalOpsPort }()
+		UseDomainForLeader = "false"
+		EnableOpsAPIsOnServicePort = "true"
+		cfg := &config.Config{
+			ServerConfig:  config.ServerConfig{},
+			PeerClientCfg: &config.PeerClientConfig{},
+		}
+		success := applyServerConfig(cfg)
+		assert.True(t, success)
+		assert.True(t, cfg.ServerConfig.EnableOpsAPIsOnServicePort, "EnableOpsAPIsOnServicePort should be true when set to 'true'")
+	})
+
+	t.Run("enable_ops_apis_on_service_port_false", func(t *testing.T) {
+		originalOpsPort := OpsPort
+		OpsPort = 0
+		defer func() { OpsPort = originalOpsPort }()
+		UseDomainForLeader = "false"
+		EnableOpsAPIsOnServicePort = "false"
+		cfg := &config.Config{
+			ServerConfig:  config.ServerConfig{},
+			PeerClientCfg: &config.PeerClientConfig{},
+		}
+		success := applyServerConfig(cfg)
+		assert.True(t, success)
+		assert.False(t, cfg.ServerConfig.EnableOpsAPIsOnServicePort, "EnableOpsAPIsOnServicePort should be false when set to 'false'")
+	})
+
+	t.Run("enable_ops_apis_on_service_port_invalid", func(t *testing.T) {
+		originalOpsPort := OpsPort
+		OpsPort = 0
+		defer func() { OpsPort = originalOpsPort }()
+		UseDomainForLeader = "false"
+		EnableOpsAPIsOnServicePort = "not-a-bool"
+		cfg := &config.Config{
+			ServerConfig:  config.ServerConfig{},
+			PeerClientCfg: &config.PeerClientConfig{},
+		}
+		success := applyServerConfig(cfg)
+		assert.False(t, success, "applyServerConfig should return false for invalid EnableOpsAPIsOnServicePort")
 	})
 }
 
@@ -3009,7 +3070,7 @@ logger:
 
 	// Read the generated configuration
 	cfg := &config.Config{}
-	cfgBytes, err := os.ReadFile(filepath.Join(testDir, "target_config", "config", "model-orch.yaml"))
+	cfgBytes, err := os.ReadFile(filepath.Join(testDir, "target_config", "config", "route-server.yaml"))
 	assert.NoError(t, err)
 	err = yaml.Unmarshal(cfgBytes, cfg)
 	assert.NoError(t, err)

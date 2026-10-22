@@ -90,12 +90,35 @@ func NewBasicRequestImplForPipeline(request *http.Request, isChat bool) (*Genera
 		isChat:                      isChat,
 	}
 
-	if maxTokens, exists := raw.GetInt(openai.MaxTokenKey); exists {
-		impl.originMaxTokens = int32(maxTokens)
+	maxTokens, err := parseMaxTokens(raw, isChat)
+	if err != nil {
+		return nil, err
 	}
+	impl.originMaxTokens = maxTokens
 
+	if !raw.IsBool(openai.StreamKey) {
+		return nil, fmt.Errorf("stream must be a boolean value")
+	}
 	if isStream, exists := raw.GetBool(openai.StreamKey); exists {
 		impl.originIsStream = isStream
+	}
+
+	if streamOptionsRaw, exists := raw.GetRaw(openai.StreamOptionsKey); exists {
+		streamOptionsObj, isObj := streamOptionsRaw.(map[string]interface{})
+		if !isObj {
+			return nil, fmt.Errorf("stream_options must be an object")
+		}
+		isStream, isStreamSet := raw.GetBool(openai.StreamKey)
+		if !isStreamSet || !isStream {
+			return nil, fmt.Errorf("stream_options can only be used when stream is true")
+		}
+		for key, val := range streamOptionsObj {
+			if key == openai.IncludeUsageKey || key == openai.ContinuousUsageStatsKey {
+				if _, parsed := utils.TryParseBool(val); !parsed {
+					return nil, fmt.Errorf("stream_options.%s must be a valid boolean value", key)
+				}
+			}
+		}
 	}
 
 	if reqId, exists := raw.GetString(openai.RequestId); exists {

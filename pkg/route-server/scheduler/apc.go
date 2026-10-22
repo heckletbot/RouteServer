@@ -360,8 +360,12 @@ func (a *APCScheduler) DispatchRequest(request utils.GenerateRequest, params map
 
 	// Get matched instance candidates (Strategy is responsible for cache lookup)
 	matchedInstances, err := apcManager.GetMatchedInstances(request, currentAvailableInstanceLoads, insBlackMap)
-	if err != nil {
-		logger.Log().Debugf("No matched instances for request %s: %v, will select from all available instances", requestID, err)
+	if err != nil || len(matchedInstances) == 0 {
+		if err != nil {
+			logger.Log().Debugf("No matched instances for request %s: %v, will select from all available instances", requestID, err)
+		} else {
+			logger.Log().Debugf("No matched instances for request %s: strategy returned empty result, will select from all available instances", requestID)
+		}
 		// Continue even if no matched instances, let all available instances participate to avoid starvation
 		matchedInstances = make(map[string]float64)
 	}

@@ -33,7 +33,7 @@ var (
 func main() {
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 
-	// 启动服务
+	// Starting service
 	var app = server.App{}
 	go func() {
 		for {

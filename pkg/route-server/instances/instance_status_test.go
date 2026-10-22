@@ -569,6 +569,7 @@ func TestGetReadinessStatus_CircuitBreakerBroken(t *testing.T) {
 	})
 	defer cb.Close()
 	cb.state = StateOpen
+	cb.shouldTrip.Store(true)
 	cb.updateWorkerReadinessState()
 
 	// Use expired cache to ensure checkHealthCache returns nil

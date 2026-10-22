@@ -26,8 +26,8 @@ from typing import List, Dict
 import utils
 
 # ETCD key constants - matching Go code exactly
-MO_CLUSTER_STATE_ALL_INSTANCES_DIR = "/rs/cluster/state/instances/all/"
-MO_INSTANCE_FAILURES_KEY = "/rs/instances/failures"
+RS_CLUSTER_STATE_ALL_INSTANCES_DIR = "/rs/cluster/state/instances/all/"
+RS_INSTANCE_FAILURES_KEY = "/rs/instances/failures"
 
 
 def init_logger(args):
@@ -73,10 +73,8 @@ def generate_all_etcd_instance_keys(args) -> List[str]:
 
 
 class EtcdInstanceChecker:
-    def __init__(self, host="127.0.0.1", port=62379):
-        self.host = host
-        self.port = port
-        self.base_url = f"http://{host}:{port}/v3"
+    def __init__(self, endpoints: List[str]):
+        self.endpoints = endpoints
         self.session = requests.Session()
         self._connect()
 
@@ -91,10 +89,29 @@ class EtcdInstanceChecker:
         if hasattr(self, 'session') and self.session:
             self.session.close()
 
+    def _try_all_endpoints(self, path: str, method: str = "get", data: dict = None, timeout: int = 5):
+        """Try endpoints in order with fallback, return the first successful response.
+        Both connection failures and HTTP error responses trigger fallback to the next endpoint.
+        Raises if none of the endpoints respond successfully."""
+        for endpoint in self.endpoints:
+            url = f"http://{endpoint}{path}"
+            try:
+                if method == "get":
+                    response = self.session.get(url, timeout=timeout)
+                else:
+                    response = self.session.post(url, json=data, timeout=timeout)
+                response.raise_for_status()
+                return response
+            except requests.exceptions.RequestException as e:
+                logging.warning(f"Failed to reach etcd endpoint {endpoint}: {e}")
+                continue
+        raise requests.exceptions.RequestException(f"All etcd endpoints unreachable: {self.endpoints}")
+
     def _connect(self):
         try:
-            self.health_url = f"http://{self.host}:{self.port}/health"
-            response = self.session.get(self.health_url, timeout=5)
+            # Use GET request to check health status
+            # Normal response example: {"health": "true"}
+            response = self._try_all_endpoints("/health", method="get", timeout=5)
 
             if response.status_code == 200:
                 health_data = response.json()
@@ -111,15 +128,12 @@ class EtcdInstanceChecker:
 
     def _get_prefix(self, prefix: str) -> Dict[str, Dict]:
         try:
-            url = f"{self.base_url}/kv/range"
-
             data = {
                 "key": base64.b64encode(prefix.encode('utf-8')).decode('utf-8'),
                 "range_end": base64.b64encode(self._get_range_end(prefix).encode('utf-8')).decode('utf-8')
             }
 
-            response = self.session.post(url, json=data, timeout=10)
-            response.raise_for_status()
+            response = self._try_all_endpoints("/v3/kv/range", method="post", data=data, timeout=10)
 
             result = response.json()
 
@@ -157,14 +171,11 @@ class EtcdInstanceChecker:
 
     def _get_single(self, key: str) -> Dict:
         try:
-            url = f"{self.base_url}/kv/range"
-
             data = {
                 "key": base64.b64encode(key.encode('utf-8')).decode('utf-8')
             }
 
-            response = self.session.post(url, json=data, timeout=10)
-            response.raise_for_status()
+            response = self._try_all_endpoints("/v3/kv/range", method="post", data=data, timeout=10)
 
             result = response.json()
 
@@ -179,10 +190,10 @@ class EtcdInstanceChecker:
             exit(0)
 
     def get_all_instance_keys(self):
-        return self._get_prefix(MO_CLUSTER_STATE_ALL_INSTANCES_DIR)
+        return self._get_prefix(RS_CLUSTER_STATE_ALL_INSTANCES_DIR)
 
     def get_instance_failures(self) -> Dict[str, Dict]:
-        failures_data = self._get_single(MO_INSTANCE_FAILURES_KEY)
+        failures_data = self._get_single(RS_INSTANCE_FAILURES_KEY)
         return failures_data.get('failures', {})
 
     def check_instance_failure_threshold(self, max_threshold: int, available_instances: List[str]) -> bool:
@@ -192,7 +203,7 @@ class EtcdInstanceChecker:
         for instance_name in available_instances:
             if instance_name in failures_data:
                 failure_info = failures_data[instance_name]
-                health_check_count = failure_info.get('health_check_count_after_unhealthy', 0)
+                health_check_count = failure_info.get('health_check_count', 0)
 
                 if health_check_count > max_threshold:
                     failed_instances.append(instance_name)
@@ -240,7 +251,7 @@ class EtcdInstanceChecker:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='ModelOrch Etcd Instance Status Checker (No etcd3 library)')
+    parser = argparse.ArgumentParser(description='router server Etcd Instance Status Checker (No etcd3 library)')
     parser.add_argument('--instance-ips', type=str, required=True,
                         help='instance ips need to be checked for health status, multiple ips are separated by '
                              'commas')
@@ -255,8 +266,8 @@ def main():
                         help='log file')
     parser.add_argument('--probe-type', type=str, choices=["startup", "liveness"], default="liveness",
                         help='probe type, startup or liveness')
-    parser.add_argument('--etcd-host', default='127.0.0.1', help='etcd host (default: 127.0.0.1)')
-    parser.add_argument('--etcd-port', type=int, default=62379, help='etcd port (default: 62379)')
+    parser.add_argument('--etcd-endpoints', type=str, default='127.0.0.1:62379',
+                        help='etcd endpoints, multiple endpoints separated by commas (default: 127.0.0.1:62379)')
     parser.add_argument('--max-health-check-threshold', type=int, default=180,
                         help='maximum health check count after marking as failure (default: 180)')
 
@@ -272,8 +283,17 @@ def main():
         # Generate all expected etcd instance keys
         expected_instance_keys = generate_all_etcd_instance_keys(args)
 
+        etcd_endpoints = [e for e in args.etcd_endpoints.replace(" ", "").split(",") if e]
+        if not etcd_endpoints:
+            logging.error("No etcd endpoints provided")
+            sys.exit(1)
+        for endpoint in etcd_endpoints:
+            parts = endpoint.split(":")
+            if len(parts) != 2 or not utils.valid_port(parts[1]):
+                logging.error(f"Invalid etcd endpoint format: {endpoint}, expected 'ip:port'")
+                sys.exit(1)
         # Use context manager to ensure session is properly closed
-        with EtcdInstanceChecker(args.etcd_host, args.etcd_port) as checker:
+        with EtcdInstanceChecker(etcd_endpoints) as checker:
             if args.probe_type == "startup":
                 check_pass = checker.is_instance_started(args, expected_instance_keys)
             elif args.probe_type == "liveness":

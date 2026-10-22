@@ -1,15 +1,15 @@
-# Release Note - ModelOrch v0.1.0
+# Release Note - RouteServer v0.1.0
 
 ## About
 
-ModelOrch is a distributed OpenAI inference orchestration frontend, designed for Large Language Model (LLM) service scenarios. It supports inference workflows across various vLLM deployment patterns. Aims to provide distributed high-availability inference request execution workflows, it achieves efficient, scalable, and reliable inference load-balancing services through centralized request scheduling, inference engine fault awareness and isolation, and cluster state coordination.
+RouteServer is a distributed OpenAI inference orchestration frontend, designed for Large Language Model (LLM) service scenarios. It supports inference workflows across various vLLM deployment patterns. Aims to provide distributed high-availability inference request execution workflows, it achieves efficient, scalable, and reliable inference load-balancing services through centralized request scheduling, inference engine fault awareness and isolation, and cluster state coordination.
 
 ## Features
 
 ### Deployment Modes
 
 - **Standalone Deployment**: Simple single-machine deployment, suitable for scenarios where inference instance addresses are fixed in advance. ([Deployment Guide](../deploy.md))
-- **Distributed Deployment**: Supports distributed request processing with horizontal scaling to prevent ModelOrch from becoming an inference performance bottleneck. Through leader election, it provides centralized and unified inference request scheduling to avoid scheduling conflict performance issues caused by distributed routers scheduling independently. ([Deployment Guide](../deploy.md))
+- **Distributed Deployment**: Supports distributed request processing with horizontal scaling to prevent RouteServer from becoming an inference performance bottleneck. Through leader election, it provides centralized and unified inference request scheduling to avoid scheduling conflict performance issues caused by distributed routers scheduling independently. ([Deployment Guide](../deploy.md))
 
 ### Supported vLLM Deployment Modes
 
@@ -50,7 +50,7 @@ For details, see ([Observability Documentation](../observability.md)) and ([REST
 
 ## Notes
 
-- This is the first open-source release of ModelOrch.
+- This is the first open-source release of RouteServer.
 - For production use, it is strongly recommended to enable HTTPS and mTLS. See the security guide for details.
 - For complete API documentation, refer to the RESTful API reference and Config reference.
 
@@ -67,4 +67,4 @@ For details, see ([Observability Documentation](../observability.md)) and ([REST
 
 ## License
 
-ModelOrch is licensed under Apache License 2.0.
+RouteServer is licensed under Apache License 2.0.

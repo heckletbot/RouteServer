@@ -478,3 +478,51 @@ func TestFillFirstToken(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+func TestParseMaxTokens(t *testing.T) {
+	testCases := []struct {
+		name        string
+		isChat      bool
+		body        string
+		expectError bool
+	}{
+		// v1/chat/completions tests
+		{"chat max_tokens=-1 max_completion_tokens=-1", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":-1,"max_completion_tokens":-1}`, true},
+		{"chat max_tokens=-1 max_completion_tokens=0", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":-1,"max_completion_tokens":0}`, true},
+		{"chat max_tokens=-1 max_completion_tokens=10", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":-1,"max_completion_tokens":10}`, false},
+		{"chat max_tokens=0 max_completion_tokens=-1", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":0,"max_completion_tokens":-1}`, true},
+		{"chat max_tokens=0 max_completion_tokens=0", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":0,"max_completion_tokens":0}`, true},
+		{"chat max_tokens=0 max_completion_tokens=10", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":0,"max_completion_tokens":10}`, false},
+		{"chat max_tokens=10 max_completion_tokens=-1", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":10,"max_completion_tokens":-1}`, true},
+		{"chat max_tokens=10 max_completion_tokens=0", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":10,"max_completion_tokens":0}`, true},
+		{"chat max_tokens=10 max_completion_tokens=10", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":10,"max_completion_tokens":10}`, false},
+		{"chat max_tokens empty max_completion_tokens empty", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":"","max_completion_tokens":""}`, true},
+		{"chat max_tokens empty max_completion_tokens=10", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":"","max_completion_tokens":10}`, true},
+		{"chat max_tokens=10 max_completion_tokens empty", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":10,"max_completion_tokens":""}`, true},
+		{"chat max_tokens empty max_completion_tokens null", true, `{"model":"test","messages":[{"role":"user","content":"hi"}],"max_tokens":"","max_completion_tokens":null}`, true},
+
+		// v1/completions tests (max_completion_tokens should be ignored)
+		{"completion max_tokens=10 max_completion_tokens=-1", false, `{"model":"test","prompt":"hi","max_tokens":10,"max_completion_tokens":-1}`, false},
+		{"completion max_tokens=10 max_completion_tokens empty", false, `{"model":"test","prompt":"hi","max_tokens":10,"max_completion_tokens":""}`, false},
+		{"completion max_tokens=10 max_completion_tokens={}", false, `{"model":"test","prompt":"hi","max_tokens":10,"max_completion_tokens":{}}`, false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var httpRequest *http.Request
+			if tc.isChat {
+				httpRequest = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(tc.body))
+			} else {
+				httpRequest = httptest.NewRequest(http.MethodPost, "/v1/completions", strings.NewReader(tc.body))
+			}
+			httpRequest.Header.Set("Content-Type", "application/json")
+
+			_, err := NewBasicRequestImplForPipeline(httpRequest, tc.isChat)
+			if tc.expectError {
+				assert.Error(t, err, "expected error but got nil")
+			} else {
+				assert.NoError(t, err, "expected no error but got: %v", err)
+			}
+		})
+	}
+}

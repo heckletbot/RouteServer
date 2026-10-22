@@ -52,6 +52,10 @@ type RemoteScheduledRequestManager struct {
 	// Enables O(1) timeout check by only examining the list's front.
 	timeList *list.List
 
+	// 3. <WorkerID, bootId>
+	// Tracks the bootId for each worker to detect worker restarts.
+	workerBootIds map[string]string
+
 	stopCh chan struct{}
 }
 
@@ -60,6 +64,7 @@ func NewRemoteScheduledRequestManager(cfg *config.RemoteSchedulerCfg) *RemoteSch
 		mu:              sync.RWMutex{},
 		pendingRequests: make(map[string]map[reqInsKey]*list.Element),
 		timeList:        list.New(),
+		workerBootIds:   make(map[string]string),
 		stopCh:          make(chan struct{}),
 		cfg:             cfg,
 	}
@@ -70,10 +75,10 @@ func (m *RemoteScheduledRequestManager) OnRequestEvent(workerID string, msg *uti
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.OnRequestEventWithNoLock(workerID, msg)
+	m.onRequestEventWithNoLock(workerID, msg)
 }
 
-func (m *RemoteScheduledRequestManager) OnRequestEventWithNoLock(workerID string, msg *utils.RequestEventMsg) {
+func (m *RemoteScheduledRequestManager) onRequestEventWithNoLock(workerID string, msg *utils.RequestEventMsg) {
 	if msg.EventType == constant.RequestNew {
 		return
 	}
@@ -95,7 +100,7 @@ func (m *RemoteScheduledRequestManager) OnRequestEventWithNoLock(workerID string
 }
 
 // Record event if it's new
-func (m *RemoteScheduledRequestManager) OnRequestEventNew(workerID string, msg *utils.RequestEventMsg) {
+func (m *RemoteScheduledRequestManager) OnRequestEventNew(workerID string, workerBootId string, msg *utils.RequestEventMsg) {
 	reqID := msg.Request.GetRequestId()
 	key := reqInsKey{
 		RequestID:      msg.Request.GetRequestId(),
@@ -185,6 +190,12 @@ func (m *RemoteScheduledRequestManager) CleanUpAllEventsByWorkerID(workerID stri
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.cleanUpAllEventsByWorkerIDWithNoLock(workerID)
+}
+
+// cleanUpAllEventsByWorkerIDWithNoLock removes all pending requests for a given worker.
+// The caller must hold m.mu lock.
+func (m *RemoteScheduledRequestManager) cleanUpAllEventsByWorkerIDWithNoLock(workerID string) {
 	if _, ok := m.pendingRequests[workerID]; !ok {
 		return
 	}
@@ -192,11 +203,41 @@ func (m *RemoteScheduledRequestManager) CleanUpAllEventsByWorkerID(workerID stri
 	delete(m.pendingRequests, workerID)
 }
 
+// GetAllEventsByWorkerIDWithLock returns all pending events for a given worker.
+// The caller must hold m.mu lock.
+func (m *RemoteScheduledRequestManager) GetAllEventsByWorkerIDWithLock(workerID string) []*utils.RequestEventMsg {
+	if _, ok := m.pendingRequests[workerID]; !ok {
+		return nil
+	}
+
+	var events []*utils.RequestEventMsg
+	for _, elem := range m.pendingRequests[workerID] {
+		events = append(events, elem.Value.(*requestEntry).msg)
+	}
+	return events
+}
+
+// setWorkerBootIdIfChanged checks if the worker's bootId has changed.
+// If the worker is new or has the same bootId, returns false.
+// If the bootId has changed (worker restarted), returns true.
+// The caller must hold m.mu lock.
+func (m *RemoteScheduledRequestManager) setWorkerBootIdIfChanged(workerId, bootId string) bool {
+	if bootId == "" {
+		return false
+	}
+	if existingBootId, ok := m.workerBootIds[workerId]; ok && existingBootId == bootId {
+		return false
+	}
+	m.workerBootIds[workerId] = bootId
+	return true
+}
+
 func (m *RemoteScheduledRequestManager) ClearAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pendingRequests = make(map[string]map[reqInsKey]*list.Element)
 	m.timeList = list.New()
+	m.workerBootIds = make(map[string]string)
 }
 
 func (m *RemoteScheduledRequestManager) GetAllRemoteWorkers() []string {

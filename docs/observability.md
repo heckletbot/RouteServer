@@ -1,6 +1,6 @@
 # Observability
 
-Observability is a cross-cutting concern that spans all layers of ModelOrch with three pillars: metrics, tracing, and awareness.
+Observability is a cross-cutting concern that spans all layers of RouteServer with three pillars: metrics, tracing, and awareness.
 
 ---
 
@@ -74,14 +74,14 @@ See api details at [GET /internal/metrics](./restful-api.md#get-internalmetrics)
 
 Distributed tracing is implemented via the `RequestTracer` interface (`pkg/common/trace/trace_interface.go`), supporting multiple backends.
 
-The trace log output follows the structured log format of ModelOrch. Below is an example trace for a request processed in distributed mode (worker receives and processes request, leader provides scheduling service):
+The trace log output follows the structured log format of RouteServer. Below is an example trace for a request processed in distributed mode (worker receives and processes request, leader provides scheduling service):
 
 | Backend | File | Description |
 |---|---|---|
 | **LogTrace** | `pkg/common/trace/trace_log.go` | Structured logging-based tracing. Records span start/end/error timestamps, events, and token-level performance (TTFT, TPOT, latency). |
 | **NoTrace** | `pkg/common/trace/trace_empty.go` | No-op tracer for environments where tracing is disabled. |
 
-See following example for log trace in distributed mode (i.e. ModelOrch worker receive and process request. ModelOrch leader provide schedule service for workers). A request's trace will be as follows:
+See following example for log trace in distributed mode (i.e. RouteServer worker receive and process request. RouteServer leader provide schedule service for workers). A request's trace will be as follows:
 
 ```text
 1. Request end-to-end start. If the request specifies a request_id via X-Request-Id, the original reqId and the ID with a random suffix will be printed here.

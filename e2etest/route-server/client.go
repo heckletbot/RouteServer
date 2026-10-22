@@ -24,13 +24,20 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"infer-dp-scheduler/cmd/route_server/server"
+	"infer-dp-scheduler/pkg/common/cluster"
+	"infer-dp-scheduler/pkg/common/config"
+	"infer-dp-scheduler/pkg/common/constant"
+	"infer-dp-scheduler/pkg/common/health"
 	"infer-dp-scheduler/pkg/common/openai"
 	"infer-dp-scheduler/pkg/common/utils"
+	"infer-dp-scheduler/pkg/route-server/instances"
 )
 
 // -------------------------------------------------------
@@ -39,16 +46,17 @@ import (
 
 // RSClient encapsulates the configuration needed for testing
 type RSClient struct {
-	BaseURL    string
-	HTTPClient *http.Client
+	BaseClient
 }
 
 // NewOpenAIClient creates a new client instance
 func NewRSClient(baseURL string) *RSClient {
 	return &RSClient{
-		BaseURL: baseURL,
-		HTTPClient: &http.Client{
-			Timeout: 600 * time.Second,
+		BaseClient: BaseClient{
+			BaseURL: baseURL,
+			HTTPClient: &http.Client{
+				Timeout: 600 * time.Second,
+			},
 		},
 	}
 }
@@ -84,8 +92,20 @@ func (c *RSClient) SendCompletion(ctx context.Context, body interface{}, extraHe
 	return c.PostRequest(ctx, "/v1/completions", body, extraHeaders)
 }
 
-func (c *RSClient) GetInternalMetrics() (*http.Response, error) {
-	req, err := http.NewRequest("GET", c.BaseURL+"/internal/metrics", nil)
+func (c *RSClient) GetInternalMetrics(queryParams ...map[string]string) (*http.Response, error) {
+	urlStr := c.BaseURL + "/internal/metrics"
+	if len(queryParams) > 0 {
+		first := true
+		for k, v := range queryParams[0] {
+			if first {
+				urlStr += "?" + k + "=" + v
+				first = false
+			} else {
+				urlStr += "&" + k + "=" + v
+			}
+		}
+	}
+	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -190,16 +210,17 @@ func NewBasicChatRequestBody() openai.ChatCompletionRequestV1 {
 
 // MockServerClient encapsulates the client for operating Mock Server
 type MockServerClient struct {
-	BaseURL    string
-	HTTPClient *http.Client
+	BaseClient
 }
 
 // NewMockServerClient creates Mock Server client
 func NewMockServerClient(port string) *MockServerClient {
 	return &MockServerClient{
-		BaseURL: fmt.Sprintf("http://127.0.0.1:%s", port),
-		HTTPClient: &http.Client{
-			Timeout: 10 * time.Second,
+		BaseClient: BaseClient{
+			BaseURL: fmt.Sprintf("http://127.0.0.1:%s", port),
+			HTTPClient: &http.Client{
+				Timeout: 10 * time.Second,
+			},
 		},
 	}
 }
@@ -231,9 +252,32 @@ func (c *MockServerClient) MockUnHealth() (*http.Response, error) {
 	return c.HTTPClient.Do(req)
 }
 
+func (c *MockServerClient) MockError(statusCode ...int) (*http.Response, error) {
+	type MockErrorBody struct {
+		RetCode int `json:"code"`
+	}
+	body := new(MockErrorBody)
+	if len(statusCode) != 0 {
+		body.RetCode = 500
+	} else {
+		body.RetCode = 400
+	}
+	return c.sendRequest(context.Background(), "/mock_error", "POST", body, nil)
+}
+
+func (c *MockServerClient) RemoveError() (*http.Response, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+"/remove_error", nil)
+	if err != nil {
+		return nil, err
+	}
+	return c.HTTPClient.Do(req)
+}
+
 // LinkDownBody request body: set link down
 type LinkDownBody struct {
-	MetaDataList []KVMetaData `json:"meta_data_list"`
+	MetaDataList     []KVMetaData `json:"meta_data_list"`
+	Version          string       `json:"version,omitempty"`
+	TokenBeforeError int          `json:"token_before_error,omitempty"`
 }
 
 // KVMetaData KV metadata
@@ -242,12 +286,20 @@ type KVMetaData struct {
 	Port    string `json:"port"`
 }
 
-// LinkDown sets the link of the specified target instance to down status
+// LinkDown sets the specified target instance's link to down status
 // targetAddress: target instance address (e.g., "127.0.0.1")
 // targetPort: target instance port (e.g., "8082")
-func (c *MockServerClient) LinkDown(targetAddress, targetPort string) (*http.Response, error) {
+func (c *MockServerClient) LinkDown(targetAddress, targetPort string, version ...string) (*http.Response, error) {
 	linkDownBody := LinkDownBody{
 		MetaDataList: []KVMetaData{},
+	}
+	if len(version) > 0 {
+		linkDownBody.Version = version[0]
+	}
+	if len(version) > 1 {
+		if t, err := strconv.Atoi(version[1]); err == nil {
+			linkDownBody.TokenBeforeError = t
+		}
 	}
 	bodyBytes, err := json.Marshal(linkDownBody)
 	if err != nil {
@@ -284,17 +336,26 @@ func (c *RSClient) CheckRSHealth() (*http.Response, error) {
 }
 
 // ExtractMetricValue reads metrics from HTTP Response stream, precisely matches by metric name and labels, returns generic value
+// If label values are empty, returns sum
 func ExtractMetricValue(resp *http.Response, metricName string, targetLabels map[string]string) (float64, error) {
 	if resp == nil || resp.Body == nil {
 		return 0, errors.New("invalid http response")
 	}
-	// Note: Follow Go convention - whoever initiates HTTP request is responsible for closing Body
+	// 1. Read all body data into memory
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("read body failed: %w", err)
+	}
 
-	// 1. Initialize streaming decoder
-	decoder := expfmt.NewDecoder(resp.Body, expfmt.NewFormat(expfmt.TypeTextPlain))
+	defer resp.Body.Close()
+	// 2. Important: re-wrap the read data back into resp.Body so external callers can still read it
+	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	decoder := expfmt.NewDecoder(bytes.NewReader(bodyBytes), expfmt.NewFormat(expfmt.TypeTextPlain))
 	var family dto.MetricFamily
 
-	// 2. Parse MetricFamily one by one to avoid loading all data into memory
+	sum := 0.0
+	found := false
+	// Parse MetricFamily one by one to avoid loading all data into memory
 	for {
 		err := decoder.Decode(&family)
 		if err != nil {
@@ -308,9 +369,13 @@ func ExtractMetricValue(resp *http.Response, metricName string, targetLabels map
 		if family.GetName() != metricName {
 			continue
 		}
-
+		found = true
 		// 3. After finding target metric, iterate through data points to match labels
 		for _, metric := range family.GetMetric() {
+			if len(targetLabels) == 0 {
+				sum += extractValue(metric)
+				continue
+			}
 			if matchLabels(metric.GetLabel(), targetLabels) {
 				// Extract raw value and cast to generic T
 				return extractValue(metric), nil
@@ -319,6 +384,10 @@ func ExtractMetricValue(resp *http.Response, metricName string, targetLabels map
 
 		// The same metric name only appears in one MetricFamily; if labels didn't match in this family, no need to continue reading
 		break
+	}
+
+	if found {
+		return sum, nil
 	}
 
 	return 0, errors.New("ErrMetricNotFound")
@@ -356,6 +425,15 @@ func extractValue(metric *dto.Metric) float64 {
 	return 0
 }
 
+// GetSchedulerLoad get leader scheduler load for all instances
+func (c *RSClient) GetSchedulerLoad() (*http.Response, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+"/scheduler/load", nil)
+	if err != nil {
+		return nil, err
+	}
+	return c.HTTPClient.Do(req)
+}
+
 // GetWorkerReadiness checks worker's readiness status, returns ready and msg
 func (c *RSClient) GetWorkerReadiness() (bool, string, error) {
 	req, err := http.NewRequest("GET", c.BaseURL+"/internal/worker/readiness", nil)
@@ -374,7 +452,407 @@ func (c *RSClient) GetWorkerReadiness() (bool, string, error) {
 	return ready, msg, nil
 }
 
+// GetLiveness checks the liveness probe of the RS instance
+func (c *RSClient) GetLiveness() (*http.Response, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+"/internal/liveness", nil)
+	if err != nil {
+		return nil, err
+	}
+	return c.HTTPClient.Do(req)
+}
+
+// CheckLeaderReadiness checks the leader/readiness of the RS instance, returns is_leader status
+func (c *RSClient) CheckLeaderReadiness() bool {
+	req, err := http.NewRequest("GET", c.BaseURL+"/internal/leader/readiness", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	var leaderResp map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&leaderResp); err != nil {
+		return false
+	}
+	if val, ok := leaderResp["is_leader"]; ok {
+		if b, ok := val.(bool); ok {
+			return b
+		}
+	}
+	return false
+}
+
+func (c *RSClient) GetLeader() (string, int, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+"/cluster/leader", nil)
+	if err != nil {
+		return "", 0, err
+	}
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return "", 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", resp.StatusCode, fmt.Errorf("get leader failed, status: %d", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var leaderResp struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(body, &leaderResp); err != nil {
+		return "", resp.StatusCode, err
+	}
+	return leaderResp.ID, resp.StatusCode, nil
+}
+
+// GetStatus requests the /status endpoint of the RS instance and returns the parsed status response
+func (c *RSClient) GetStatus() (*http.Response, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+"/status", nil)
+	if err != nil {
+		return nil, err
+	}
+	return c.HTTPClient.Do(req)
+}
+
+// GetRSMetric queries RS internal metrics and returns the value of the specified metricName.
+// queryParams is optional, used to append query parameters such as map[string]string{"only_rs": "true"}.
+func (c *RSClient) GetRSMetric(metricName string, queryParams ...map[string]string) (float64, error) {
+	resp, err := c.GetInternalMetrics(queryParams...)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("get metrics failed, status: %d", resp.StatusCode)
+	}
+	return ExtractMetricValue(resp, metricName, nil)
+}
+
 func TimeoutCtx(ctx context.Context, timeout time.Duration) context.Context {
-	retCtx, _ := context.WithTimeout(ctx, timeout)
+	retCtx, cancel := context.WithTimeout(ctx, timeout)
+	go func() {
+		<-retCtx.Done()
+		cancel()
+	}()
 	return retCtx
+}
+
+// GetMetricsValue fetches the value of a specific metric from /internal/metrics (Prometheus text format).
+// If labelFilter is non-empty, only lines containing that label substring are matched.
+// Returns the first matching metric value and the raw response body.
+func (c *RSClient) GetMetricsValue(metricName, labelFilter string) (float64, string, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+"/internal/metrics?only_rs=true", nil)
+	if err != nil {
+		return 0, "", err
+	}
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, "", err
+	}
+	bodyStr := string(body)
+	// Prometheus text format examples:
+	//   "rs:num_fallback_scheduled 5"
+	//   `rs:infer_requests_failure_status_total{status_code="500",url="/v1/chat/completions"} 3`
+	for _, line := range strings.Split(bodyStr, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, metricName) {
+			continue
+		}
+		if labelFilter != "" && !strings.Contains(trimmed, labelFilter) {
+			continue
+		}
+		parts := strings.Fields(trimmed)
+		if len(parts) >= 2 {
+			val, err := strconv.ParseFloat(parts[len(parts)-1], 64)
+			if err != nil {
+				return 0, bodyStr, err
+			}
+			return val, bodyStr, nil
+		}
+	}
+	return 0, bodyStr, fmt.Errorf("metric %s not found in response", metricName)
+}
+
+type BaseClient struct {
+	BaseURL    string
+	HTTPClient *http.Client
+}
+
+func (c *BaseClient) sendRequest(ctx context.Context, path, method string, body interface{}, extraHeaders map[string]string) (*http.Response, error) {
+	// 1. Serialize Body
+	var bodyReader io.Reader
+	if body != nil {
+		switch v := body.(type) {
+		case []byte:
+			// If byte slice, use directly as underlying data reader
+			bodyReader = bytes.NewReader(v)
+		case string:
+			// If string, convert directly to Reader to avoid memory copy or double serialization
+			bodyReader = strings.NewReader(v)
+		case io.Reader:
+			// Additional support: if caller passes a stream directly (e.g., file or another request body), reuse it
+			bodyReader = v
+		default:
+			// Other types (e.g., Struct, Map), use standard JSON serialization
+			jsonBytes, err := json.Marshal(v)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal body: %w", err)
+			}
+			bodyReader = bytes.NewBuffer(jsonBytes)
+		}
+	}
+	// 2. Build Request
+	url := fmt.Sprintf("%s%s", c.BaseURL, path)
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// 3. Set default headers (OpenAI standard)
+	req.Header.Set("Content-Type", "application/json")
+
+	// 4. Inject extra headers (override or add)
+	for k, v := range extraHeaders {
+		req.Header.Set(k, v)
+	}
+
+	// 5. Send request
+	// Note: Body is not read or closed here, left for test cases to handle (Ginkgo/Gomega)
+	return c.HTTPClient.Do(req)
+}
+
+func (c *RSClient) GetCurrentLeader() (string, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+"/cluster/leader", nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("HTTP statuscode is %v", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	leaderResp := new(cluster.LeaderResponse)
+	if err = json.Unmarshal(body, leaderResp); err != nil {
+		return "", err
+	}
+
+	return leaderResp.Name, nil
+}
+
+func (c *RSClient) InstanceLeave(names []string) error {
+	resp, err := c.sendRequest(TimeoutCtx(context.Background(), time.Second*2), "/cluster/instance/leave", "POST",
+		&cluster.InstanceLeaveRequest{
+			InstanceNames: names,
+		}, nil)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("HTTP statuscode is %v", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+	loadResp := new(ClusterOKResp)
+	if err = json.Unmarshal(body, loadResp); err != nil {
+		return err
+	}
+
+	if loadResp.Result != "accepted" {
+		return fmt.Errorf("%s", loadResp.Result)
+	}
+	return nil
+}
+
+func (c *RSClient) InstanceJoin(instances map[string]*config.Route) error {
+	resp, err := c.sendRequest(TimeoutCtx(context.Background(), time.Second*2), "/cluster/instance/join", "POST",
+		&cluster.InstanceJoinRequest{
+			Instances: instances,
+		}, nil)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("HTTP statuscode is %v", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	loadResp := new(ClusterOKResp)
+	if err = json.Unmarshal(body, loadResp); err != nil {
+		return err
+	}
+
+	if loadResp.Result != "accepted" {
+		return fmt.Errorf("%s", loadResp.Result)
+	}
+	return nil
+}
+
+func (c *RSClient) CheckLoadReset() (bool, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+"/scheduler/load", nil)
+	if err != nil {
+		return false, err
+	}
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+
+	if resp.StatusCode != 200 {
+		return false, fmt.Errorf("HTTP statuscode is %v", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, err
+	}
+
+	loadResp := new(server.SchedulerLoadResponse)
+	if err = json.Unmarshal(body, loadResp); err != nil {
+		return false, err
+	}
+
+	for _, groupLoad := range loadResp.Loads {
+		for _, load := range groupLoad.SLOGroupLoads {
+			for _, instanceLoad := range load.InstanceLoads.Available {
+				if instanceLoad.LoadVal != 0 {
+					return false, fmt.Errorf("ins[%v]'s load is [%v]", instanceLoad.Id, instanceLoad.LoadVal)
+				}
+			}
+		}
+	}
+	return true, nil
+}
+func (c *RSClient) InstanceRoutesFromClusterState() (map[string]*config.Route, error) {
+	resp, err := c.ClusterState()
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	loadResp := new(cluster.LocalStateResponse)
+	if err = json.Unmarshal(body, loadResp); err != nil {
+		return nil, err
+	}
+	return loadResp.State.InstanceRoutes, nil
+}
+
+func (c *RSClient) ClusterState() (*http.Response, error) {
+	return c.sendRequest(TimeoutCtx(context.Background(), time.Second*2), "/cluster/local/state", "GET",
+		"", nil)
+}
+
+func (c *RSClient) Status() (*instances.InstanceStatusRsp, error) {
+	resp, err := c.sendRequest(TimeoutCtx(context.Background(), time.Second*2), "/status", "GET",
+		"", nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("status code is %d", resp.StatusCode)
+	}
+
+	defer resp.Body.Close()
+	instResp := new(instances.InstanceStatusRsp)
+	err = json.NewDecoder(resp.Body).Decode(instResp)
+	return instResp, err
+}
+
+func sendFastInferRequest(client *RSClient, requestId string, timeoutSec int) (*http.Response, error) {
+	body := NewBasicChatRequestBody()
+	body.MaxTokens = 10
+	body.Stream = false
+	headers := map[string]string{constant.XRequestId: requestId}
+	var timeout time.Duration
+	if timeoutSec == 0 {
+		timeout = 60 * time.Second
+	} else {
+		timeout = time.Duration(timeoutSec) * time.Second
+	}
+	return client.SendChatCompletion(TimeoutCtx(context.Background(), timeout), body, headers)
+}
+
+func (c *MockServerClient) RemoveMockError() (*http.Response, error) {
+	return c.sendRequest(TimeoutCtx(context.Background(), 3*time.Second), "/remove_error", "GET", "", nil)
+}
+
+type ClusterOKResp struct {
+	Result string `json:"result"`
+}
+
+// GetStatusJson accesses /status to get the corresponding health status info [running, fault, deploying]
+func (c *RSClient) GetStatusJson() (*instances.InstanceStatusRsp, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+"/status", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result instances.InstanceStatusRsp
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetLinkBlackInstances accesses /link_black_instance to get the linkdown-blacklist
+func (c *RSClient) GetLinkBlackInstances() (*health.BlacklistResponse, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+"/link_black_instance", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var result health.BlacklistResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }

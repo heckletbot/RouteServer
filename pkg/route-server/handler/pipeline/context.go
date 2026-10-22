@@ -17,10 +17,11 @@
 package pipeline
 
 import (
-	"infer-dp-scheduler/cmd/route_server/server/options"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"infer-dp-scheduler/cmd/route_server/server/options"
 
 	"github.com/gin-gonic/gin"
 
@@ -100,6 +101,9 @@ type RequestContext struct {
 	errorMutex             sync.RWMutex
 	RsErr                  *errs.RSError
 	InstanceFailureDetails *utils.InstanceFailureDetails
+
+	// mutex to protect gin.Context concurrent access across phases and pipelines
+	ginCtxMutex sync.Mutex
 }
 
 func NewRequestContext(c *gin.Context) *RequestContext {
@@ -166,6 +170,13 @@ func (ctx *PipelineContext) SetError(rsErr *errs.RSError, details *utils.Instanc
 	}
 	reqCtx.RsErr = rsErr
 	reqCtx.InstanceFailureDetails = details
+}
+
+func (ctx *PipelineContext) HasMainErr() bool {
+	reqCtx := ctx.RequestContext
+	reqCtx.errorMutex.RLock()
+	defer reqCtx.errorMutex.RUnlock()
+	return reqCtx.RsErr != nil
 }
 
 func (ctx *PipelineContext) SetSubRequests(spanName string) {
@@ -267,4 +278,19 @@ func (ctx *PipelineContext) SetFirstTokenSend() {
 		ctx.IsFirstTokenDone = true
 		close(ctx.FirstTokenSendChannel)
 	}
+}
+
+func (ctx *PipelineContext) GetGinCtxMutex() *sync.Mutex {
+	return &ctx.RequestContext.ginCtxMutex
+}
+
+func (ctx *PipelineContext) BlackId(instanceType string) string {
+	if ctx.RequestContext == nil || ctx.RequestContext.InferMsg == nil {
+		logger.Log().Warnf("BlackId: RequestContext or InferMsg is nil, RequestContext: %v", ctx.RequestContext)
+		return ""
+	}
+	if instanceType == constant.Decode {
+		return ctx.RequestContext.InferMsg.GetInstance(constant.Prefill)
+	}
+	return ""
 }

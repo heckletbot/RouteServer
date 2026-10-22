@@ -82,7 +82,12 @@ func (rsh *RemoteScheduleHandler) HandleSchedule(ctx *gin.Context) {
 
 func (rsh *RemoteScheduleHandler) doHandleSchedule(ctx context.Context, request *scheduler.RemoteScheduleRequest,
 	tracer trace.RequestTracer) (*scheduler.ScheduleResponse, error) {
-	res, err := rsh.manager.DispatchRequest(ctx, request.Request, request.Params, tracer, request.PreInstanceId, scheduler.RemoteRequestInfo{IsLocal: false, WorkerId: request.WorkerId})
+	res, err := rsh.manager.DispatchRequest(ctx, request.Request, request.Params, tracer, request.PreInstanceId,
+		scheduler.RemoteRequestInfo{
+			IsLocal:      false,
+			WorkerId:     request.WorkerId,
+			WorkerBootId: request.WorkerBootId,
+		})
 	if err != nil {
 		return nil, fmt.Errorf("failed to schedule request, err = %v", err)
 	}

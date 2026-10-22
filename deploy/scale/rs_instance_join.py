@@ -52,17 +52,17 @@ def valid_port(port):
 
 def check_params(args):
     ip_pattern = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
-    if ":" not in args.mo_addr:
-        raise ValueError("param mo-addr format error")
-    ip, port = args.mo_addr.strip().split(":")
+    if ":" not in args.rs_addr:
+        raise ValueError("param rs-addr format error")
+    ip, port = args.rs_addr.strip().split(":")
     if not valid_port(port):
-        raise ValueError(f"param mo-addr port {port} out of range")
+        raise ValueError(f"param rs-addr port {port} out of range")
     # validate instance-ips
     ips = args.instance_ips.replace(" ", "").split(",")
     for ip in ips:
         if not re.match(ip_pattern, ip):
             raise ValueError(f"param instance-ips ip {ip} is invalid")
-    # 校验api-server-ports
+    # Validate api-server-ports
     ports = args.api_server_ports.replace(" ", "").split(",")
     for port in ports:
         if not valid_port(port):
@@ -70,7 +70,7 @@ def check_params(args):
     if len(ports) != len(ips):
         raise ValueError(f"the array length of api-server-ports and instance-ips are different, "
                          f"api-server-ports: {ports}, instance-ips: {ips}")
-    # 校验num-api-servers
+    # Validate num-api-servers
     if args.num_api_servers is not None:
         num_api_servers = args.num_api_servers.replace(" ", "").split(",")
         if len(num_api_servers) != len(ips):
@@ -84,7 +84,7 @@ def check_params(args):
                 max_port = int(ports[idx]) + int(num) - 1
                 if not valid_port(max_port):
                     raise ValueError(f"api server max port {max_port} out of range, start port {ports[idx]}")
-    # 校验static-infos
+    # Validate static-infos
     parse_static_infos_param(args.static_infos)
 
 
@@ -107,7 +107,7 @@ def generate_instance_name(role, ip, port):
 
 
 def instance_join(args):
-    base_url = "http://{}/".format(args.mo_addr)
+    base_url = "http://{}/".format(args.rs_addr)
     url = base_url + "/cluster/instance/join"
     static_infos = parse_static_infos_param(args.static_infos)
     instance_ips = args.instance_ips.replace(" ", "").split(",")
@@ -134,11 +134,11 @@ def instance_join(args):
             }
             instances[instance_name] = instance_info
             instances_addr.append(ip + ":" + str(port))
-    # 生成body
+    # Generate body
     body = {
         "instances": instances
     }
-    logging.info(f"begin join instances {instances_addr} to model orch")
+    logging.info(f"begin join instances {instances_addr} to router server")
     for i in range(RETRY_TIME):
         try:
             res = request_post(url, body)
@@ -146,10 +146,10 @@ def instance_join(args):
             break
         except Exception as e:
             if i == RETRY_TIME - 1:
-                raise Exception(f"instances {instances_addr} join to model orch error after retrying {RETRY_TIME} times: {str(e)}")
-            logging.warning(f"instances join to model orch error, try again..")
+                raise Exception(f"instances {instances_addr} join to router server error after retrying {RETRY_TIME} times: {str(e)}")
+            logging.warning(f"instances join to router server error, try again..")
             time.sleep(3)
-    logging.info(f"instances {instances_addr} join to model orch successfully")
+    logging.info(f"instances {instances_addr} join to router server successfully")
 
 
 def check_result(res):
@@ -160,17 +160,17 @@ def check_result(res):
             err_msg = res['error']
         else:
             err_msg = str(res)
-        raise Exception(f"instances join to model orch error: {err_msg}")
+        raise Exception(f"instances join to router server error: {err_msg}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mo-addr', type=str, required=True,
-                        help='model orch address, the format is {ip}:{port}')
+    parser.add_argument('--rs-addr', type=str, required=True,
+                        help='router server address, the format is {ip}:{port}')
     parser.add_argument('--role', type=str, required=True, choices=['prefill', 'decode'],
-                        help='instance role that need to join to the model orch')
+                        help='instance role that need to join to the router server')
     parser.add_argument('--instance-ips', type=str, required=True,
-                        help='instance ips that need to be joined to the model orch, multiple ips are separated by '
+                        help='instance ips that need to be joined to the router server, multiple ips are separated by '
                              'commas')
     parser.add_argument('--static-infos', type=str, default="max_num_seqs#54",
                         help='instance static infos, format is ${key1}#${val1}, multiple infos are separated by commas,'
@@ -194,5 +194,5 @@ if __name__ == "__main__":
         check_params(args)
         instance_join(args)
     except Exception as e:
-        logging.exception("instances join to model orch error")
+        logging.exception("instances join to router server error")
         sys.exit(1)

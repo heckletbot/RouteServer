@@ -1,4 +1,4 @@
-# ModelOrch API Documentation
+# RouteServer API Documentation
 
 ## Port Description
 
@@ -30,14 +30,14 @@ The **Listen Port** in each API description indicates which port the API listens
 
 **Listen Port**: Service Port
 
-**Functionality**: Check the health status of all inference instances under the requested ModelOrch process, including both Prefill and Decode instances. Returns status information for all instances and outputs the overall cluster status.
+**Functionality**: Check the health status of all inference instances under the requested RouteServer process, including both Prefill and Decode instances. Returns status information for all instances and outputs the overall cluster status.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Operations Platform
 
 **Constraints/Conditions**:
-- Access to ModelOrch in the cluster is only successful when the leader is alive
+- Access to RouteServer in the cluster is only successful when the leader is alive
 - When Leader is unavailable, this endpoint is not available and will return a non-200 status code
 
 **Parameters**: This endpoint requires no request parameters
@@ -86,9 +86,9 @@ The **Listen Port** in each API description indicates which port the API listens
 
 **Listen Port**: Service Port
 
-**Functionality**: Check whether all inference instances under the requested ModelOrch process are healthy, covering both Prefill and Decode instance types. Returns the corresponding HTTP status code based on the check result.
+**Functionality**: Check whether all inference instances under the requested RouteServer process are healthy, covering both Prefill and Decode instance types. Returns the corresponding HTTP status code based on the check result.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Monitoring System, Operations Platform
 
@@ -115,7 +115,7 @@ The **Listen Port** in each API description indicates which port the API listens
 
 ## 3. Inference Request API
 
-The inference endpoints support the OpenAI-standard API format. ModelOrch proxies requests to the appropriate inference instances based on scheduling strategy.
+The inference endpoints support the OpenAI-standard API format. RouteServer proxies requests to the appropriate inference instances based on scheduling strategy.
 
 **Error Codes**:
 
@@ -123,9 +123,9 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 |-------------|----------|-------------|
 | 400 | Invalid body (empty/non-JSON) | Response contains "failed to create generate request" |
 | 400 | Backend engine 400 passthrough | Body content is passthrough from inference engine |
-| 429 | Concurrent requests exceed single ModelOrch limit | Rate limit exceeded |
+| 429 | Concurrent requests exceed single RouteServer limit | Rate limit exceeded |
 | 500 | vLLM backend error | Direct passthrough of vLLM error content |
-| 500 | Other ModelOrch internal errors | See response body for details |
+| 500 | Other RouteServer internal errors | See response body for details |
 | 504 | Streaming timeout | Gateway timeout during streaming output |
 | 502 | No available Prefill instances | Bad gateway |
 | 502 | No available Decode instances | Bad gateway |
@@ -140,13 +140,13 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Process chat conversation inference requests, supporting conversational AI inference services.
 
-**Handler**: ModelOrch forwards to appropriate inference instances based on load balancing strategy.
+**Handler**: RouteServer forwards to appropriate inference instances based on load balancing strategy.
 
 **Caller**: Client Applications, AI Service Callers
 
 **Constraints/Conditions**:
 - Must have available inference instances
-- ModelOrch service is normal
+- RouteServer service is normal
 - Network connection is normal
 
 **Parameters**:
@@ -202,13 +202,13 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Process text completion inference requests, supporting text generation AI services.
 
-**Handler**: ModelOrch forwards to appropriate inference instances based on load balancing strategy.
+**Handler**: RouteServer forwards to appropriate inference instances based on load balancing strategy.
 
 **Caller**: Client Applications, AI Service Callers
 
 **Constraints/Conditions**:
 - Must have available inference instances
-- ModelOrch service is normal
+- RouteServer service is normal
 - Request prompt length does not exceed model limit
 
 **Parameters**:
@@ -256,14 +256,14 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Listen Port**: Service Port
 
-**Functionality**: Callback interface for layerwise PD分离 inference mode, used by inference instances to transmit KV Cache transfer metadata.
+**Functionality**: Callback interface for layerwise PD Disaggregation inference mode, used by inference instances to transmit KV Cache transfer metadata.
 
-**Handler**: ModelOrch's metadata manager handles the request.
+**Handler**: RouteServer's metadata manager handles the request.
 
 **Caller**: Inference Instances
 
 **Constraints/Conditions**:
-- Only used in layerwise PD分离 inference mode
+- Only used in layerwise PD Disaggregation inference mode
 - Requester must be a registered inference instance
 - Need to verify request legitimacy
 
@@ -294,12 +294,12 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Distributed remote scheduling interface, processes inference task scheduling requests, and allocates inference resources based on cluster status and load conditions.
 
-**Handler**: ModelOrch's scheduler processor handles the request.
+**Handler**: RouteServer's scheduler processor handles the request.
 
 **Caller**: Internal Services, Inference Instances
 
 **Constraints/Conditions**:
-- ModelOrch is in running state
+- RouteServer is in running state
 - At least one available instance in the cluster
 
 **Parameters**:
@@ -353,7 +353,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Get load information of each node in the cluster for load balancing and scheduling decisions.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Operations Platform, Monitoring System
 
@@ -420,7 +420,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 | Response Field | Description                                                 |
 |----------------|-------------------------------------------------------------|
-| rs_name | ModelOrch name                                       |
+| rs_name | RouteServer name                                       |
 | loads | Map of role -> SLOLoadInfo                                  |
 | slo_group_loads | Map of SLO group tag -> group load info                     |
 | algorithm | Scheduling algorithm used                                   |
@@ -438,7 +438,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Process instance broadcast requests for inter-instance communication and coordination.
 
-**Handler**: ModelOrch's instance manager handles the request.
+**Handler**: RouteServer's instance manager handles the request.
 
 **Caller**: Other instances or services within the cluster
 
@@ -501,7 +501,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Listen Port**: Operations Port
 
-**Functionality**: Force-set the readiness state of the ModelOrch Worker node (emergency escape channel). When the circuit breaker auto-judgment behaves abnormally, this interface can be used to manually intervene in the Worker's readiness state, controlling whether k8s distributes traffic to this Worker.
+**Functionality**: Force-set the readiness state of the RouteServer Worker node (emergency escape channel). When the circuit breaker auto-judgment behaves abnormally, this interface can be used to manually intervene in the Worker's readiness state, controlling whether k8s distributes traffic to this Worker.
 
 **Handler**: Instance manager (circuit breaker) handles locally — NOT forwarded to Leader.
 
@@ -511,7 +511,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 - Only effective when the circuit breaker is enabled (`circuit-breaker.enable: true`)
 - When circuit breaker is not enabled, returns `disabled` status
 - This interface is only bound to the Operations Port
-- The circuit breaker maintains the forced mode until changed again or ModelOrch restarts
+- The circuit breaker maintains the forced mode until changed again or RouteServer restarts
 
 **Parameters**:
 
@@ -599,7 +599,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 **Caller**: Operations Platform, Monitoring System
 
 **Constraints/Conditions**:
-- Request must be in running state (tracked by ModelOrch's request context manager)
+- Request must be in running state (tracked by RouteServer's request context manager)
 
 **Parameters**:
 ```json
@@ -617,7 +617,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 | req_ids | array of string | List of request IDs to abort |
 
 **Core Business Logic**:
-1. ModelOrch Worker tracks each request using context before forwarding to P or D instances
+1. RouteServer Worker tracks each request using context before forwarding to P or D instances
 2. On receiving abort request, traverse the request list, cancel matching request contexts, triggering HTTP request auto-termination
 3. Record successfully aborted req_ids and return the result
 
@@ -651,7 +651,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Listen Port**: Operations Port
 
-**Functionality**: View active request information for each instance under the specified ModelOrch process.
+**Functionality**: View active request information for each instance under the specified RouteServer process.
 
 **Handler**: Running request manager handles locally — NOT forwarded to Leader.
 
@@ -663,7 +663,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 **Parameters**: No request parameters
 
 **Core Business Logic**:
-1. ModelOrch Worker tracks each request using context before forwarding to P or D instances
+1. RouteServer Worker tracks each request using context before forwarding to P or D instances
 2. On receiving request, traverse the request list and collect status of active requests on each P and D instance
 3. Return each instance's name, role, and detailed status of each request
 
@@ -694,7 +694,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 | Field | Type | Description |
 |-------|------|-------------|
-| server_name | string | ModelOrch name |
+| server_name | string | RouteServer name |
 | request_lists | map | Map of request_id -> request details |
 | request_lists.{id}.finished_phases | map | Completed phases with instance and timing info |
 | request_lists.{id}.running_phases | map | Currently running phases with instance and timing info |
@@ -708,7 +708,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Handle node joining cluster requests.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Node to be joined
 
@@ -756,7 +756,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Handle node leaving cluster requests.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Node to leave
 
@@ -792,7 +792,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Handle instance joining cluster requests.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Inference Instance
 
@@ -857,7 +857,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Handle instance leaving cluster requests.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Inference Instance
 
@@ -899,9 +899,9 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Listen Port**: Operations Port
 
-**Functionality**: Abort specified requests across the entire ModelOrch cluster.
+**Functionality**: Abort specified requests across the entire RouteServer cluster.
 
-**Handler**: The requested ModelOrch processes locally — NOT forwarded to Leader via middleware. Contains internal `IsLeader()` check that returns 503 if not leader.
+**Handler**: The requested RouteServer processes locally — NOT forwarded to Leader via middleware. Contains internal `IsLeader()` check that returns 503 if not leader.
 
 **Caller**: Operations Platform
 
@@ -925,7 +925,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 | req_ids | array of string | List of request IDs to abort across the cluster |
 
 **Core Business Logic**:
-1. Receiving ModelOrch checks if it is the Leader; if not, returns 503
+1. Receiving RouteServer checks if it is the Leader; if not, returns 503
 2. Leader forwards the abort request to all Worker nodes via `/internal/abort`
 3. Leader collects all responses and returns the aggregated result
 
@@ -968,7 +968,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Get current cluster Leader information.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Cluster nodes, Monitoring System
 
@@ -1017,7 +1017,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Get local node status information.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Monitoring System, Operations Platform
 
@@ -1089,7 +1089,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Get cluster consistency status information.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Monitoring System, Operations Platform
 
@@ -1123,7 +1123,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Functionality**: Get details of running tasks in the cluster.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Monitoring System, Operations Platform
 
@@ -1134,7 +1134,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 **Parameters**: No request parameters
 
 **Core Business Logic**:
-1. Receiving ModelOrch checks if it is the Leader; if not, returns 503
+1. Receiving RouteServer checks if it is the Leader; if not, returns 503
 2. Leader sends `/internal/running_details` request to all Worker nodes
 3. Leader collects all Worker responses and returns the aggregated result
 
@@ -1182,7 +1182,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 | Field | Type | Description |
 |-------|------|-------------|
 | server_lists | array | List of per-server running details |
-| server_name | string | ModelOrch name |
+| server_name | string | RouteServer name |
 | request_lists | map | Map of request_id -> phase-level request details |
 
 ## 8. Monitoring Metrics API
@@ -1191,9 +1191,9 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Listen Port**: Service Port
 
-**Functionality**: Get Prometheus format monitoring metrics for ModelOrch and cluster.
+**Functionality**: Get Prometheus format monitoring metrics for RouteServer and cluster.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Prometheus Monitoring System, Operations Platform
 
@@ -1204,7 +1204,7 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 **Parameters**: No request parameters
 
 **Core Business Logic**:
-- Collect ModelOrch's own operational metrics
+- Collect RouteServer's own operational metrics
 - Aggregate metrics data from all instances in the cluster
 - Format Prometheus metrics format text
 - Include request volume, response time, error rate, resource usage, etc.
@@ -1212,16 +1212,16 @@ The inference endpoints support the OpenAI-standard API format. ModelOrch proxie
 
 **Response Example**:
 ```
-# HELP model_orch_requests_total Total number of requests
-# TYPE model_orch_requests_total counter
-model_orch_requests_total{method="POST",endpoint="/v1/chat/completions",status="200"} 1500
+# HELP route_server_requests_total Total number of requests
+# TYPE route_server_requests_total counter
+route_server_requests_total{method="POST",endpoint="/v1/chat/completions",status="200"} 1500
 
-# HELP model_orch_request_duration_seconds Request duration in seconds
-# TYPE model_orch_request_duration_seconds histogram
-model_orch_request_duration_seconds_bucket{le="0.1"} 100
-model_orch_request_duration_seconds_bucket{le="0.5"} 800
-model_orch_request_duration_seconds_bucket{le="1.0"} 1450
-model_orch_request_duration_seconds_bucket{le="+Inf"} 1500
+# HELP route_server_request_duration_seconds Request duration in seconds
+# TYPE route_server_request_duration_seconds histogram
+route_server_request_duration_seconds_bucket{le="0.1"} 100
+route_server_request_duration_seconds_bucket{le="0.5"} 800
+route_server_request_duration_seconds_bucket{le="1.0"} 1450
+route_server_request_duration_seconds_bucket{le="+Inf"} 1500
 
 # HELP cluster_instances_total Total number of instances in cluster
 # TYPE cluster_instances_total gauge
@@ -1238,7 +1238,7 @@ cluster_instance_load_ratio{instance="decode_01"} 0.72
 
 **Listen Port**: Service Port
 
-**Functionality**: Get the ModelOrch process's Prometheus monitoring metrics. Registered directly on the engine (no leader proxy).
+**Functionality**: Get the RouteServer process's Prometheus monitoring metrics. Registered directly on the engine (no leader proxy).
 
 **Handler**: Internal metrics collector handles locally — NOT forwarded to Leader.
 
@@ -1253,7 +1253,7 @@ cluster_instance_load_ratio{instance="decode_01"} 0.72
 | only_rs | string | If "true", only returns rs-prefixed metrics (excludes Go runtime metrics) | empty |
 
 **Core Business Logic**:
-- Collect ModelOrch process's operational metrics
+- Collect RouteServer process's operational metrics
 - Return Prometheus text format metrics
 
 **Response Format**: Prometheus text format (not JSON)
@@ -1468,7 +1468,7 @@ HTTP 500
 
 **Listen Port**: Service Port & Operations Port
 
-**Functionality**: Get ModelOrch version information.
+**Functionality**: Get RouteServer version information.
 
 **Handler**: Root path handler.
 
@@ -1591,7 +1591,7 @@ HTTP 500
 
 **Functionality**: Get instance information in the link blacklist.
 
-**Handler**: The requested ModelOrch receives and forwards to the cluster Leader for processing.
+**Handler**: The requested RouteServer receives and forwards to the cluster Leader for processing.
 
 **Caller**: Operations Platform, Monitoring System
 

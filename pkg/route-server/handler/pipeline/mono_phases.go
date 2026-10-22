@@ -54,6 +54,7 @@ const (
 	DecodePrepareRequest        = "decode_prepare_request"
 	LayerwisePrepareRequest     = "layerwise_prepare_request"
 	KVPrepareRequest            = "set_kv_transfer_params"
+	VllmAscendPrepareRequest    = "vllm_ascend_prepare_request"
 	RemoveMessages              = "remove_messages"
 
 	RegularPostPhase  = "regular_post_phase"
@@ -68,6 +69,7 @@ var (
 		DecodePrepareRequest:        PrepareDecodeRequestBody,
 		LayerwisePrepareRequest:     PrepareLayerwiseRequestBody,
 		KVPrepareRequest:            PrepareRequestBodyWithKV,
+		VllmAscendPrepareRequest:    PrepareVllmAscendRequestBody,
 		RemoveMessages:              RemoveMessageRequestBody,
 	}
 	postProcessFuncMap = map[string]postProcessFunc{
@@ -222,9 +224,9 @@ func (e *MonoRequestPhase) executeRequest(ctx *PipelineContext, instanceId strin
 			tracer.Tracer.Event(subSpanName, trace.TraceEventUserCancelled,
 				fmt.Sprintf("user request cancelled on send %s req to [%s]", e.RelateInstanceType(), instanceId))
 			if ctx.RequestContext.CancelCtx.IsCancel.Load() {
-				rsError = errs.NewRSMaError(&errs.RequestForcedCancelledErr, e.StageName())
+				rsError = errs.NewRSMaError(&errs.RequestForcedCancelledErr, e.StageName(), errs.FailureTypeCanceled)
 			} else {
-				rsError = errs.NewRSMaError(&errs.RequestCancelledByUserErr, e.StageName())
+				rsError = errs.NewRSMaError(&errs.RequestCancelledByUserErr, e.StageName(), errs.FailureTypeCanceled)
 			}
 			details = utils.DetailsFromError(0, requestCancelCtx.Err())
 			traceErr = rsError
@@ -453,6 +455,30 @@ func PrepareRequestBodyWithKV(ctx *PipelineContext, copiedBody *utils.JSONModifi
 	return copiedBody
 }
 
+func PrepareVllmAscendRequestBody(ctx *PipelineContext, copiedBody *utils.JSONModifier) *utils.JSONModifier {
+	copiedBody.Set(openai.MinTokensKey, 1)
+
+	var abortedRequests []string
+	prefillerId := ctx.RequestContext.InferMsg.GetInstance(constant.Prefill)
+	if prefillerId != "" {
+		if aborted := ctx.InferManager.AcquireVllmAscendAbortedRequests(prefillerId); len(aborted) > 0 {
+			abortedRequests = append(abortedRequests, aborted...)
+		}
+	}
+
+	kvTransferParams := map[string]interface{}{
+		DoRemoteDecodeKey:  true,
+		DoRemotePrefillKey: false,
+		RemoteEngineIdKey:  nil,
+		RemoteBlockIdsKey:  nil,
+		RemoteHostKey:      nil,
+		RemotePortKey:      nil,
+		AbortedRequestKey:  abortedRequests,
+	}
+	copiedBody.Set(openai.KvTransferParamsKey, kvTransferParams)
+	return copiedBody
+}
+
 func PostPrefillStreamProcessResponse(res *http.Response, ctx *PipelineContext, phase Phase) (rsError *errs.RSError, details *utils.InstanceFailureDetails) {
 	var bodyBytes []byte
 	var err error
@@ -461,6 +487,10 @@ func PostPrefillStreamProcessResponse(res *http.Response, ctx *PipelineContext, 
 		instanceId := ctx.RequestContext.InferMsg.GetInstance(phase.RelateInstanceType())
 		ctx.GetRequestCtx().IsFirstTokenFromPrefill.Store(true)
 
+		if ctx.HasMainErr() {
+			return nil, nil
+		}
+		ctx.GetGinCtxMutex().Lock()
 		writerResponseHeaders(res, ctx)
 		// ForceReuseFirstToken is now atomic.Bool, pass its pointer
 		bodyBytes, rsError, details, finishReason = handler.WritePrefillStreamRes(ctx.GetRequestCtx().MainGinCtx, ctx.RequestContext.ParsedRequest, res,
@@ -469,10 +499,12 @@ func PostPrefillStreamProcessResponse(res *http.Response, ctx *PipelineContext, 
 			ctx.FinishReason = finishReason
 			// return non-stream error, reset the Header
 			ctx.GetRequestCtx().MainGinCtx.Writer.Header().Set("Content-Type", "application/json")
+			ctx.GetGinCtxMutex().Unlock()
 			return rsError, details
 		}
 		// stream response is start now
 		ctx.GetRequestCtx().IsStreamResponse = true
+		ctx.GetGinCtxMutex().Unlock()
 	} else {
 		bodyBytes, err = io.ReadAll(res.Body)
 		if err != nil {

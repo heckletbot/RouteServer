@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"infer-dp-scheduler/pkg/common/constant"
 	"infer-dp-scheduler/pkg/metrics-collector/logger"
 	metrics2 "infer-dp-scheduler/pkg/route-server/metrics"
 )
@@ -117,6 +118,7 @@ type Collector struct {
 
 	peerClientTlsCfg     *tls.Config
 	instanceClientTlsCfg *tls.Config
+	selfName             string
 }
 
 var isRunning func() bool
@@ -151,7 +153,6 @@ func NewMetricsCollector(instances []Instance, yamlPath string) (*Collector, err
 	InitRunning()
 	registry := prometheus.NewRegistry()
 	aggRegistry := prometheus.NewRegistry()
-
 	metricsConfig, err := loadMetricsYamlConfig(yamlPath)
 	if err != nil {
 		logger.Logger().Errorf("error when load metrics yaml config %s", err.Error())
@@ -443,7 +444,14 @@ func (c *Collector) fetchMetrics(instance Instance) (string, error) {
 		url = fmt.Sprintf("http://%s:%d/metrics", instance.IP, instance.Port)
 	}
 
-	resp, err := client.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	if constant.ServerName != "" {
+		req.Header.Set(constant.XRouterId, constant.ServerName)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch metrics: %w", err)
 	}

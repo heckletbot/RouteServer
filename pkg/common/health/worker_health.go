@@ -152,9 +152,10 @@ type WorkerEventSyncer struct {
 	leaderLocalMsgChannel chan<- any
 	clusterService        cluster.ClusterService
 	healthStatsUpdater    HealthStatsUpdater
+	workerBootId          string
 }
 
-func NewWorkerEventSyncer(cfg *config.Config, client *peer_client.PeerClient, msgCenter utils.MessageCenter, clusterService cluster.ClusterService) EventSyncer {
+func NewWorkerEventSyncer(cfg *config.Config, client *peer_client.PeerClient, workerBootId string, msgCenter utils.MessageCenter, clusterService cluster.ClusterService) EventSyncer {
 	workerEventCollector := &WorkerEventCollector{}
 	workerEventCollector.Init(cfg)
 	// in the same process and channels will ensure that the pointer will not be released
@@ -173,7 +174,9 @@ func NewWorkerEventSyncer(cfg *config.Config, client *peer_client.PeerClient, ms
 		peerClient:            client,
 		leaderLocalMsgChannel: msgChan,
 		clusterService:        clusterService,
+		workerBootId:          workerBootId,
 	}
+	logger.Log().Infof("WorkerEventSyncer generated bootId [%s] for worker [%s]", syncer.workerBootId, workerEventCollector.WorkerId)
 	eventCheckInterval := time.Duration(syncer.cfg.InstanceManagerCfg.HealthCheckConfig.EventThresholdIntervalMs) * time.Millisecond
 	go syncer.collectEventsLoop()
 	go syncer.sendEventsLoop(eventCheckInterval)
@@ -219,6 +222,7 @@ func (syncer *WorkerEventSyncer) sendEventsLoop(eventCheckInterval time.Duration
 			syncer.mu.Unlock()
 			req := &utils.WorkerEventsRequest{
 				WorkerId:       syncer.collector.WorkerId,
+				WorkerBootId:   syncer.workerBootId,
 				RequestEvents:  tmpReqList,
 				InstanceEvents: instanceEvents,
 			}

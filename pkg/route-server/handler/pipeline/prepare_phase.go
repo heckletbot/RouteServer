@@ -51,7 +51,7 @@ func (p *PreparePhase) ExecutePhase(context *PipelineContext) (rsError *errs.RSE
 	}
 
 	if reqCtx.CancelCtx != nil && reqCtx.CancelCtx.IsCancel.Load() {
-		return errs.NewRSMaError(&errs.RequestForcedCancelledErr, p.StageName())
+		return errs.NewRSMaError(&errs.RequestForcedCancelledErr, p.StageName(), errs.FailureTypeCanceled)
 	}
 
 	return nil

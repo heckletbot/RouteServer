@@ -145,6 +145,9 @@ func (v *VllmClient) HealthCheck() (bool, int, error) {
 	if err != nil {
 		return false, 0, fmt.Errorf("build health check request failed: %w", err)
 	}
+	if constant.ServerName != "" {
+		req.Header.Set(constant.XRouterId, constant.ServerName)
+	}
 
 	resp, err := v.healthClient.DoRequest(req)
 	if err != nil {
@@ -207,7 +210,6 @@ func NewClient(clientType string, route config.Route, clientCfg ClientConfig) (I
 			return nil, fmt.Errorf("invalid role for vllm client: %s, must be 'prefill' or 'decode'", route.Role)
 		}
 
-		// 根据 TLS 配置决定协议
 		scheme := "http"
 		if clientCfg.HttpCfg.TLSConfig != nil && clientCfg.HttpCfg.TLSConfig.EnableHTTPS {
 			scheme = "https"

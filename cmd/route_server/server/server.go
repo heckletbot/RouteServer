@@ -93,12 +93,19 @@ func RunServerLoop(cfg *commoncfg.Config, managers *Managers) error {
 		leaderApi.GET(utils.HealthPath, instanceManager.HandleHealthCheck)
 		leaderApi.GET(utils.ReportLoadPath, scheduleHandler.ReportLoads)
 		leaderApi.GET(utils.LinkBlackListPath, managers.pdLinkBlacklistManager.HandleGetAll)
-		leaderApi.GET(utils.Leader, adminHandler.handleGetLeader)
-		leaderApi.GET(utils.LocalState, adminHandler.handleGetLocalState)
 		leaderApi.GET(utils.ConsistentStatsPath, adminHandler.handleGetConsistentStats)
 		leaderApi.GET(utils.MetricsPath, func(c *gin.Context) {
 			managers.metricsCollector.HandleMetricsRequest(c)
 		})
+	}
+
+	if cfg.ServerConfig.EnableOpsAPIsOnServicePort {
+		registerOpsDirectAPIs(engine, adminHandler, &scheduleHandler, managers)
+		registerOpsLeaderAPIs(leaderApi, adminHandler)
+		logger.Log().Infof("Ops APIs are also registered on service port")
+	} else {
+		leaderApi.GET(utils.Leader, adminHandler.handleGetLeader)
+		leaderApi.GET(utils.LocalState, adminHandler.handleGetLocalState)
 	}
 
 	probeHandler := managers.probeHandler
@@ -121,27 +128,11 @@ func RunServerLoop(cfg *commoncfg.Config, managers *Managers) error {
 	opsEngine.GET("/", func(c *gin.Context) {
 		printVersion(c, cfg.ServerConfig.Name, string(utils.OpsPort))
 	})
-	opsEngine.POST("/internal/worker/force-readiness", instanceManager.HandleForceReadiness)
-
-	opsEngine.POST(utils.InternalAbortPath, managers.runningRequestsManager.AbortRequests)
-	opsEngine.GET(utils.InternalRunningDetailsPath, managers.runningRequestsManager.HandleRunningDetails)
-	opsEngine.POST(utils.ScheduleRequestPath, scheduleHandler.HandleSchedule)
-	opsEngine.POST(utils.RequestEventPath, adminHandler.HandleLeaderServingEvents)
+	registerOpsDirectAPIs(opsEngine, adminHandler, &scheduleHandler, managers)
 
 	opsLeaderApi := opsEngine.Group("")
 	opsLeaderApi.Use(adminHandler.adminLeaderProxyMiddleware())
-	{
-		opsLeaderApi.POST(utils.JoinHttpPath, adminHandler.handleAddNode)
-		opsLeaderApi.POST(utils.LeaveHttpPath, adminHandler.handleLeaveNode)
-		opsLeaderApi.POST(utils.JoinInstancePath, adminHandler.handleAddInstance)
-		opsLeaderApi.POST(utils.LeaveInstancePath, adminHandler.handleLeaveInstance)
-		opsLeaderApi.POST(utils.AbortRequestPath, adminHandler.handleAbortRequest)
-		opsLeaderApi.GET(utils.RunningDetailsPath, adminHandler.handleRunningDetails)
-
-		// cluster state get interface, listen on both port.
-		opsLeaderApi.GET(utils.Leader, adminHandler.handleGetLeader)
-		opsLeaderApi.GET(utils.LocalState, adminHandler.handleGetLocalState)
-	}
+	registerOpsLeaderAPIs(opsLeaderApi, adminHandler)
 
 	// Add http path before this line! in case there is path conflict in BroadCastURIWhitelist
 	err = registerBroadCastURIWhitelist(engine, managers)
@@ -359,7 +350,7 @@ func startOpsServer(cfg *commoncfg.Config, opsEngine *gin.Engine) error {
 		return nil
 	}
 
-	// HTTPS 模式：需要证书
+	// HTTPS, cert file is required
 	if opsTLSConfig.CertFile == "" || opsTLSConfig.KeyFile == "" {
 		return fmt.Errorf("ops HTTPS is enabled but ops-tls certificate is not configured: " +
 			"ops-tls cert-file and key-file are required (ops-tls must be independent from server.tls)")
@@ -479,7 +470,7 @@ func buildTLSConfig(tlsCfg *commoncfg.TLSCertificateConfig, passwordEnv string) 
 }
 
 func StopServer() {
-	logger.Log().Infof("ModelOrch shutting down.")
+	logger.Log().Infof("RouteServer shutting down.")
 
 	// Stop rate limiter
 	middleware.StopRateLimiter()
@@ -529,4 +520,23 @@ func printVersion(ctx *gin.Context, nodeName string, portType string) {
 		BuildTimeStr:    buildTime,
 		CurrentPortType: portType,
 	})
+}
+
+func registerOpsDirectAPIs(engine *gin.Engine, adminHandler *AdminHandler, scheduleHandler *RemoteScheduleHandler, managers *Managers) {
+	engine.POST("/internal/worker/force-readiness", managers.instanceManager.HandleForceReadiness)
+	engine.POST(utils.InternalAbortPath, managers.runningRequestsManager.AbortRequests)
+	engine.GET(utils.InternalRunningDetailsPath, managers.runningRequestsManager.HandleRunningDetails)
+	engine.POST(utils.ScheduleRequestPath, scheduleHandler.HandleSchedule)
+	engine.POST(utils.RequestEventPath, adminHandler.HandleLeaderServingEvents)
+}
+
+func registerOpsLeaderAPIs(leaderApi *gin.RouterGroup, adminHandler *AdminHandler) {
+	leaderApi.POST(utils.JoinHttpPath, adminHandler.handleAddNode)
+	leaderApi.POST(utils.LeaveHttpPath, adminHandler.handleLeaveNode)
+	leaderApi.POST(utils.JoinInstancePath, adminHandler.handleAddInstance)
+	leaderApi.POST(utils.LeaveInstancePath, adminHandler.handleLeaveInstance)
+	leaderApi.POST(utils.AbortRequestPath, adminHandler.handleAbortRequest)
+	leaderApi.GET(utils.RunningDetailsPath, adminHandler.handleRunningDetails)
+	leaderApi.GET(utils.Leader, adminHandler.handleGetLeader)
+	leaderApi.GET(utils.LocalState, adminHandler.handleGetLocalState)
 }

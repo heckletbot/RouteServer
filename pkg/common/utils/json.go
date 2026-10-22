@@ -100,11 +100,50 @@ func (j *JSONModifier) GetInt(key string) (int, bool) {
 	return 0, false
 }
 
+func (j *JSONModifier) IsInt(key string) bool {
+	val, exists := j.data[key]
+	if !exists {
+		// if val is not exist, skip param check
+		return true
+	}
+	if num, ok := val.(float64); ok {
+		return num == float64(int(num))
+	}
+	if _, ok := val.(int); ok {
+		return true
+	}
+	if num, ok := val.(json.Number); ok {
+		if _, err := num.Int64(); err == nil {
+			return true
+		}
+		if res, err := num.Float64(); err == nil {
+			return res == float64(int(res))
+		}
+	}
+	if str, ok := val.(string); ok {
+		if _, err := strconv.ParseInt(str, 10, 64); err == nil {
+			return true
+		}
+		if f, err := strconv.ParseFloat(str, 64); err == nil {
+			return f == float64(int64(f))
+		}
+	}
+	return false
+}
+
 func (j *JSONModifier) GetBool(key string) (bool, bool) {
 	if val, exists := j.data[key]; exists {
 		return TryParseBool(val)
 	}
 	return false, false
+}
+
+func (j *JSONModifier) IsBool(key string) bool {
+	if val, exists := j.data[key]; exists {
+		_, valid := TryParseBool(val)
+		return valid
+	}
+	return true
 }
 
 func TryParseBool(val interface{}) (bool, bool) {

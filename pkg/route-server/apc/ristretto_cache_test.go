@@ -18,12 +18,10 @@ package apc
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/agiledragon/gomonkey/v2"
-	"github.com/dgraph-io/ristretto"
 
 	"infer-dp-scheduler/pkg/common/config"
 )
@@ -46,21 +44,21 @@ func TestNewRistrettoCache(t *testing.T) {
 	})
 
 	t.Run("creation failure", func(t *testing.T) {
-		patches := gomonkey.NewPatches()
-		defer patches.Reset()
+		// Zero MaxEntries produces NumCounters=0, which makes ristretto.NewCache
+		// return an error (gomonkey cannot patch generic instantiated functions)
+		badConfig := config.APCStrategyMemoryConfig{
+			MaxEntries:  0,
+			MaxMemoryMB: 100,
+		}
 
-		patches.ApplyFunc(ristretto.NewCache, func(*ristretto.Config) (*ristretto.Cache, error) {
-			return nil, fmt.Errorf("mock cache creation error")
-		})
-
-		cache, err := NewRistrettoCache(testConfig)
+		cache, err := NewRistrettoCache(badConfig)
 		if err == nil {
 			t.Fatal("Expected error, got nil")
 		}
 		if cache != nil {
 			t.Fatal("Expected cache to be nil")
 		}
-		if err.Error() != "failed to create ristretto cache: mock cache creation error" {
+		if !strings.Contains(err.Error(), "NumCounters can't be zero") {
 			t.Fatalf("Expected specific error message, got %v", err)
 		}
 	})

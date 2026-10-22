@@ -24,12 +24,17 @@ import (
 type ScheduleAlgorithm interface {
 	Init(config map[string]string) error
 	GetName() string
-	NeedStatsList() []string                                                                                                    // 给出算法需要的统计量列表信息，用于上层校验，如无法提供该参数，用于管理面后续进行算法降级
-	UpdateCluster(available map[string]instance_metrics.WorkerStats, unavailable map[string]instance_metrics.WorkerStats) error // 状态更新接口，每隔声明的GetUpdateInterval时间间隔，就会调用这个一次，同步所有实例上报的状态信息
-	UpdateConfig(config map[string]string) error                                                                                // 配置动态更新接口，部分参数可不重启生效（暂未实现Rest配置变更接口，可以先空着）
-	GetUpdateInterval() int64                                                                                                   // 需要更新worker状态的周期（ms），-1为不需要更新worker状态，最小10ms
+	// NeedStatsList The list of statistics required by the algorithm is provided for upper-layer verification. If this parameter cannot be provided, it will be used for algorithm downgrade on the management plane.
+	NeedStatsList() []string
+	// UpdateCluster The worker stats update interface. Invoked once at the specified GetUpdateInterval interval to synchronize the status information reported by all instances.
+	UpdateCluster(available map[string]instance_metrics.WorkerStats, unavailable map[string]instance_metrics.WorkerStats) error
+	// UpdateConfig Reversed interface to dynamically update algo config.
+	UpdateConfig(config map[string]string) error
+	// GetUpdateInterval Interval needed for updating the worker status, in milliseconds. The value -1 indicates that the worker status does not need to be updated for this algorithm. The minimum value is 10 ms.
+	GetUpdateInterval() int64
+	// DispatchRequest Scheduling interface, which should return a single optimal candidate worker.
 	DispatchRequest(request utils.GenerateRequest,
-		params map[string]string, insBlackMap map[string]interface{}) (string, bool, error) // 调度接口， 可支持返回多个候选worker，可用于后续失败顺延
+		params map[string]string, insBlackMap map[string]interface{}) (string, bool, error)
 	OnRequestEvent(event *utils.RequestEventMsg)
 	ClearLoad()
 	ReportLoads(includeRequests bool, includeUnavailable bool) *AllInstanceLoads

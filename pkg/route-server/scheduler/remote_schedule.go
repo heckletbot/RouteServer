@@ -108,13 +108,14 @@ func (rs *RemoteScheduler) ShouldDispatchLocally() (bool, error) {
 }
 
 func (rs *RemoteScheduler) Schedule(request utils.GenerateRequest, ctx context.Context,
-	params map[string]string, tracer trace.RequestTracer, blackId string, workerId string) (*ScheduleResponse, error) {
+	params map[string]string, tracer trace.RequestTracer, blackId string, workerId string, workerBootId string) (*ScheduleResponse, error) {
 
 	remoteRequest := RemoteScheduleRequest{
 		Request:       utils.WrapRequest(request, rs.cfg.NeedContent),
 		PreInstanceId: blackId,
 		Params:        params,
 		WorkerId:      workerId,
+		WorkerBootId:  workerBootId,
 	}
 
 	reqBody, err := utils.SonicApi.Marshal(remoteRequest)
@@ -143,6 +144,7 @@ type RemoteScheduleRequest struct {
 	PreInstanceId string            `json:"pre_id,omitempty"`
 	Params        map[string]string `json:"params,omitempty"`
 	WorkerId      string            `json:"worker_id,omitempty"`
+	WorkerBootId  string            `json:"boot_id,omitempty"`
 
 	PromptKey string `json:"prompt_key,omitempty"` // Used for apc scheduling, promptKey is calculated by worker itself
 }
