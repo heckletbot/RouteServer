@@ -1,0 +1,53 @@
+server:
+  addr: 127.0.0.1
+  http-port: 49876
+logger:
+  enabled: true
+  filename: /path/to/logs
+  max-size: 1024
+  max-age: 1
+  max-backups: 10
+  compress: true
+  level: info
+  logger-anonymization-switch: true
+http:
+  dialer-timeout: 30
+  dialer-keepalive: 30
+  request-timeout: 5
+  max-idle-conns: 10000
+  max-idle-conns-per-host: 2000
+  idle-conn-timeout: 10
+instance-manager:
+  init-instance-from-config: true
+  instance-client-type: vllm
+  route-table:
+    instance-routes:
+      instance-01:
+        ip: "127.0.0.1"
+        port: 29876
+        role: "prefill"
+        static-infos:
+          api-server-count: 1
+      instance-02:
+        ip: "127.0.0.1"
+        port: 29877
+        role: "decode"
+        static-infos:
+          api-server-count: 1
+scheduler-manager:
+  system-prompt-length: 100
+  schedulers:
+    - request-type: prefill
+      scheduler-name: round-robin
+      instance-role: prefill
+    - request-type: decode
+      scheduler-name: round-robin
+      instance-role: decode
+      params:
+        update-interval-ms: -1 #指标更新间隔，开启prometheus后需要配置，默认为-1，即不更新指标
+        needStats: "vllm:num_requests_running,vllm:num_requests_waiting" #指标类型，开启prometheus后需要配置
+monitor:
+  monitor-client-type: none
+metrics:
+  enable: true
+  duration: 60

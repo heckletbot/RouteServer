@@ -1,0 +1,45 @@
+infer_modes:
+  - Layerwise-CDCP
+description: pipeline for layer-wise mode decode.
+pipeline_cfg:
+  api_endpoints:
+    - path: "/v1/chat/completions"
+      methods: [ "POST" ]
+      handler: chat_completions_infer
+    - path: "/v1/completions"
+      methods: [ "POST" ]
+      handler: completions_infer
+  phases:
+    - name: decode_schedule
+      type: Schedule
+      span_name: decode_stage
+      stage_name: Decode
+      schedule_params:
+        instance_type: decode
+        request_load:
+          - usage
+          - text
+          - bytes
+    - name: decode_execute
+      type: Execute
+      span_name: decode_stage
+      stage_name: Decode
+      execute_params:
+        instance_type: decode
+        pre_process_request_funcs:
+          - decode_prepare_request
+          - layerwise_prepare_request
+        post_process_funcs:
+          - decode_post_response
+        post_phase_funcs:
+          - complete_post_phase
+      dependsOn:
+        - decode_schedule
+  success_phase:
+    name: layerwise_success
+    type: default_success
+  error_phase:
+    name: layerwise_failure
+    type: default_fail
+  sub_pipelines:
+    - MetaServer-CDCP

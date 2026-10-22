@@ -1,0 +1,46 @@
+infer_modes:
+  - MetaServer-CDCP
+description: pipeline for v1/metaserver in layer-wise mode
+pipeline_cfg:
+  api_endpoints:
+    - path: "/v1/metaserver"
+      methods: [ "POST" ]
+      handler: chat_completions_infer
+  phases:
+    - name: prefill_schedule
+      type: Schedule
+      span_name: prefill_stage
+      stage_name: Prefill
+      schedule_params:
+        instance_type: prefill
+        skip_policy: no_skip
+        request_load:
+          - usage
+          - text
+          - bytes
+    - name: layerwise_prefill_execute
+      type: Execute
+      span_name: prefill_stage
+      stage_name: Prefill
+      execute_params:
+        instance_type: prefill
+        pre_process_request_funcs:
+          - prefill_stream_prepare_request
+          - set_kv_transfer_params
+        post_process_funcs:
+          - prefill_stream_post_response
+        post_phase_funcs:
+          - regular_post_phase
+      dependsOn:
+        - prefill_schedule
+  success_phase:
+    name: success
+    type: layerwise_success
+  error_phase:
+    name: failure
+    type: layerwise_error
+  prepare_phase:
+    name: layer_meta_server_prepare
+    type: meta_service_prepare
+    stage_name: Prepare
+    span_name: Prepare
