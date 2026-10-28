@@ -28,11 +28,13 @@ import (
 const (
 	HandlerChatCompletions = "chat_completions_infer"
 	HandlerCompletions     = "completions_infer"
+	HandlerMessages        = "messages_infer"
 )
 
 type Inference interface {
 	CompletionsInfer(ctx *gin.Context)
 	ChatCompletionsInfer(ctx *gin.Context)
+	MessagesInfer(ctx *gin.Context)
 	TestInstance(ctx *gin.Context, path string, isChat bool, instance *client.Instance) (successToCheck bool, testSuccess bool, errDetails *errs.RSError)
 }
 
@@ -42,6 +44,8 @@ func GetHandlerMethod(inference Inference, handlerName string) (gin.HandlerFunc,
 		return inference.ChatCompletionsInfer, true
 	case HandlerCompletions:
 		return inference.CompletionsInfer, true
+	case HandlerMessages:
+		return inference.MessagesInfer, true
 	default:
 		return nil, false
 	}

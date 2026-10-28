@@ -139,6 +139,9 @@ func checkEtcdCfg(config *commonCfg.EtcdConfig) error {
 		return fmt.Errorf("etcd lease refresh interval must be smaller than lease refresh interval %v ms, got %v",
 			config.LeaseTtlSec*1000, config.LeaseRefreshIntervalMs)
 	}
+	if config.AutoSyncIntervalSec < 0 {
+		return fmt.Errorf("etcd auto sync interval sec is negative, got %v", config.AutoSyncIntervalSec)
+	}
 	return nil
 }
 

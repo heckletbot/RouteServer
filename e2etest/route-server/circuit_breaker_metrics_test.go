@@ -106,11 +106,17 @@ var _ = Describe(cbTestContext, Ordered, func() {
 
 		outData, err := yaml.Marshal(&cfg)
 		Expect(err).To(BeNil())
-		tempTemplateFile := filepath.Join(deployPath, "cb-test-template.yaml")
-		Expect(os.WriteFile(tempTemplateFile, outData, 0644)).To(BeNil())
 
 		By("step 3: generate RS configs via config-tool (etcd mode)")
 		etcdCtxDir := filepath.Join(projectRoot, "e2etest", "environment", cbTestContext)
+		Expect(os.MkdirAll(etcdCtxDir, 0755)).To(BeNil())
+		tempTemplateFile := filepath.Join(etcdCtxDir, "cb-test-template.yaml")
+		Expect(os.WriteFile(tempTemplateFile, outData, 0644)).To(BeNil())
+
+		DeferCleanup(func() {
+			os.RemoveAll(etcdCtxDir)
+		})
+
 		leaderCfgDir = filepath.Join(etcdCtxDir, "leader1")
 		workerCfgDir = filepath.Join(etcdCtxDir, "worker1")
 

@@ -471,6 +471,15 @@ func (lbm *LinkBlacklistCheckerModule) OnRequestEvents(workerId string, workerBo
 func (lbm *LinkBlacklistCheckerModule) OnInstanceTokenEvent(workerId string, instanceEvents []*utils.InstanceEventMsg) {
 }
 
+// IsInstanceStillBlocked returns true when the blacklist has not aged out yet,
+// meaning the KV transfer issue may still exist for the instance.
+func (lbm *LinkBlacklistCheckerModule) IsInstanceStillBlocked(instanceId string) bool {
+	if !lbm.cfg.Enable {
+		return false
+	}
+	return len(lbm.pdLinkBlacklistManager.GetBlacklist(instanceId)) > 0
+}
+
 func (lbm *LinkBlacklistCheckerModule) Stop() {
 	lbm.pdLinkBlacklistManager.Stop()
 	close(lbm.closeChan)

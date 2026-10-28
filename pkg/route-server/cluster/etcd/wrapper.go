@@ -354,11 +354,10 @@ func createEtcdClient(cfg *config.ClusterConfig, logId int) (*clientv3.Client, e
 	}
 	logInfoWithId(logId, "successfully connect to etcd endpoints: %v, trying to create etcd client", successEndpoints)
 
-	// Build TLS config for etcd client if configured
 	clientCfg := clientv3.Config{
 		Endpoints:        endpoints,
 		DialTimeout:      time.Duration(cfg.EtcdCfg.DialTimeout) * time.Millisecond,
-		AutoSyncInterval: time.Duration(10) * time.Second,
+		AutoSyncInterval: time.Duration(cfg.EtcdCfg.AutoSyncIntervalSec) * time.Second,
 		DialOptions: []grpc.DialOption{
 			grpc.WithBlock(),
 		},

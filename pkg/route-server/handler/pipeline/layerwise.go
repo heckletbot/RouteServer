@@ -156,7 +156,6 @@ func parseMetaRequest(context *PipelineContext) error {
 		return fmt.Errorf("in meta server, req ctx for [%s] is invalid", originReqId)
 	}
 
-	context.IsChat = runningPipelineCtx.IsChat
 	context.RequestContext = runningPipelineCtx.RequestContext
 
 	// tracing for MetaServer request parsing
@@ -170,8 +169,6 @@ func parseMetaRequest(context *PipelineContext) error {
 			runningPipelineCtx.RequestContext.ForceReuseFirstToken.Store(reuseBool)
 		}
 	}
-
-	context.IsChat = runningPipelineCtx.IsChat
 
 	return nil
 }

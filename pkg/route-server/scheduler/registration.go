@@ -31,6 +31,7 @@ const (
 	ABC6AlgoName           = "abc6"
 	LeastTotalLoadAlgoName = "least-total-load"
 	APCSchedulerName       = "apc"
+	LeastRequestsAlgoName  = "least-requests"
 )
 
 type AlreadyRegisterError struct {
@@ -116,6 +117,12 @@ func InitBuiltinScheduleAlgorithms() error {
 	err = Register(APCSchedulerName, NewAPCScheduler)
 	if err != nil {
 		return fmt.Errorf("failed to init builtin APC scheduler, err: %v", err)
+	}
+	err = Register(LeastRequestsAlgoName, func() (scheduler.ScheduleAlgorithm, error) {
+		return &LeastRequests{}, nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to init builtin least requests scheduler, err: %v", err)
 	}
 	return nil
 }

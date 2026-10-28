@@ -25,7 +25,13 @@ import (
 	"infer-dp-scheduler/pkg/common/openai"
 )
 
+const ObjectTypeError = "error"
 const ErrorPrefix = "RouteServer."
+
+const ModelArtsStatusInternal = "5000"
+const ModelArtsStatusEmptyReq = "4202"
+const ModelArtsStatusInvalidReq = "4200"
+const ModelArtsStatusInvalidJsonBody = "2787"
 
 type ErrorBody struct {
 	Message string `json:"error_msg"`

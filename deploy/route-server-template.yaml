@@ -6,7 +6,9 @@ server:
   inference-module-type: v0
   v1-stream-writing-enabled: true
   client-write-timeout-ms: 0
+  max-request-body-size-mb: 0  # Request body size limit in MB; 0 means no limit
   rewrite-request-id: true
+  anthropic-error-type-config-file-name: anthropic_error_type_config.yaml
   trace:
     enable-trace-token-log: true
     type:
@@ -28,7 +30,7 @@ server:
   rate-limit:
     max-concurrent-requests: 10000
     non-reference-apis:
-      enabled: true  # Enable rate limiting for non-reference APIs
+      enabled: false  # Enable rate limiting for non-reference APIs (default off: no rate limiting)
       requests-per-minute: 60  # 60 RPM
       exempt-paths:  # Reference APIs exempt from rate limiting
         - "/v1/chat/completions"
@@ -43,11 +45,12 @@ server:
     skip-verify: false
     enable-mtls: true
   ops-tls:
-    enable-mtls: true
     enable-https: true
     cert-file:
     key-file:
     ca-cert-file:
+    skip-verify: false
+    enable-mtls: true
   enable-ops-apis-on-service-port: false
 logger:
   enabled: true
@@ -66,6 +69,7 @@ http:
   max-idle-conns: 40960
   max-idle-conns-per-host: 1800
   idle-conn-timeout: 110
+  connection-retry: 3
   dialer-timeout: 600
   dialer-keepalive: 5
   tls:
@@ -157,10 +161,6 @@ instance-manager:
       methods: [ "GET" ]
     - path: "/server_info"
       methods: [ "GET" ]
-    - path: "/start_profile"
-      methods: [ "POST" ]
-    - path: "/stop_profile"
-      methods: [ "POST" ]
     - path: "/load"
       methods: [ "GET" ]
     - path: "/ping"
@@ -201,12 +201,15 @@ instance-manager:
       methods: [ "POST" ]
     - path: "/v1/unload_lora_adapter"
       methods: [ "POST" ]
+    - path: "/v1/messages/count_tokens"
+      methods: ["POST"]
 monitor:
   monitor-client-type: none
 metrics:
   enable: true
   duration: 60
   metrics-collector-config-file-name: metrics_config_vllm_0.11.0.yaml
+  fine-grained-tpot: false
 apc-manager:
   enable: true
   strategies:
@@ -262,6 +265,7 @@ cluster:
     retry-interval-sec: 5
     lease-ttl-sec: 3
     lease-refresh-interval-ms: 1000
+    auto-sync-interval-sec: 10
     tls:
       enable-https: true
       enable-mtls: true
@@ -288,5 +292,12 @@ peer-client:
     idle-conn-timeout: 110
     dialer-timeout: 600
     dialer-keepalive: 5
+    tls:
+      enable-https: true
+      enable-mtls: true
+      cert-file:
+      key-file:
+      ca-cert-file:
+      skip-verify: false
   send-with-domain: false
   domain: leader_domain

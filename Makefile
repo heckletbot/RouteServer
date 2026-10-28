@@ -8,46 +8,51 @@ SRC_DIR := cmd/route_server
 CONFIG_TOOL_DIR := cmd/config-tool
 BUILD_DIR := build
 OUTPUT_DIR := output
-PKG_NAME := route-server
+PKG_NAME := DistributedScheduler
 DEPLOY_DIR := deploy
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "unknown")
 BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
-BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H%M%S' 2>/dev/null || date -f "%Y-%m-%d_%H%M%S" 2>/dev/null || echo "unknown")
+BUILD_TIME := $(shell date -u '+%Y%m%d%H%M%S' 2>/dev/null || date -f "%Y%m%d%H%M%S" 2>/dev/null || echo "unknown")
 
 LDFLAGS := -X 'infer-dp-scheduler/cmd/route_server/server.version=$(VERSION)' \
            -X 'infer-dp-scheduler/cmd/route_server/server.tagOrBranch=$(BRANCH)' \
            -X 'infer-dp-scheduler/cmd/route_server/server.commitId=$(COMMIT)' \
            -X 'infer-dp-scheduler/cmd/route_server/server.buildTime=$(BUILD_TIME)'
 
-$(OUTPUT_DIR)/$(PKG_NAME)/route-server/bin:
+$(OUTPUT_DIR)/$(PKG_NAME)/bin:
 	@mkdir -p $@
 
-$(OUTPUT_DIR)/$(PKG_NAME)/route-server/bin/$(BINARY_NAME): | $(OUTPUT_DIR)/$(PKG_NAME)/route-server/bin
+$(OUTPUT_DIR)/$(PKG_NAME)/bin/$(BINARY_NAME): | $(OUTPUT_DIR)/$(PKG_NAME)/bin
 	@cd $(SRC_DIR) && $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o ../../$@ .
 
-$(OUTPUT_DIR)/$(PKG_NAME)/$(CONFIG_TOOL): | $(OUTPUT_DIR)/$(PKG_NAME)/route-server/bin
+$(OUTPUT_DIR)/$(CONFIG_TOOL): | $(OUTPUT_DIR)/$(PKG_NAME)/bin
 	@cd $(CONFIG_TOOL_DIR) && $(GO) build $(GOFLAGS) -o ../../$@ .
 
-build-binary: $(OUTPUT_DIR)/$(PKG_NAME)/route-server/bin/$(BINARY_NAME)
+build-binary: $(OUTPUT_DIR)/$(PKG_NAME)/bin/$(BINARY_NAME)
 	@echo "Binary built: $@"
 
-build-config-tool: $(OUTPUT_DIR)/$(PKG_NAME)/$(CONFIG_TOOL)
+build-config-tool: $(OUTPUT_DIR)/$(CONFIG_TOOL)
 	@echo "Config tool built: $@"
 
 build: build-binary build-config-tool
 	@echo "Build complete: $(OUTPUT_DIR)/"
 
 copy-deploy:
-	@mkdir -p $(OUTPUT_DIR)/$(PKG_NAME)
-	@cp $(DEPLOY_DIR)/deploy.sh $(OUTPUT_DIR)/$(PKG_NAME)/
-	@cp $(DEPLOY_DIR)/*.yaml $(OUTPUT_DIR)/$(PKG_NAME)/ 2>/dev/null || true
-	@cp $(DEPLOY_DIR)/metrics_config*.yaml $(OUTPUT_DIR)/$(PKG_NAME)/ 2>/dev/null || true
-	@cp -r $(DEPLOY_DIR)/scale $(OUTPUT_DIR)/$(PKG_NAME)/ 2>/dev/null || true
-	@cp -r $(DEPLOY_DIR)/pipelines $(OUTPUT_DIR)/$(PKG_NAME)/ 2>/dev/null || true
+	@mkdir -p $(OUTPUT_DIR)
+	@cp $(DEPLOY_DIR)/deploy.sh $(OUTPUT_DIR)/
+	@cp $(DEPLOY_DIR)/*.yaml $(OUTPUT_DIR)/ 2>/dev/null || true
+	@cp -r $(DEPLOY_DIR)/scale $(OUTPUT_DIR)/ 2>/dev/null || true
+	@cp -r $(DEPLOY_DIR)/pipelines $(OUTPUT_DIR)/ 2>/dev/null || true
+	@cp Dockerfile $(OUTPUT_DIR)/ 2>/dev/null || true
 
-package: build copy-deploy
+version-info:
+	@mkdir -p $(OUTPUT_DIR)/$(PKG_NAME)
+	@printf 'Build Tag/Branch: %s\nBuild Commit ID: %s\nBuild Time: %s\n' \
+		"$(BRANCH)" "$(COMMIT)" "$(BUILD_TIME)" > $(OUTPUT_DIR)/$(PKG_NAME)/version.info
+
+package: build copy-deploy version-info
 	@cd $(OUTPUT_DIR) && zip -q -r $(PKG_NAME)-$(VERSION)-$(BUILD_TIME).zip ./
 	@echo "Package created: $(OUTPUT_DIR)/$(PKG_NAME)-$(VERSION)-$(BUILD_TIME).zip"
 

@@ -50,7 +50,7 @@ func DisableHTTPSConfig(params []string) []string {
 
 const (
 	ROUTE_SERVER_TEMPLATE = "route-server-template.yaml"
-	TEMP_TEMPLATE       = "temp-template.yaml"
+	TEMP_TEMPLATE         = "temp-template.yaml"
 )
 
 var (
@@ -201,6 +201,24 @@ func copyDir(src, dst string) error {
 		}
 	}
 	return nil
+}
+
+// copyConfigFilesToDirs copies the given config files into each case's config subdirectory.
+func copyConfigFilesToDirs(deployPath string, cfgDirs []string, fileNames ...string) {
+	for _, fileName := range fileNames {
+		for _, cfgDir := range cfgDirs {
+			Expect(copyFile(filepath.Join(deployPath, fileName), filepath.Join(cfgDir, "config", fileName))).To(BeNil())
+		}
+	}
+}
+
+// copyPipelinesToDirs copies the pipelines directory into each case's config/pipelines subdirectory.
+func copyPipelinesToDirs(deployPath string, cfgDirs []string) {
+	for _, cfgDir := range cfgDirs {
+		pipelinesDir := filepath.Join(cfgDir, "config", "pipelines")
+		Expect(os.MkdirAll(pipelinesDir, 0755)).To(BeNil())
+		Expect(copyDir(filepath.Join(deployPath, "pipelines"), pipelinesDir)).To(BeNil())
+	}
 }
 
 func restartProcess(psession **gexec.Session) error {

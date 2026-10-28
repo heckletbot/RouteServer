@@ -171,3 +171,18 @@ configurations:
     acting_instance: "api_server"
     operation: "histogram_combine"
     type: "Histogram"
+
+  - metric_name: "vllm:download_pictures_latency_seconds"
+    acting_instance: "api_server"
+    operation: "histogram_combine"
+    type: "Histogram"
+
+  - metric_name: "vllm:text_tokens_processed_total"
+    acting_instance: "prefill"
+    operation: "sum"
+    type: "Counter"
+
+  - metric_name: "vllm:mm_tokens_processed_total"
+    acting_instance: "prefill"
+    operation: "sum"
+    type: "Counter"

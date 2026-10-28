@@ -18,10 +18,16 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
+	"infer-dp-scheduler/pkg/common/anthropic"
 	"infer-dp-scheduler/pkg/common/constant"
 	"infer-dp-scheduler/pkg/common/logger"
 	"infer-dp-scheduler/pkg/common/utils"
+
+	"github.com/goccy/go-yaml"
 )
 
 func ApplyDefaultHttpCfg(cfg *HttpConfig) {
@@ -45,6 +51,9 @@ func ApplyDefaultHttpCfg(cfg *HttpConfig) {
 	}
 	if cfg.IdleConnTimeout == 0 {
 		cfg.IdleConnTimeout = DefaultIdleConnTimeout
+	}
+	if cfg.ConnectionRetry == 0 {
+		cfg.ConnectionRetry = DefaultConnectionRetry
 	}
 }
 
@@ -118,4 +127,71 @@ func ApplyDefaultProbeCfg(cfg *ProbeCfg) {
 			cfg.CircuitBreaker.CheckWindowSec, DefaultCircuitBreakerCheckWindowSec)
 		cfg.CircuitBreaker.CheckWindowSec = DefaultCircuitBreakerCheckWindowSec
 	}
+}
+
+// ApplyAnthropicErrorTypeMapping normalizes type/message to lowercase and
+// installs the mapping into the anthropic package for error code resolution.
+func ApplyAnthropicErrorTypeMapping(entries []anthropic.ErrorMapping) {
+	for i := range entries {
+		entries[i].Type = strings.ToLower(entries[i].Type)
+		for j, msg := range entries[i].Messages {
+			entries[i].Messages[j] = strings.ToLower(msg)
+		}
+	}
+	anthropic.InitErrorMapping(entries)
+}
+
+// LoadAnthropicErrorTypeConfig reads and validates the anthropic error type
+// mapping file.
+func LoadAnthropicErrorTypeConfig(yamlPath string) ([]anthropic.ErrorMapping, error) {
+	if _, err := os.Stat(yamlPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("anthropic error type config file %s does not exist", yamlPath)
+	}
+
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read message error config file %s: %v", yamlPath, err)
+	}
+
+	var cfg AnthropicErrorTypeConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse message error config file %s: %v", yamlPath, err)
+	}
+
+	for i, m := range cfg.Mappings {
+		if m.Code <= 0 {
+			return nil, fmt.Errorf("message error config invalid: entry %d has invalid code %d", i+1, m.Code)
+		}
+		if m.Type == "" && len(m.Messages) == 0 {
+			return nil, fmt.Errorf("message error config invalid: entry %d has neither type nor messages", i+1)
+		}
+	}
+
+	return cfg.Mappings, nil
+}
+
+// ApplyMessageErrorConfig loads the anthropic error mapping from the configured
+// file (relative to the server config path) and installs it. A missing or
+// unconfigured file is only logged, not fatal.
+func ApplyMessageErrorConfig(configFileName string) error {
+	if configFileName == "" {
+		logger.Log().Warnf("message error config file is not configured")
+		return nil
+	}
+
+	yamlPath := filepath.Join(os.Getenv(constant.EnvServerConfigPath), configFileName)
+	loaded, err := LoadAnthropicErrorTypeConfig(yamlPath)
+	if err != nil {
+		logger.Log().Warnf("failed to load message error config from %s: %v", configFileName, err)
+		return nil
+	}
+
+	if len(loaded) == 0 {
+		logger.Log().Warnf("message error config from %s is empty", configFileName)
+		return nil
+	}
+
+	ApplyAnthropicErrorTypeMapping(loaded)
+	logger.Log().Infof("Loaded message error mapping from config file: %s", configFileName)
+	return nil
 }

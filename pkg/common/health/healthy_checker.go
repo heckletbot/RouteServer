@@ -116,6 +116,15 @@ func (hcm *HealthyCheckerModule) probeInferReqBeforeToAvailable(toAvailable []*c
 				logger.Log().Warnf("[recover] instance %s already in probe process", instance.ID)
 				return
 			}
+			// Instances isolated by the pd link blacklist due to KV transfer errors
+			// skip recovery probing while they are still on the blacklist.
+			if instance.FaultType == LinkBlacklist &&
+				hcm.leaderHealthChecker.linkBlacklistCheckerModule.IsInstanceStillBlocked(instance.ID) {
+				logger.Log().Warnf("[recover] instance %s is still in pd link blacklist, skip probe", instance.ID)
+				atomic.StoreInt32(&instance.ConsecutiveHealthSuccess, 0)
+				hcm.rmInstProbeInferReq(instance.ID)
+				return
+			}
 			// Send probe request
 			logger.Log().Infof("[recover] begin send probe infer request to instance %s", instance.ID)
 			successToCheck, testSuccess, _ := hcm.leaderHealthChecker.probeInferRequestModel.sendProbeInferRequestWithTimeout(

@@ -1,0 +1,45 @@
+mappings:
+  - code: 400
+    type: "BadRequestError"
+  - code: 404
+    type: "NotFoundError"
+  - code: 501
+    type: "NotImplementedError"
+  - code: 500
+    type: "InternalServerError"
+  - code: 400
+    type: "InvalidUserInput"
+  - code: 400
+    type: "invalid_request_error"
+  - code: 500
+    type: "internal_error"
+  - code: 400
+    type: "Bad Request"
+  - code: 401
+    type: "Unauthorized"
+  - code: 403
+    type: "Forbidden"
+  - code: 404
+    type: "Not Found"
+  - code: 405
+    type: "Method Not Allowed"
+  - code: 408
+    type: "Request Timeout"
+  - code: 409
+    type: "Conflict"
+  - code: 413
+    type: "Payload Too Large"
+  - code: 415
+    type: "Unsupported Media Type"
+  - code: 422
+    type: "Unprocessable Entity"
+  - code: 429
+    type: "Too Many Requests"
+  - code: 500
+    type: "Internal Server Error"
+  - code: 502
+    type: "Bad Gateway"
+  - code: 503
+    type: "Service Unavailable"
+  - code: 504
+    type: "Gateway Timeout"

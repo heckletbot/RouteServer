@@ -9,6 +9,9 @@ pipeline_cfg:
     - path: "/v1/completions"
       methods: [ "POST" ]
       handler: completions_infer
+    - path: "/v1/messages"
+      methods: [ "POST" ]
+      handler: messages_infer
   phases:
     - name: encode_schedule
       type: Schedule
@@ -58,6 +61,7 @@ pipeline_cfg:
           - prefill_prepare_request
         post_process_funcs:
           - prefill_post_response
+          - check_kv_transfer_params
         post_phase_funcs:
           - regular_post_phase
       dependsOn:

@@ -18,6 +18,7 @@ package request
 
 import (
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"infer-dp-scheduler/cmd/route_server/server/options"
+	"infer-dp-scheduler/pkg/common/anthropic"
 	"infer-dp-scheduler/pkg/common/constant"
 	"infer-dp-scheduler/pkg/common/logger"
 	"infer-dp-scheduler/pkg/common/openai"
@@ -60,11 +62,17 @@ func parseMaxTokens(raw *utils.JSONModifier, isChat bool) (int32, error) {
 			if maxCompletionTokens < 1 {
 				return 0, fmt.Errorf("max_completion_tokens must be at least 1, got %d", maxCompletionTokens)
 			}
+			if maxCompletionTokens > math.MaxInt32 {
+				return 0, fmt.Errorf("max_completion_tokens must not exceed %d, got %d", math.MaxInt32, maxCompletionTokens)
+			}
 			return int32(maxCompletionTokens), nil
 		}
 		if maxTokens, exists := raw.GetInt(openai.MaxTokenKey); exists {
 			if maxTokens < 1 {
 				return 0, fmt.Errorf("max_tokens must be at least 1, got %d", maxTokens)
+			}
+			if maxTokens > math.MaxInt32 {
+				return 0, fmt.Errorf("max_tokens must not exceed %d, got %d", math.MaxInt32, maxTokens)
 			}
 			return int32(maxTokens), nil
 		}
@@ -79,6 +87,9 @@ func parseMaxTokens(raw *utils.JSONModifier, isChat bool) (int32, error) {
 	if maxTokens, exists := raw.GetInt(openai.MaxTokenKey); exists {
 		if maxTokens < 1 {
 			return 0, fmt.Errorf("max_tokens must be at least 1, got %d", maxTokens)
+		}
+		if maxTokens > math.MaxInt32 {
+			return 0, fmt.Errorf("max_tokens must not exceed %d, got %d", math.MaxInt32, maxTokens)
 		}
 		return int32(maxTokens), nil
 	}
@@ -96,11 +107,14 @@ func GetInferRequestId(header *http.Header, isChat bool) string {
 }
 
 func TryParseContentAndLen(
-	body *utils.JSONModifier, reqId string, isChat bool) ([]utils.ChatContent, int32) {
+	body *utils.JSONModifier, reqId string, isChat bool, isMessages bool) ([]utils.ChatContent, int32) {
 	var parseFunc func(body *utils.JSONModifier) ([]utils.ChatContent, int32, bool, interface{})
-	if isChat {
+	switch {
+	case isMessages:
+		parseFunc = tryParseMessages
+	case isChat:
 		parseFunc = tryParseChat
-	} else {
+	default:
 		parseFunc = tryParseCompletion
 	}
 	content, promptLen, rawExists, rawContent := parseFunc(body)
@@ -159,6 +173,81 @@ func tryParseCompletion(body *utils.JSONModifier) ([]utils.ChatContent, int32, b
 	}
 	val, valExists := body.GetRaw(openai.PromptKey)
 	return nil, 0, valExists, val
+}
+
+// tryParseMessages parses an Anthropic messages request body: an optional
+// "system" field plus a "messages" array whose content items may be a plain
+// string or an array of content blocks.
+func tryParseMessages(body *utils.JSONModifier) ([]utils.ChatContent, int32, bool, interface{}) {
+	messagesRaw, exist := body.GetRaw(anthropic.ChatMessagesKey)
+	if !exist {
+		return nil, 0, false, nil
+	}
+
+	messagesArr, ok := messagesRaw.([]interface{})
+	if !ok {
+		return nil, 0, exist, messagesRaw
+	}
+
+	var result []utils.ChatContent
+	var totalLen int32
+
+	// handle optional system field
+	if systemRaw, ok := body.GetRaw(anthropic.SystemKey); ok && systemRaw != nil {
+		var systemStr string
+		switch v := systemRaw.(type) {
+		case string:
+			systemStr = v
+		default:
+			jsonBytes, err := utils.SonicApi.Marshal(systemRaw)
+			if err != nil {
+				logger.Log().Warnf("failed to marshal system raw content: %v", err)
+				break
+			}
+			systemStr = string(jsonBytes)
+		}
+
+		result = append(result, utils.ChatContent{Role: anthropic.SystemKey, Content: systemStr})
+		totalLen += int32(len(systemStr))
+	}
+
+	for _, item := range messagesArr {
+		msg, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		role := fmt.Sprintf("%v", msg["role"])
+		if role == "<nil>" {
+			role = ""
+		}
+		content := parseContent(msg["content"])
+
+		result = append(result, utils.ChatContent{Role: role, Content: content})
+		totalLen += int32(len(content))
+	}
+
+	if len(result) == 0 {
+		return nil, 0, true, nil
+	}
+	return result, totalLen, true, nil
+}
+
+// parseContent extracts the content of an Anthropic message item, supporting
+// both a plain string and an array of content blocks.
+func parseContent(raw interface{}) string {
+	if raw == nil {
+		return ""
+	}
+	if str, ok := raw.(string); ok {
+		return str
+	}
+	jsonBytes, err := utils.SonicApi.Marshal(raw)
+	if err != nil {
+		logger.Log().Warnf("failed to marshal content: %v", err)
+		return fmt.Sprintf("%v", raw)
+	}
+	return string(jsonBytes)
 }
 
 // GetOrGenerateRequestId If ReWriteRequestID switch is enabled, determine the rewritten requestid according to the following rules:

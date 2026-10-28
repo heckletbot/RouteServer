@@ -50,6 +50,7 @@ var (
 	DecodeAddrs                string
 	MoeAddrs                   string
 	EtcdEndpoints              string
+	EtcdAutoSyncSecond         string
 	RemoteSchedulerType        string
 	RemoteSchedulerEndpoint    string
 	LogFilePath                string
@@ -855,12 +856,19 @@ func modifyClusterConfig(cfg *config.Config) (success bool) {
 		fmt.Printf("Error: invalid etcd endpoints %s, err = %v\n", TemplatePath, err)
 		return false
 	}
+	autoSync, err := strconv.Atoi(EtcdAutoSyncSecond)
+	if err != nil {
+		fmt.Printf("Error: invalid etcd-auto-sync-second, err = %v\n", err)
+		return false
+	}
 	if cfg.ClusterCfg.EtcdCfg == nil {
 		cfg.ClusterCfg.EtcdCfg = &config.EtcdConfig{
-			EtcdEndpoints: etcdAddresses,
+			EtcdEndpoints:       etcdAddresses,
+			AutoSyncIntervalSec: autoSync,
 		}
 	} else {
 		cfg.ClusterCfg.EtcdCfg.EtcdEndpoints = etcdAddresses
+		cfg.ClusterCfg.EtcdCfg.AutoSyncIntervalSec = autoSync
 	}
 	return true
 }
@@ -895,6 +903,7 @@ func parseArgs() {
 		"format is ${key1}#${val1}, separate with comma, eg: max_num_seqs#54,api_server_count#1")
 	flag.StringVar(&EtcdEndpoints, "etcd-endpoints", "", "list of decode endpoints, "+
 		"eg: 127.0.0.1:2379,x.x.x.x:yyyy")
+	flag.StringVar(&EtcdAutoSyncSecond, "etcd-auto-sync-second", "10", "etcd client auto sync interval in seconds, 0 to disable")
 	flag.StringVar(&RemoteSchedulerType, "remote-scheduler-type", "",
 		"type of remote scheduler, support (1)endpoint: direct access configured endpoint in yaml; "+
 			"(2)leader: always find leader of cluster to remote schedule")

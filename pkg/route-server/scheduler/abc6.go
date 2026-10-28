@@ -544,11 +544,6 @@ func (a *ABC6) DispatchRequest(request utils.GenerateRequest, params map[string]
 	if a.workerNum.Load() == 0 {
 		return "", false, nil
 	}
-	if insBlackMap != nil {
-		if a.workerNum.Load() == int32(len(insBlackMap)) {
-			return "", true, nil
-		}
-	}
 
 	sortedWorkers, loadType := a.getSortedWorkersByLoad()
 	skipped := false

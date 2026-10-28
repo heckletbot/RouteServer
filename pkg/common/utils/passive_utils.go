@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"strings"
 
+	"infer-dp-scheduler/pkg/common/anthropic"
 	"infer-dp-scheduler/pkg/common/constant"
 
 	"infer-dp-scheduler/pkg/common/errs"
@@ -92,7 +93,7 @@ func MaErrorFromError(err error) *errs.MaError {
 		fmt.Sprintf("unkown fault %v", err))
 }
 
-func DetailsFromNonStreamResponse(statusCode int, body []byte) (*InstanceFailureDetails, string) {
+func DetailsFromNonStreamResponse(statusCode int, body []byte, isMessages bool) (*InstanceFailureDetails, string) {
 	if body == nil || len(body) == 0 {
 		return &InstanceFailureDetails{
 			StatusCode:   statusCode,
@@ -100,34 +101,51 @@ func DetailsFromNonStreamResponse(statusCode int, body []byte) (*InstanceFailure
 		}, constant.UnKnownReason
 	}
 
-	var newFormatError struct {
-		Error *openai.VllmErrorBody `json:"error"`
-	}
-	if err := SonicApi.Unmarshal(body, &newFormatError); err == nil && newFormatError.Error != nil {
-		vllmErrBody := newFormatError.Error
-		details := &InstanceFailureDetails{
-			StatusCode:      statusCode,
-			IsTimeout:       false,
-			IsConnectionErr: false,
-			IsKVTransferErr: isKvTransferErr(vllmErrBody.Type, vllmErrBody.Message),
-			ErrorMessage:    vllmErrBody.Message,
+	if isMessages {
+		var anthropicErr anthropic.AnthropicError
+		if err := SonicApi.Unmarshal(body, &anthropicErr); err == nil {
+			if anthropicErr.Type == "error" {
+				resolvedStatusCode := anthropic.ResolveAnthropicErrorCode(anthropicErr.Error.Type, anthropicErr.Error.Message)
+				details := &InstanceFailureDetails{
+					StatusCode:      resolvedStatusCode,
+					IsTimeout:       false,
+					IsConnectionErr: false,
+					IsKVTransferErr: isKvTransferErr(anthropicErr.Error.Type, anthropicErr.Error.Message),
+					ErrorMessage:    anthropicErr.Error.Message,
+				}
+				return details, constant.UnKnownReason
+			}
 		}
-		return details, constant.UnKnownReason
-	}
+	} else {
+		var newFormatError struct {
+			Error *openai.VllmErrorBody `json:"error"`
+		}
+		if err := SonicApi.Unmarshal(body, &newFormatError); err == nil && newFormatError.Error != nil {
+			vllmErrBody := newFormatError.Error
+			details := &InstanceFailureDetails{
+				StatusCode:      statusCode,
+				IsTimeout:       false,
+				IsConnectionErr: false,
+				IsKVTransferErr: isKvTransferErr(vllmErrBody.Type, vllmErrBody.Message),
+				ErrorMessage:    vllmErrBody.Message,
+			}
+			return details, constant.UnKnownReason
+		}
 
-	var vllmErrBody openai.VllmErrorBody
-	if err := SonicApi.Unmarshal(body, &vllmErrBody); err == nil {
-		if vllmErrBody.Type == "" {
-			return tryParseErrFromOmini(statusCode, body)
+		var vllmErrBody openai.VllmErrorBody
+		if err := SonicApi.Unmarshal(body, &vllmErrBody); err == nil {
+			if vllmErrBody.Type == "" {
+				return tryParseErrFromOmini(statusCode, body)
+			}
+			details := &InstanceFailureDetails{
+				StatusCode:      statusCode,
+				IsTimeout:       false,
+				IsConnectionErr: false,
+				IsKVTransferErr: isKvTransferErr(vllmErrBody.Type, vllmErrBody.Message),
+				ErrorMessage:    vllmErrBody.Message,
+			}
+			return details, constant.UnKnownReason
 		}
-		details := &InstanceFailureDetails{
-			StatusCode:      statusCode,
-			IsTimeout:       false,
-			IsConnectionErr: false,
-			IsKVTransferErr: isKvTransferErr(vllmErrBody.Type, vllmErrBody.Message),
-			ErrorMessage:    vllmErrBody.Message,
-		}
-		return details, constant.UnKnownReason
 	}
 	if statusCode == http.StatusOK {
 		return nil, constant.UnKnownReason
@@ -144,6 +162,21 @@ func DetailsFromNonStreamResponse(statusCode int, body []byte) (*InstanceFailure
 func TryParseErrFromStreamResponse(body []byte) (*InstanceFailureDetails, string) {
 	if body == nil || len(body) == 0 {
 		return nil, constant.UnKnownReason
+	}
+
+	var anthropicErr anthropic.AnthropicError
+	if err := SonicApi.Unmarshal(body, &anthropicErr); err == nil {
+		if anthropicErr.Type == "error" {
+			statusCode := anthropic.ResolveAnthropicErrorCode(anthropicErr.Error.Type, anthropicErr.Error.Message)
+			details := &InstanceFailureDetails{
+				StatusCode:      statusCode,
+				IsTimeout:       false,
+				IsConnectionErr: false,
+				IsKVTransferErr: isKvTransferErr(anthropicErr.Error.Type, anthropicErr.Error.Message),
+				ErrorMessage:    anthropicErr.Error.Message,
+			}
+			return details, constant.UnKnownReason
+		}
 	}
 
 	var streamErrorBody openai.StreamErrRes
@@ -268,6 +301,40 @@ func isConnectionError(err error) bool {
 	}
 
 	return false
+}
+
+// DetailsFromEofError builds failure details for an unexpected EOF error.
+func DetailsFromEofError(err error) *InstanceFailureDetails {
+	return &InstanceFailureDetails{
+		StatusCode:      0,
+		IsTimeout:       false,
+		IsConnectionErr: true,
+		IsCanceledErr:   false,
+		ErrorMessage:    err.Error(),
+	}
+}
+
+// TypeFromDetails maps failure detail flags to the corresponding FailureType.
+func (d *InstanceFailureDetails) TypeFromDetails() errs.FailureType {
+	if d == nil {
+		return errs.FailureTypeUnknown
+	}
+	if d.IsClientErr {
+		return errs.FailureTypeClient
+	}
+	if d.IsCanceledErr {
+		return errs.FailureTypeCanceled
+	}
+	if d.IsTimeout {
+		return errs.FailureTypeTimeout
+	}
+	if d.IsConnectionErr {
+		return errs.FailureTypeConnection
+	}
+	if d.IsKVTransferErr {
+		return errs.FailureTypeKVTransfer
+	}
+	return errs.FailureTypeEngine
 }
 
 func isKvTransferErr(errType string, message string) bool {

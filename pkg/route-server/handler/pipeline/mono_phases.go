@@ -47,6 +47,7 @@ const (
 	DecodeProcessResponse        = "decode_post_response"
 	FirstTokenPost               = "first_token_post"
 	WaitFirstToken               = "wait_first_token"
+	CheckKVTransferParamsKey     = "check_kv_transfer_params"
 
 	EncodePrepareRequest        = "encode_prepare_request"
 	PrefillPrepareRequest       = "prefill_prepare_request"
@@ -79,6 +80,7 @@ var (
 		DecodeProcessResponse:        PostDecodeProcessResponse,
 		FirstTokenPost:               FirstTokenReport,
 		WaitFirstToken:               FirstTokenWait,
+		CheckKVTransferParamsKey:     CheckKVTransferParams,
 	}
 	postPhaseFuncMap = map[string]postPhaseFunc{
 		RegularPostPhase:  PostPhaseProcess,
@@ -218,7 +220,7 @@ func (e *MonoRequestPhase) executeRequest(ctx *PipelineContext, instanceId strin
 	if ctx.ServerCfg.InferMode == constant.LayerwiseMMMode && e.stageName == constant.StageDecode {
 		ctx.SetDone()
 	}
-	res, rsError, details = insClient.Generate(requestCancelCtx, ctx.RequestContext.ParsedRequest.GetHeader(), ctx.RequestPath(), bodyReader, instanceId, e.StageName())
+	res, rsError, details = insClient.Generate(requestCancelCtx, ctx.RequestContext.ParsedRequest.GetHeader(), ctx.RequestPath(), bodyReader, instanceId, e.StageName(), ctx.RequestId(), ctx.RequestContext.ParsedRequest.IsMessages())
 	if rsError != nil {
 		if errors.Is(requestCancelCtx.Err(), context.Canceled) {
 			tracer.Tracer.Event(subSpanName, trace.TraceEventUserCancelled,
@@ -404,16 +406,22 @@ func PostPrefillProcessResponse(res *http.Response, ctx *PipelineContext, phase 
 	transParams, exists := rawResJson.GetObject(openai.KvTransferParamsKey)
 	if exists {
 		ctx.RequestContext.ParsedRequest.KvTransferParams = transParams
-	} else {
-		if !ctx.IsLayerWise {
-			logger.Log().Warnf("prefill res for request [%s] don't contains [%s]", ctx.RequestId(), openai.KvTransferParamsKey)
-			if ctx.RequestContext.ParsedRequest.IsStream() && ctx.IsChat {
-				return wrapInternalPostResponseFailures(res.StatusCode, phase, fmt.Errorf(" kv transfer params is null"))
-			}
-		}
 	}
 	ctx.RequestContext.ParsedRequest.SetFirstTokenBody(bodyBytes)
 
+	return nil, nil
+}
+
+// CheckKVTransferParams is a configurable post-process func that fails the
+// prefill stage when kv_transfer_params is missing for a streaming chat request.
+func CheckKVTransferParams(res *http.Response, ctx *PipelineContext, phase Phase) (rsError *errs.RSError, details *utils.InstanceFailureDetails) {
+	if ctx.RequestContext.ParsedRequest.KvTransferParams != nil {
+		return nil, nil
+	}
+	logger.Log().Warnf("prefill res for request [%s] don't contains [%s]", ctx.RequestId(), openai.KvTransferParamsKey)
+	if ctx.RequestContext.ParsedRequest.IsStream() && ctx.IsChat() {
+		return wrapInternalPostResponseFailures(res.StatusCode, phase, fmt.Errorf(" kv transfer params is null"))
+	}
 	return nil, nil
 }
 
@@ -434,7 +442,7 @@ func PreparePrefillStreamRequestBody(ctx *PipelineContext, copiedBody *utils.JSO
 	}
 	copiedBody.Remove(openai.MinTokensKey)
 
-	if ctx.RequestContext.ParsedRequest.IsStream() && ctx.IsChat {
+	if ctx.RequestContext.ParsedRequest.IsStream() && ctx.IsChat() {
 		request.PrepareStreamOptions(copiedBody)
 	} else {
 		// completion use non-stream request
@@ -482,7 +490,7 @@ func PrepareVllmAscendRequestBody(ctx *PipelineContext, copiedBody *utils.JSONMo
 func PostPrefillStreamProcessResponse(res *http.Response, ctx *PipelineContext, phase Phase) (rsError *errs.RSError, details *utils.InstanceFailureDetails) {
 	var bodyBytes []byte
 	var err error
-	if ctx.RequestContext.ParsedRequest.IsStream() && ctx.IsChat {
+	if ctx.RequestContext.ParsedRequest.IsStream() && ctx.IsChat() {
 		var finishReason string
 		instanceId := ctx.RequestContext.InferMsg.GetInstance(phase.RelateInstanceType())
 		ctx.GetRequestCtx().IsFirstTokenFromPrefill.Store(true)
@@ -493,8 +501,9 @@ func PostPrefillStreamProcessResponse(res *http.Response, ctx *PipelineContext, 
 		ctx.GetGinCtxMutex().Lock()
 		writerResponseHeaders(res, ctx)
 		// ForceReuseFirstToken is now atomic.Bool, pass its pointer
+		passTokenTime := handler.GetPassTokenTime(ctx.IsChat(), ctx.IsLayerWise, ctx.RequestContext.ParsedRequest.GetMaxToken(), ctx.GetRequestCtx().IsFirstTokenFromPrefill.Load())
 		bodyBytes, rsError, details, finishReason = handler.WritePrefillStreamRes(ctx.GetRequestCtx().MainGinCtx, ctx.RequestContext.ParsedRequest, res,
-			ctx.RequestContext.Tracer.Tracer, ctx.GetPerfMetrics(), instanceId, phase.StageName(), ctx.InferManager.WorkerEventCollector, ctx.IsChat, ctx.RequestContext.ForceReuseFirstToken)
+			ctx.RequestContext.Tracer.Tracer, ctx.GetPerfMetrics(), instanceId, phase.StageName(), ctx.InferManager.WorkerEventCollector, passTokenTime, ctx.RequestContext.ForceReuseFirstToken)
 		if details != nil {
 			ctx.FinishReason = finishReason
 			// return non-stream error, reset the Header
@@ -544,7 +553,7 @@ func PostPrefillStreamProcessResponse(res *http.Response, ctx *PipelineContext, 
 	} else {
 		if !ctx.IsLayerWise {
 			logger.Log().Warnf("prefill res for request [%s] don't contains [%s]", ctx.RequestId(), openai.KvTransferParamsKey)
-			if ctx.RequestContext.ParsedRequest.IsStream() && ctx.IsChat {
+			if ctx.RequestContext.ParsedRequest.IsStream() && ctx.IsChat() {
 				return wrapInternalPostResponseFailures(res.StatusCode, phase, fmt.Errorf(" kv transfer params is null"))
 			}
 		}

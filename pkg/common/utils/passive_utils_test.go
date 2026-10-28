@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"infer-dp-scheduler/pkg/common/anthropic"
 	"infer-dp-scheduler/pkg/common/constant"
 )
 
@@ -80,10 +81,18 @@ func TestTryParseErrFromStreamResponse(t *testing.T) {
 }
 
 func TestDetailsFromNonStreamResponse(t *testing.T) {
+	// initialize standard anthropic error mapping for isMessages=true cases
+	anthropic.InitErrorMapping([]anthropic.ErrorMapping{
+		{Type: "invalid_request_error", Code: http.StatusBadRequest},
+		{Type: "authentication_error", Code: http.StatusUnauthorized},
+		{Type: "internal_error", Code: http.StatusInternalServerError},
+	})
+
 	tests := []struct {
 		name       string
 		statusCode int
 		body       string
+		isMessages bool
 		want       *InstanceFailureDetails
 	}{
 		{
@@ -101,7 +110,7 @@ func TestDetailsFromNonStreamResponse(t *testing.T) {
 		{
 			name:       "omini link down error",
 			statusCode: 500,
-			body:       `{"model": "deepseek","choices": [{"index": 0,"message": {"role": "assistant","reasoning_content": null,"content": "您好","tool_calls": []},"Logprobs": null,"finish_reason": "abort", "stop_reason": "Abort for KV loading failure"}],"prompt_logprobs": null,"kv_transfer params": null}`,
+			body:       `{"model": "deepseek","choices": [{"index": 0,"message": {"role": "assistant","reasoning_content": null,"content": "Hello","tool_calls": []},"Logprobs": null,"finish_reason": "abort", "stop_reason": "Abort for KV loading failure"}],"prompt_logprobs": null,"kv_transfer params": null}`,
 			want: &InstanceFailureDetails{
 				StatusCode:      500,
 				IsTimeout:       false,
@@ -146,10 +155,43 @@ func TestDetailsFromNonStreamResponse(t *testing.T) {
 				ErrorMessage:    "KV cache load failed for one or more remote blocks. The request can be retried.",
 			},
 		},
+		{
+			name:       "anthropic error",
+			statusCode: 200,
+			body:       `{"type":"error","error":{"type":"invalid_request_error","message":"invalid max_tokens"}}`,
+			isMessages: true,
+			want: &InstanceFailureDetails{
+				StatusCode:      400,
+				IsTimeout:       false,
+				IsConnectionErr: false,
+				IsKVTransferErr: false,
+				ErrorMessage:    "invalid max_tokens",
+			},
+		},
+		{
+			name:       "anthropic kv transfer error",
+			statusCode: 200,
+			body:       `{"type":"error","error":{"type":"internal_error","message":"KV cache load failed for one or more remote blocks. The request can be retried."}}`,
+			isMessages: true,
+			want: &InstanceFailureDetails{
+				StatusCode:      500,
+				IsTimeout:       false,
+				IsConnectionErr: false,
+				IsKVTransferErr: true,
+				ErrorMessage:    "KV cache load failed for one or more remote blocks. The request can be retried.",
+			},
+		},
+		{
+			name:       "anthropic non-error type falls through",
+			statusCode: 200,
+			body:       `{"type":"message","message":{"role":"assistant"}}`,
+			isMessages: true,
+			want:       nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got, _ := DetailsFromNonStreamResponse(tt.statusCode, []byte(tt.body)); !reflect.DeepEqual(got, tt.want) {
+			if got, _ := DetailsFromNonStreamResponse(tt.statusCode, []byte(tt.body), tt.isMessages); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("DetailsFromNonStreamResponse() = %v, want %v", got, tt.want)
 			}
 		})

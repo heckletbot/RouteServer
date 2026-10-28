@@ -9,6 +9,9 @@ pipeline_cfg:
     - path: "/v1/completions"
       methods: [ "POST" ]
       handler: completions_infer
+    - path: "/v1/messages"
+      methods: [ "POST" ]
+      handler: messages_infer
   phases:
     - name: prefill_schedule
       type: Schedule

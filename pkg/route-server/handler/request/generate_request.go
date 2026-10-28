@@ -19,17 +19,19 @@ package request
 import (
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 
+	"infer-dp-scheduler/pkg/common/anthropic"
 	"infer-dp-scheduler/pkg/common/openai"
 	"infer-dp-scheduler/pkg/common/utils"
 )
 
 type GenerateRequestImplV1 struct {
-	isChat          bool
 	reqId           string
 	header          http.Header
+	urlPath         string
 	RawBody         *utils.JSONModifier
 	OriginBodyBytes []byte
 
@@ -72,7 +74,7 @@ func (req *GenerateRequestImplV1) GetApcStrategyType() string {
 	return req.apcStrategyType
 }
 
-func NewBasicRequestImplForPipeline(request *http.Request, isChat bool) (*GenerateRequestImplV1, error) {
+func NewBasicRequestImplForPipeline(request *http.Request) (*GenerateRequestImplV1, error) {
 	bodyBytes, err := io.ReadAll(request.Body)
 	if err != nil {
 		return nil, err
@@ -87,35 +89,64 @@ func NewBasicRequestImplForPipeline(request *http.Request, isChat bool) (*Genera
 		outputFirstTokenFromPrefill: OutputFirstTokenFromPrefill,
 		RawBody:                     raw,
 		header:                      request.Header,
-		isChat:                      isChat,
+		urlPath:                     request.URL.Path,
 	}
 
-	maxTokens, err := parseMaxTokens(raw, isChat)
-	if err != nil {
-		return nil, err
+	var validateErr error
+	if impl.IsMessages() {
+		validateErr = impl.AnthropicValidate()
+	} else {
+		validateErr = impl.OpenAIValidate()
 	}
-	impl.originMaxTokens = maxTokens
+
+	if validateErr != nil {
+		return nil, validateErr
+	}
+
+	return impl, nil
+}
+
+// IsMessages reports whether the request targets the Anthropic messages endpoint.
+func (req *GenerateRequestImplV1) IsMessages() bool {
+	return req.urlPath == "/v1/messages"
+}
+
+// OpenAIValidate validates an OpenAI-format request body (chat completions or completions).
+func (req *GenerateRequestImplV1) OpenAIValidate() error {
+	if req.RawBody == nil {
+		return fmt.Errorf("raw body is nil")
+	}
+
+	raw := req.RawBody
 
 	if !raw.IsBool(openai.StreamKey) {
-		return nil, fmt.Errorf("stream must be a boolean value")
+		return fmt.Errorf("stream must be a boolean value")
 	}
 	if isStream, exists := raw.GetBool(openai.StreamKey); exists {
-		impl.originIsStream = isStream
+		req.originIsStream = isStream
 	}
+
+	maxTokens, err := parseMaxTokens(raw, req.IsChat())
+	if err != nil {
+		return err
+	}
+	req.originMaxTokens = maxTokens
 
 	if streamOptionsRaw, exists := raw.GetRaw(openai.StreamOptionsKey); exists {
 		streamOptionsObj, isObj := streamOptionsRaw.(map[string]interface{})
 		if !isObj {
-			return nil, fmt.Errorf("stream_options must be an object")
+			return fmt.Errorf("stream_options must be an object")
 		}
+
 		isStream, isStreamSet := raw.GetBool(openai.StreamKey)
 		if !isStreamSet || !isStream {
-			return nil, fmt.Errorf("stream_options can only be used when stream is true")
+			return fmt.Errorf("stream_options can only be used when stream is true")
 		}
+
 		for key, val := range streamOptionsObj {
 			if key == openai.IncludeUsageKey || key == openai.ContinuousUsageStatsKey {
 				if _, parsed := utils.TryParseBool(val); !parsed {
-					return nil, fmt.Errorf("stream_options.%s must be a valid boolean value", key)
+					return fmt.Errorf("stream_options.%s must be a valid boolean value", key)
 				}
 			}
 		}
@@ -123,12 +154,56 @@ func NewBasicRequestImplForPipeline(request *http.Request, isChat bool) (*Genera
 
 	if reqId, exists := raw.GetString(openai.RequestId); exists {
 		if err := utils.CheckResourceNameValid(reqId); err != nil {
-			return nil, fmt.Errorf("invalid request_id: %v", err)
+			return fmt.Errorf("invalid request_id: %v", err)
 		}
-		impl.BodyReqId = reqId
+		req.BodyReqId = reqId
 	}
 
-	return impl, nil
+	return nil
+}
+
+// AnthropicValidate validates an Anthropic-format messages request body.
+func (req *GenerateRequestImplV1) AnthropicValidate() error {
+	if req.RawBody == nil {
+		return fmt.Errorf("raw body is nil")
+	}
+
+	raw := req.RawBody
+
+	maxTokensVal, exists := raw.GetNumber(anthropic.MaxTokenKey)
+	if !exists {
+		return fmt.Errorf("max_tokens is required")
+	}
+	if maxTokensVal > math.MaxInt32 {
+		return fmt.Errorf("max_tokens must not exceed %d, got %v", math.MaxInt32, maxTokensVal)
+	}
+	maxTokens := int32(maxTokensVal)
+	if maxTokens <= 0 {
+		return fmt.Errorf("max_tokens must be greater than 0, got %d", maxTokens)
+	}
+	req.originMaxTokens = maxTokens
+
+	if streamRaw, exists := raw.GetRaw(anthropic.StreamKey); exists {
+		if _, ok := streamRaw.(bool); !ok {
+			return fmt.Errorf("stream must be a boolean value")
+		}
+		if isStream, exists := raw.GetBool(anthropic.StreamKey); exists {
+			req.originIsStream = isStream
+		}
+	} else {
+		req.originIsStream = false
+	}
+
+	if req.header != nil {
+		if reqId := req.header.Get("X-Request-Id"); reqId != "" {
+			if err := utils.CheckResourceNameValid(reqId); err != nil {
+				return fmt.Errorf("invalid request_id: %v", err)
+			}
+			req.BodyReqId = reqId
+		}
+	}
+
+	return nil
 }
 
 func (req *GenerateRequestImplV1) SetSLOTag(sloTag string) {
@@ -148,7 +223,7 @@ func (req *GenerateRequestImplV1) IsStream() bool {
 }
 
 func (req *GenerateRequestImplV1) IsChat() bool {
-	return req.isChat
+	return req.urlPath == "/v1/chat/completions"
 }
 
 func (req *GenerateRequestImplV1) GetRequestId() string {

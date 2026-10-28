@@ -26,8 +26,15 @@ import (
 // RequestBodyLimit creates a middleware that limits the size of request body.
 // It uses http.MaxBytesReader which returns HTTP 413 Payload Too Large error
 // if the body exceeds the limit.
+// A maxBytes value <= 0 disables the limit (no body size restriction).
 func RequestBodyLimit(maxBytes int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// maxBytes <= 0 means unlimited, skip body size restriction entirely
+		if maxBytes <= 0 {
+			c.Next()
+			return
+		}
+
 		// First check Content-Length header if present
 		if contentLength := c.Request.Header.Get("Content-Length"); contentLength != "" {
 			if length, err := strconv.ParseInt(contentLength, 10, 64); err == nil && length > maxBytes {

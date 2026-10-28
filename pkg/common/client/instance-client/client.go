@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"time"
 
 	"infer-dp-scheduler/pkg/common/logger"
@@ -55,7 +56,7 @@ type GenerateResponse struct {
 
 type InstanceClient interface {
 	HealthCheck() (bool, int, error)
-	Generate(ctx context.Context, header http.Header, path string, body io.Reader, instanceId string, stage string) (*http.Response, *errs.RSError, *utils.InstanceFailureDetails)
+	Generate(ctx context.Context, header http.Header, path string, body io.Reader, instanceId string, stage string, reqId string, isMessages bool) (*http.Response, *errs.RSError, *utils.InstanceFailureDetails)
 	Metrics() ([]byte, error)
 	HandlerBroadCastRequest(ctx *gin.Context, broadcastRequest *openai.BroadcastRequest, id string) openai.InstanceResponse
 	GetEndpoint() string
@@ -163,17 +164,78 @@ func (v *VllmClient) HealthCheck() (bool, int, error) {
 	return true, resp.StatusCode, nil
 }
 
-func (v *VllmClient) Generate(ctx context.Context, header http.Header, path string, body io.Reader, instanceId string, stage string) (*http.Response, *errs.RSError, *utils.InstanceFailureDetails) {
-	req, err := http2.BuildHttpRequest(ctx, http.MethodPost, v.endpoint+path, body, header)
+// isRetryableError reports whether an error is a transient connection failure
+// that is safe to retry: connection errors, idle-connection resets or EOFs.
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if utils.DetailsFromError(0, err).IsConnectionErr {
+		return true
+	}
+	return isIdleConnResetError(err) || isEofError(err)
+}
+
+func isIdleConnResetError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "server closed idle connection")
+}
+
+func isEofError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(err.Error()), "eof")
+}
+
+func (v *VllmClient) Generate(ctx context.Context, header http.Header, path string, body io.Reader, instanceId string, stage string, reqId string, isMessages bool) (*http.Response, *errs.RSError, *utils.InstanceFailureDetails) {
+	var bodyBytes []byte
+	if body != nil {
+		var readErr error
+		bodyBytes, readErr = io.ReadAll(body)
+		if readErr != nil {
+			rsErr := errs.NewRSMaError(errs.InternalErr.BuildArgs(
+				fmt.Sprintf("read request body failed: %v", readErr)), stage)
+			return nil, rsErr, utils.DetailsFromError(0, readErr)
+		}
+	}
+	req, err := http2.BuildHttpRequest(ctx, http.MethodPost, v.endpoint+path, bytes.NewReader(bodyBytes), header)
 	var rsErr *errs.RSError
 	if err != nil {
 		rsErr = errs.NewRSMaError(errs.InternalErr.BuildArgs(
 			fmt.Sprintf("build http request failed: %v", err)), stage)
 		return nil, rsErr, utils.DetailsFromError(0, nil)
 	}
+	maxRetry := 0
+	if v.cfg != nil && v.cfg.HttpCfg.ConnectionRetry > 0 {
+		maxRetry = v.cfg.HttpCfg.ConnectionRetry
+	}
+	allRetryIsIdleConnReset := true
 	resp, err := v.longServeClient.DoRequest(req)
+	for retry := 0; retry < maxRetry && err != nil && isRetryableError(err); retry++ {
+		if !isIdleConnResetError(err) {
+			allRetryIsIdleConnReset = false
+		}
+		logger.Log().Warnf("connection error on attempt %d/%d for request [%s] instance %s: %v, retrying", retry+1, maxRetry, reqId, instanceId, err)
+		req, err = http2.BuildHttpRequest(ctx, http.MethodPost, v.endpoint+path, bytes.NewReader(bodyBytes), header)
+		if err != nil {
+			rsErr = errs.NewRSMaError(errs.InternalErr.BuildArgs(
+				fmt.Sprintf("build http request failed: %v", err)), stage)
+			return nil, rsErr, utils.DetailsFromError(0, nil)
+		}
+		resp, err = v.longServeClient.DoRequest(req)
+	}
 	if err != nil {
-		rsErr = errs.NewRSMaError(utils.MaErrorFromError(err), stage)
+		resultStage := stage
+		if allRetryIsIdleConnReset && isIdleConnResetError(err) {
+			resultStage = ""
+		}
+		rsErr = errs.NewRSMaError(utils.MaErrorFromError(err), resultStage)
+		if isEofError(err) {
+			return nil, rsErr, utils.DetailsFromEofError(err)
+		}
 		return nil, rsErr, utils.DetailsFromError(0, err)
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -189,7 +251,8 @@ func (v *VllmClient) Generate(ctx context.Context, header http.Header, path stri
 				EngineStatus:  resp.StatusCode,
 				InstanceID:    instanceId,
 			}, stage)
-			details, _ := utils.DetailsFromNonStreamResponse(resp.StatusCode, bodyBytes)
+			details, _ := utils.DetailsFromNonStreamResponse(resp.StatusCode, bodyBytes, isMessages)
+			rsErr.FailureType = details.TypeFromDetails()
 			return nil, rsErr, details
 		}
 	}

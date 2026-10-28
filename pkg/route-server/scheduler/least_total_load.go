@@ -348,11 +348,6 @@ func (l *LeastTotalLoad) DispatchRequest(request utils.GenerateRequest, params m
 	if nodesCount == 0 {
 		return "", false, nil
 	}
-	if insBlackMap != nil {
-		if nodesCount == int64(len(insBlackMap)) {
-			return "", true, nil
-		}
-	}
 
 	// Calculate load for each instance according to load formula and sort
 	instCompareLoads := l.compareAndSortLoads()

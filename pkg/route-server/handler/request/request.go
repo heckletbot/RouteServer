@@ -195,7 +195,7 @@ func (req *GenerateRequestImpl) parseCompletion(bodyBytes []byte) error {
 		req.BodyReqId = reqId
 	}
 
-	chat, promptLen := TryParseContentAndLen(raw, req.GetRequestId(), false)
+	chat, promptLen := TryParseContentAndLen(raw, req.GetRequestId(), false, false)
 	req.chat = chat
 	req.SetPromptLen(promptLen)
 	return nil
@@ -239,7 +239,7 @@ func (req *GenerateRequestImpl) parseChatCompletion(bodyBytes []byte) error {
 		req.BodyReqId = reqId
 	}
 
-	chat, promptLen := TryParseContentAndLen(raw, req.GetRequestId(), true)
+	chat, promptLen := TryParseContentAndLen(raw, req.GetRequestId(), true, false)
 	req.chat = chat
 	req.SetPromptLen(promptLen)
 	return nil
@@ -255,6 +255,13 @@ func (req *GenerateRequestImpl) OutputFirstTokenFromPrefill() bool {
 
 func (req *GenerateRequestImpl) IsChat() bool {
 	return req.isChat
+}
+
+// IsMessages reports whether the request targets the Anthropic messages endpoint.
+// GenerateRequestImpl is only used by the legacy vllm_pd_separate path, which
+// does not serve the Anthropic API, so this always returns false.
+func (req *GenerateRequestImpl) IsMessages() bool {
+	return false
 }
 
 func (req *GenerateRequestImpl) GetRequestId() string {

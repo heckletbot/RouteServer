@@ -1,22 +1,7 @@
-/*
- * Copyright 2026 The vLLM-Cloud Authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package route_server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -71,21 +56,30 @@ var _ = Describe(PDTestContext, Ordered, func() {
 		var cfg commoncfg.Config
 		templateContent, err := os.ReadFile(filepath.Join(deployPath, ROUTE_SERVER_TEMPLATE))
 		Expect(yaml.Unmarshal(templateContent, &cfg)).To(BeNil())
+		cfg.ServerConfig.TLSConfig = &commoncfg.TLSCertificateConfig{
+			EnableHTTPS: false,
+			EnableMTLS:  false,
+		}
+		cfg.ServerConfig.OpsTLSConfig = &commoncfg.TLSCertificateConfig{
+			EnableHTTPS: false,
+			EnableMTLS:  false,
+		}
 		cfg.InstanceManagerCfg.HealthCheckConfig.RestHealthCommonConfig.Interval = 2000
 		cfg.InstanceManagerCfg.HealthCheckConfig.UnavailableCheckersCfg.RestHealthCfg.ConsecutiveTime = 3
 		cfg.InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig.LinkBlockWindowsMs = 100
-		cfg.InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig.LinkBlockTagValidTimeMs = 10000
+		cfg.InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig.LinkBlockTagValidTimeMs = 5000
 		cfg.MetaCleanupCfg = &commoncfg.MetaCleanupConfig{
 			MaxInstanceDownTimeSec: 30,
 			MaxWorkerDownTimeSec:   30,
 		}
 		outData, err := yaml.Marshal(&cfg)
 		Expect(err).To(BeNil())
-		Expect(os.WriteFile(filepath.Join(deployPath, TEMP_TEMPLATE), outData, 0644)).To(BeNil())
+		tempTemplatePath := filepath.Join(projectRoot, "e2etest", "environment", PDTestContext, TEMP_TEMPLATE)
+		Expect(os.WriteFile(tempTemplatePath, outData, 0644)).To(BeNil())
 
 		By("gen route-server config")
 		toolParam := DisableHTTPSConfig([]string{
-			"-template", filepath.Join(deployPath, TEMP_TEMPLATE),
+			"-template", tempTemplatePath,
 			"-host", "127.0.0.1",
 			"-target", filepath.Join(projectRoot, "e2etest", "environment", PDTestContext),
 			"-infer-mode", "PD",
@@ -99,13 +93,17 @@ var _ = Describe(PDTestContext, Ordered, func() {
 		})
 		Expect(exec.Command(configToolPath, toolParam...).Run()).To(BeNil())
 
+		By("modify recover health config - set consecutive-time to 1")
+		configFile := filepath.Join(configPath, "route-server.yaml")
+		Expect(InjectRecoverHealthConfigToYaml(configFile, DefaultConsecutiveTime)).To(BeNil())
+
 		Expect(os.Setenv(constant.EnvServerConfigPath, configPath)).To(BeNil())
 		Expect(options.InitConfig()).To(BeNil())
 
 		By("cp metrics config")
 		metricsCollectorConfigFileName := options.GetConfig().MetricsCfg.MetricsCollectorConfigFileName
-		Expect(copyFile(filepath.Join(deployPath, metricsCollectorConfigFileName), filepath.Join(configPath, metricsCollectorConfigFileName))).
-			To(BeNil())
+		anthropicErrorTypeConfigFileName := options.GetConfig().ServerConfig.AnthropicErrorTypeConfigFileName
+		copyConfigFilesToDirs(deployPath, []string{filepath.Join(projectRoot, "e2etest", "environment", PDTestContext)}, metricsCollectorConfigFileName, anthropicErrorTypeConfigFileName)
 
 		By("start pd mock vllm")
 		for _, instance := range options.GetConfig().InstanceManagerCfg.RouteTable.InstanceRoutes {
@@ -138,13 +136,11 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			mock.Kill()
 			mock.Wait()
 		}
-		By("cleanup temp template")
-		os.Remove(filepath.Join(projectRoot, "deploy", TEMP_TEMPLATE))
 	})
 
 	BeforeEach(func() {
-		// Before new test logic starts, consume all current content
-		// Matching ".*" moves the read pointer to the end of current buffer
+		// before the new test logic starts, consume all current content first
+		// matching ".*" moves the read pointer to the end of the current buffer
 		Eventually(session.Out).Should(gbytes.Say(".*"))
 	})
 
@@ -193,14 +189,14 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			var result errs.ErrorBody
 			err := ParseResponse(resp, &result)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Code).Should(ContainSubstring("4200"))
+			Expect(result.Code).Should(ContainSubstring(errs.ModelArtsStatusInvalidReq))
 
 		})
 
 	})
 
-	// Request ID Rewrite Tests
-	// Each TC covers /v1/chat/completions and /v1/completions endpoints, both non-streaming and streaming requests
+	// Request ID Rewrite tests
+	// Each TC covers the /v1/chat/completions and /v1/completions endpoints, plus non-streaming and streaming requests
 	Context("Request ID Rewrite Tests", func() {
 		var clientRs *RSClient
 
@@ -230,10 +226,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				var responseMap map[string]interface{}
 				Expect(json.Unmarshal(respBody, &responseMap)).To(BeNil())
 
-				// Verify response id is original value
+				// verify the response id is the original value
 				Expect(responseMap["id"]).To(Equal(headerXRequestId))
 
-				// Verify log
+				// verify the log
 				expectedRegexp := fmt.Sprintf(`original request id \[%s\] will be rewrite to`, headerXRequestId)
 				Eventually(session.Out, 5*time.Second).Should(gbytes.Say(expectedRegexp))
 			})
@@ -254,12 +250,24 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				defer resp.Body.Close()
 				respBody, _ := io.ReadAll(resp.Body)
 
-				// Verify streaming response contains original id
+				// verify the stream response contains the original id
 				Expect(string(respBody)).To(ContainSubstring(headerXRequestId))
 
-				// Verify log
+				// verify the log
 				expectedRegexp := fmt.Sprintf(`original request id \[%s\] will be rewrite to`, headerXRequestId)
 				Eventually(session.Out, 5*time.Second).Should(gbytes.Say(expectedRegexp))
+
+				By("verify the first three SSE events")
+				// first chunk: role="assistant", content=""
+				Expect(string(respBody)).To(ContainSubstring(`"role":"assistant"`))
+				// second chunk: content="test_0" (tokenIdx=0)
+				Expect(string(respBody)).To(ContainSubstring(`"content":"test_0"`))
+				// third chunk: content="test_1" (tokenIdx=1)
+				Expect(string(respBody)).To(ContainSubstring(`"content":"test_1"`))
+
+				By("verify perfmetrics: ttft and tpot are not 0")
+				expectedRegexp = fmt.Sprintf(`CompletionMetric.*'trace_id'.*%s.*'ttft': [1-9]`, headerXRequestId)
+				Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
 			})
 
 			It("/v1/completions non-stream", func() {
@@ -279,10 +287,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				var responseMap map[string]interface{}
 				json.Unmarshal(respBody, &responseMap)
 
-				// Verify response id is original value (completions endpoint will add cmpl- prefix)
+				// verify the response id is the original value (the completions endpoint adds a cmpl- prefix)
 				Expect(responseMap["id"]).To(Equal("cmpl-" + headerXRequestId))
 
-				// Verify log
+				// verify the log
 				expectedRegexp := fmt.Sprintf(`original request id \[%s\] will be rewrite to`, headerXRequestId)
 				Eventually(session.Out, 5*time.Second).Should(gbytes.Say(expectedRegexp))
 			})
@@ -303,10 +311,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				defer resp.Body.Close()
 				respBody, _ := io.ReadAll(resp.Body)
 
-				// Verify streaming response contains original id (completions endpoint will add cmpl- prefix)
+				// verify the streaming response contains the original id (the completions endpoint adds a cmpl- prefix)
 				Expect(string(respBody)).To(ContainSubstring("cmpl-" + headerXRequestId))
 
-				// Verify log
+				// verify the log
 				expectedRegexp := fmt.Sprintf(`original request id \[%s\] will be rewrite to`, headerXRequestId)
 				Eventually(session.Out, 5*time.Second).Should(gbytes.Say(expectedRegexp))
 			})
@@ -335,10 +343,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				var responseMap map[string]interface{}
 				json.Unmarshal(respBody, &responseMap)
 
-				// Verify response id is original body request_id
+				// verify the response id is the original body request_id
 				Expect(responseMap["id"]).To(Equal(bodyRequestId))
 
-				// Verify log
+				// verify the log
 				expectedRegexp := fmt.Sprintf(`original request id \[%s\] will be rewrite to`, bodyRequestId)
 				Eventually(session.Out, 5*time.Second).Should(gbytes.Say(expectedRegexp))
 			})
@@ -360,10 +368,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				defer resp.Body.Close()
 				respBody, _ := io.ReadAll(resp.Body)
 
-				// Verify streaming response contains original body request_id (completions endpoint will add cmpl- prefix)
+				// verify the streaming response contains the original body request_id (the completions endpoint adds a cmpl- prefix)
 				Expect(string(respBody)).To(ContainSubstring("cmpl-" + bodyRequestId))
 
-				// Verify log
+				// verify the log
 				expectedRegexp := fmt.Sprintf(`original request id \[%s\] will be rewrite to`, bodyRequestId)
 				Eventually(session.Out, 5*time.Second).Should(gbytes.Say(expectedRegexp))
 			})
@@ -385,10 +393,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				defer resp.Body.Close()
 				respBody, _ := io.ReadAll(resp.Body)
 
-				// Verify streaming response contains original body request_id (completions endpoint will add cmpl- prefix)
+				// verify the streaming response contains the original body request_id (the completions endpoint adds a cmpl- prefix)
 				Expect(string(respBody)).To(ContainSubstring("cmpl-" + bodyRequestId))
 
-				// Verify log
+				// verify the log
 				expectedRegexp := fmt.Sprintf(`original request id \[%s\] will be rewrite to`, bodyRequestId)
 				Eventually(session.Out, 5*time.Second).Should(gbytes.Say(expectedRegexp))
 			})
@@ -416,10 +424,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				json.Unmarshal(respBody, &responseMap)
 
 				responseId := responseMap["id"].(string)
-				// Verify response id is randomly generated UUID format (32-character hex)
+				// verify the response id is a randomly generated UUID format (32 hex characters)
 				Expect(responseId).To(MatchRegexp(`^[0-9a-f]{32}$`))
 
-				// Verify no rewrite record in log
+				// verify the log should not contain a rewrite record
 				expectedRegexp := fmt.Sprintf(`original request id .* will be rewrite to`)
 				Eventually(session.Out, 5*time.Second).ShouldNot(gbytes.Say(expectedRegexp))
 			})
@@ -439,10 +447,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				defer resp.Body.Close()
 				respBody, _ := io.ReadAll(resp.Body)
 
-				// Streaming response id is randomly generated (chatcmpl- prefix)
+				// the id in the streaming response is randomly generated (chatcmpl- prefix)
 				Expect(string(respBody)).To(MatchRegexp(`"id":"chatcmpl-[0-9a-zA-Z]+"`))
 
-				// Verify no rewrite record in log
+				// verify the log should not contain a rewrite record
 				expectedRegexp := fmt.Sprintf(`original request id .* will be rewrite to`)
 				Eventually(session.Out, 5*time.Second).ShouldNot(gbytes.Say(expectedRegexp))
 			})
@@ -464,10 +472,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				json.Unmarshal(respBody, &responseMap)
 
 				responseId := responseMap["id"].(string)
-				// Verify response id is randomly generated UUID format (completions endpoint will add cmpl- prefix)
+				// verify the response id is a randomly generated UUID format (the completions endpoint adds a cmpl- prefix)
 				Expect(responseId).To(MatchRegexp(`^cmpl-[0-9a-f]{32}$`))
 
-				// Verify no rewrite record in log
+				// verify the log should not contain a rewrite record
 				expectedRegexp := fmt.Sprintf(`original request id .* will be rewrite to`)
 				Eventually(session.Out, 5*time.Second).ShouldNot(gbytes.Say(expectedRegexp))
 			})
@@ -487,10 +495,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				defer resp.Body.Close()
 				respBody, _ := io.ReadAll(resp.Body)
 
-				// Streaming response id is randomly generated (completions endpoint will add cmpl- prefix)
+				// the id in the streaming response is randomly generated (the completions endpoint adds a cmpl- prefix)
 				Expect(string(respBody)).To(MatchRegexp(`"id":"cmpl-[0-9a-f]{32}"`))
 
-				// Verify no rewrite record in log
+				// verify the log should not contain a rewrite record
 				expectedRegexp := fmt.Sprintf(`original request id .* will be rewrite to`)
 				Eventually(session.Out, 5*time.Second).ShouldNot(gbytes.Say(expectedRegexp))
 			})
@@ -521,10 +529,10 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				var responseMap map[string]interface{}
 				json.Unmarshal(respBody, &responseMap)
 
-				// Verify response id is header value (body value ignored)
+				// verify the response id is the header value (the body value is ignored)
 				Expect(responseMap["id"]).To(Equal(headerXRequestId))
 
-				// Verify log uses header value
+				// verify the log uses the header value
 				expectedRegexp := fmt.Sprintf(`original request id \[%s\] will be rewrite to`, headerXRequestId)
 				notExpectedRegexp := fmt.Sprintf(`original request id \[%s\] will be rewrite to`, bodyRequestId)
 				Eventually(session.Out, 5*time.Second).Should(gbytes.Say(expectedRegexp))
@@ -550,11 +558,11 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				defer resp.Body.Close()
 				respBody, _ := io.ReadAll(resp.Body)
 
-				// Verify streaming response contains header value (completions endpoint will add cmpl- prefix)
+				// verify the streaming response contains the header value (the completions endpoint adds a cmpl- prefix)
 				Expect(string(respBody)).To(ContainSubstring("cmpl-" + headerXRequestId))
 				Expect(string(respBody)).ToNot(ContainSubstring(bodyRequestId))
 
-				// Verify log uses header value
+				// verify the log uses the header value
 				expectedRegexp := fmt.Sprintf(`original request id \[%s\] will be rewrite to`, headerXRequestId)
 				notExpectedRegexp := fmt.Sprintf(`original request id \[%s\] will be rewrite to`, bodyRequestId)
 				Eventually(session.Out, 5*time.Second).Should(gbytes.Say(expectedRegexp))
@@ -564,66 +572,73 @@ var _ = Describe(PDTestContext, Ordered, func() {
 	})
 
 	// ================================================================
-	// PD Link Down Test
+	// PD Link Down tests
 	// ================================================================
-	Context("PD Link Down Test", func() {
+	Context("PD Link Down Tests", func() {
 		var (
 			clientRs         *RSClient
 			mockDecodeClient *MockServerClient
 
-			healthCheckIntervalMs   int
-			consecutiveFailureCount int
-			recoverConsecutiveCount int
+			healthCheckIntervalMs      int
+			consecutiveFailureCount    int
+			recoverConsecutiveCount    int
+			linkBlockTagValidTimeMs    int64
+			probeInferRequestTimeoutMs int
 
-			recoveryWaitTime time.Duration
+			recoveryWaitTime   time.Duration
+			probeRetryWaitTime time.Duration
 		)
 
 		BeforeAll(func() {
 			healthCheckIntervalMs = options.GetConfig().InstanceManagerCfg.HealthCheckConfig.RestHealthCommonConfig.Interval
 			consecutiveFailureCount = options.GetConfig().InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.RestHealthCfg.ConsecutiveTime
 			recoverConsecutiveCount = options.GetConfig().InstanceManagerCfg.HealthCheckConfig.UnavailableCheckersCfg.RestHealthCfg.ConsecutiveTime
-			// Add  buffer
-			recoveryWaitTime = time.Duration(healthCheckIntervalMs*(recoverConsecutiveCount+3)) * time.Millisecond
+			linkBlockTagValidTimeMs = options.GetConfig().InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig.LinkBlockTagValidTimeMs
+			probeInferRequestTimeoutMs = options.GetConfig().InstanceManagerCfg.HealthCheckConfig.ProbeInferRequestTimeoutMs
+			// one extra cycle of buffer, plus the blacklist expiry time
+			recoveryWaitTime = time.Duration(healthCheckIntervalMs*(recoverConsecutiveCount+1)+int(linkBlockTagValidTimeMs)) * time.Millisecond
+			// wait time = health recovery time + probe request timeout
+			probeRetryWaitTime = time.Duration(healthCheckIntervalMs*(recoverConsecutiveCount+1)+probeInferRequestTimeoutMs) * time.Millisecond
 		})
 
 		BeforeEach(func() {
 
+			// prefill port 8081, decode port 8082
 			mockDecodeClient = NewMockServerClient(pdDecodePort)
 			_, err = mockDecodeClient.LinkUp()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(restartProcess(&session)).To(BeNil())
 			clientRs = NewRSClient("http://localhost:" + pdListenPort)
-			By("wait for health check completed: move 2 to available, move 0 to unavailable")
-			Eventually(session.Out, 10*time.Second).Should(gbytes.Say("move 2 to available, move 0 to unavailable"))
+			// wait for the state to take effect
 		})
 
 		// -------------------------------------------------------
-		// TC1: Single PD Link Down failure (not added to blacklist)
+		// TC1: single PD Link Down failure (not added to blacklist)
 		// -------------------------------------------------------
-		Context("TC1: Single PD Link Down failure (not added to blacklist)", func() {
-			It("non-streaming - single link down then recovery, request returns link down error", func() {
+		Context("TC1: single PD Link Down failure (not added to blacklist)", func() {
+			It("non-stream - single link down then recovery, request returns link down error", func() {
 				_, err := mockDecodeClient.LinkDown("127.0.0.1", pdDecodePort)
 				Expect(err).NotTo(HaveOccurred())
 				time.Sleep(500 * time.Millisecond)
 
-				// Verify request returns 500 (link down error in response body)
+				// verify the request returns 500 (the link down error is in the response body)
 				resp, err := clientRs.SendChatCompletion(context.Background(), NewBasicChatRequestBody(), nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
 
-				// Read response body, check if kv_transfer_params is included (link down error flag)
+				// read the response body and check for kv_transfer_params (the link down error marker)
 				defer resp.Body.Close()
 				respBody, _ := io.ReadAll(resp.Body)
 				respStr := string(respBody)
-				// When link is down, response body contains kv_transfer_params field
+				// when link down occurs, the response body includes the kv_transfer_params field
 				Expect(respStr).To(ContainSubstring("Abort for KV loading failure"))
 
-				// Recover link
+				// recover the link
 				_, err = mockDecodeClient.LinkUp()
 				Expect(err).NotTo(HaveOccurred())
 				time.Sleep(500 * time.Millisecond)
 
-				// Verify request succeeds after recovery
+				// verify the request succeeds after recovery
 				resp, err = clientRs.SendChatCompletion(context.Background(), NewBasicChatRequestBody(), nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -633,7 +648,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				Expect(result.Choices).NotTo(BeEmpty())
 			})
 
-			It("streaming - single link down then recovery, request returns link down error", func() {
+			It("stream - single link down then recovery, request returns link down error", func() {
 				body := map[string]interface{}{
 					"model":      "pangu",
 					"messages":   []map[string]string{{"role": "user", "content": "hello"}},
@@ -641,29 +656,29 @@ var _ = Describe(PDTestContext, Ordered, func() {
 					"stream":     true,
 				}
 
-				// Set link down
+				// set link down
 				_, err := mockDecodeClient.LinkDown("127.0.0.1", pdDecodePort)
 				Expect(err).NotTo(HaveOccurred())
 				time.Sleep(500 * time.Millisecond)
 
-				// Verify request returns 200 (link down error in response body)
+				// verify the request returns 200 (the link down error is in the response body)
 				resp, err := clientRs.SendChatCompletion(context.Background(), body, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-				// Check response body contains link down related info
+				// check that the response body contains link down related information
 				defer resp.Body.Close()
 				respBody, _ := io.ReadAll(resp.Body)
 				respStr := string(respBody)
-				// When link is down in streaming, error info is included in response
+				// in the streaming case, a link down includes error information in the response
 				Expect(respStr).To(Or(ContainSubstring("link"), ContainSubstring("PDLinkDownError"), ContainSubstring("kv_transfer_params")))
 
-				// Recover link
+				// recover the link
 				_, err = mockDecodeClient.LinkUp()
 				Expect(err).NotTo(HaveOccurred())
 				time.Sleep(500 * time.Millisecond)
 
-				// Verify request succeeds after recovery
+				// verify the request succeeds after recovery
 				resp, err = clientRs.SendChatCompletion(context.Background(), body, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -674,22 +689,22 @@ var _ = Describe(PDTestContext, Ordered, func() {
 		})
 
 		// -------------------------------------------------------
-		// TC2: Multiple consecutive PD Link Down failures (added to blacklist)
+		// TC2: consecutive PD Link Down failures (added to blacklist)
 		// -------------------------------------------------------
-		Context("TC2: Multiple consecutive PD Link Down failures", func() {
-			It("non-streaming - 3 consecutive link downs, verify logs and normal after recovery", func() {
+		Context("TC2: consecutive PD Link Down failures (added to blacklist)", func() {
+			It("non-stream - 3 consecutive link downs, verify the log and normal recovery", func() {
 				_, err := mockDecodeClient.LinkDown("127.0.0.1", pdDecodePort)
 				Expect(err).NotTo(HaveOccurred())
-				// Trigger consecutiveFailureCount times link down
+				// trigger link down consecutiveFailureCount times in a row
 				for i := 0; i < consecutiveFailureCount; i++ {
 
 					time.Sleep(200 * time.Millisecond)
-					// After each trigger, verify request returns non-200 (link down error in response body)
+					// after each trigger, verify the request returns a non-200 status (the link down error is in the response body)
 					resp, err := clientRs.SendChatCompletion(context.Background(), NewBasicChatRequestBody(), nil)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
 
-					// Check response body contains kv_transfer_params (link down error flag)
+					// check that the response body contains kv_transfer_params (the link down error marker)
 					respBody, _ := io.ReadAll(resp.Body)
 					resp.Body.Close()
 					respStr := string(respBody)
@@ -706,7 +721,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				respStr := string(respBody)
 				Expect(respStr).To(ContainSubstring("fail to schedule"))
 
-				// Check metrics
+				// check the metrics
 				resp, err = clientRs.GetInternalMetrics()
 				if err != nil {
 					if resp != nil {
@@ -720,12 +735,23 @@ var _ = Describe(PDTestContext, Ordered, func() {
 					To(Equal(1.0))
 				resp.Body.Close()
 
-				// Recover link
+				// do not recover the link immediately; verify probing is skipped while the blacklist is active
+				Eventually(session.Out, recoveryWaitTime).Should(gbytes.Say(
+					`\[recover\] instance .* is still in pd link blacklist, skip probe`))
+
+				// wait for the blacklist to expire, then the probe request fails because the link is still down
+				Eventually(session.Out, recoveryWaitTime).Should(gbytes.Say(
+					`\[recover\] send probe infer request to .* error, reset ConsecutiveHealthSuccess to 0`))
+
+				// recover the link
 				_, err = mockDecodeClient.LinkUp()
 				Expect(err).NotTo(HaveOccurred())
-				time.Sleep(recoveryWaitTime)
 
-				// Verify request succeeds after recovery
+				// wait for the instance to come back online
+				time.Sleep(recoveryWaitTime)
+				Eventually(session.Out, recoveryWaitTime).Should(gbytes.Say(`instance .* is back online due to healthcheck success`))
+
+				// verify the request succeeds after recovery
 				resp, err = clientRs.SendChatCompletion(context.Background(), NewBasicChatRequestBody(), nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -735,7 +761,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				Expect(result.Choices).NotTo(BeEmpty())
 			})
 
-			It("streaming - 3 consecutive link downs added to blacklist, normal after recovery", func() {
+			It("stream - 3 consecutive link downs added to blacklist, normal after recovery", func() {
 				body := map[string]interface{}{
 					"model":      "pangu",
 					"messages":   []map[string]string{{"role": "user", "content": "hello"}},
@@ -743,13 +769,13 @@ var _ = Describe(PDTestContext, Ordered, func() {
 					"stream":     true,
 				}
 
-				// Trigger consecutiveFailureCount times link down
+				// trigger link down consecutiveFailureCount times in a row
 				for i := 0; i < consecutiveFailureCount; i++ {
 					_, err := mockDecodeClient.LinkDown("127.0.0.1", pdDecodePort)
 					Expect(err).NotTo(HaveOccurred())
 					time.Sleep(200 * time.Millisecond)
 
-					// Streaming returns 200, link down info in response body
+					// the streaming response returns 200, with the link down info in the response body
 					resp, err := clientRs.SendChatCompletion(context.Background(), body, nil)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -770,12 +796,23 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				respStr := string(respBody)
 				Expect(respStr).To(ContainSubstring("fail to schedule"))
 
-				// Recover link
+				// do not recover the link immediately; verify probing is skipped while the blacklist is active
+				Eventually(session.Out, recoveryWaitTime).Should(gbytes.Say(
+					`\[recover\] instance .* is still in pd link blacklist, skip probe`))
+
+				// wait for the blacklist to expire, then the probe request fails because the link is still down
+				Eventually(session.Out, recoveryWaitTime).Should(gbytes.Say(
+					`\[recover\] send probe infer request to .* error, reset ConsecutiveHealthSuccess to 0`))
+
+				// recover the link
 				_, err = mockDecodeClient.LinkUp()
 				Expect(err).NotTo(HaveOccurred())
 
+				// wait for the instance to come back online
 				time.Sleep(recoveryWaitTime)
-				// Verify request succeeds after recovery
+				Eventually(session.Out, recoveryWaitTime).Should(gbytes.Say(`instance .* is back online due to healthcheck success`))
+
+				// verify the request succeeds after recovery
 				resp, err = clientRs.SendChatCompletion(context.Background(), body, nil)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -786,10 +823,110 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			})
 		})
 
+		// -------------------------------------------------------
+		// TC3: 503 recovery scenario (after pd linkdown recovery, D reports 503, P can recover normally)
+		// -------------------------------------------------------
+		Context("TC3: 503 recovery scenario", func() {
+			It("after pd linkdown recovery, D reports 503, P can recover normally", func() {
+				reqBody := NewBasicChatRequestBody()
+
+				By("step 1: trigger blacklist to isolate P")
+				_, err := mockDecodeClient.LinkDown("127.0.0.1", pdDecodePort, "omni")
+				Expect(err).NotTo(HaveOccurred())
+				time.Sleep(500 * time.Millisecond)
+
+				// send 5 requests to trigger the blacklist
+				for i := 0; i < 5; i++ {
+					resp, sendErr := clientRs.SendChatCompletion(TimeoutCtx(context.Background(), 5*time.Second), reqBody, nil)
+					if sendErr == nil && resp != nil {
+						resp.Body.Close()
+					}
+				}
+
+				// wait for P to be isolated
+				Eventually(func() string {
+					statusResp, statusErr := clientRs.GetStatusJson()
+					if statusErr != nil {
+						return ""
+					}
+					for _, inst := range statusResp.InstanceStatus["prefill"] {
+						if strings.Contains(inst.URL, fmt.Sprintf("127.0.0.1:%s", pdPrefillPort)) {
+							return inst.Status
+						}
+					}
+					return ""
+				}, 15*time.Second, 1*time.Second).Should(Equal(constant.FaultStatus), "503 scenario: prefill should be fault")
+
+				By("step 2: MockUnHealth makes D unavailable, LinkUp restores the link (D still unhealthy)")
+				_, err = mockDecodeClient.MockUnHealth()
+				Expect(err).NotTo(HaveOccurred())
+				time.Sleep(500 * time.Millisecond)
+
+				_, err = mockDecodeClient.LinkUp()
+				Expect(err).NotTo(HaveOccurred())
+
+				// verify D is isolated (fault) - in 1P1D mode D is isolated (100% > 70%)
+				Eventually(func() string {
+					statusResp, statusErr := clientRs.GetStatusJson()
+					if statusErr != nil {
+						return ""
+					}
+					for _, inst := range statusResp.InstanceStatus["decode"] {
+						if strings.Contains(inst.URL, fmt.Sprintf("127.0.0.1:%s", pdDecodePort)) {
+							return inst.Status
+						}
+					}
+					return ""
+				}, 15*time.Second, 1*time.Second).Should(Equal(constant.FaultStatus), "503 scenario: decode should be fault")
+
+				By("step 3: after blacklist expiry, probe P; D unavailable returns 503, P recovers")
+				probeWait := time.Duration(linkBlockTagValidTimeMs)*time.Millisecond + probeRetryWaitTime
+				time.Sleep(probeWait)
+
+				// verify P recovers to running (the 503 makes P recover)
+				Eventually(func() string {
+					statusResp, statusErr := clientRs.GetStatusJson()
+					if statusErr != nil {
+						return ""
+					}
+					for _, inst := range statusResp.InstanceStatus["prefill"] {
+						if strings.Contains(inst.URL, fmt.Sprintf("127.0.0.1:%s", pdPrefillPort)) {
+							return inst.Status
+						}
+					}
+					return ""
+				}, 30*time.Second, 2*time.Second).Should(Equal(constant.RunningStatus),
+					"503 scenario: prefill should recover via 503 probe success")
+
+				By("step 4: MockHealth to recover D")
+				_, err = mockDecodeClient.MockHealth()
+				Expect(err).NotTo(HaveOccurred())
+
+				Eventually(func() string {
+					statusResp, statusErr := clientRs.GetStatusJson()
+					if statusErr != nil {
+						return ""
+					}
+					for _, inst := range statusResp.InstanceStatus["decode"] {
+						if strings.Contains(inst.URL, fmt.Sprintf("127.0.0.1:%s", pdDecodePort)) {
+							return inst.Status
+						}
+					}
+					return ""
+				}, 30*time.Second, 2*time.Second).Should(Equal(constant.RunningStatus),
+					"503 scenario: decode should recover after MockHealth")
+
+				// cleanup: restore all mock states
+				_, _ = mockDecodeClient.LinkUp()
+				_, _ = mockDecodeClient.RemoveError()
+
+				GinkgoWriter.Printf("[pd-test] 503 recovery scenario verification completed\n")
+			})
+		})
 	})
 
-	Context("RS Link Health Check Test", func() {
-		// Health check config constants - should match config file
+	Context("RS link health-check tests", func() {
+		// health-check config constants - should match the config file
 		var (
 			clientRs          *RSClient
 			mockPrefillClient *MockServerClient
@@ -798,6 +935,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			healthCheckIntervalMs   int
 			consecutiveFailureCount int
 			recoverConsecutiveCount int
+			linkBlockTagValidTimeMs int64
 			maxFailureWaitTime      time.Duration
 			recoveryWaitTime        time.Duration
 		)
@@ -806,30 +944,31 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			healthCheckIntervalMs = options.GetConfig().InstanceManagerCfg.HealthCheckConfig.RestHealthCommonConfig.Interval
 			consecutiveFailureCount = options.GetConfig().InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.RestHealthCfg.ConsecutiveTime
 			recoverConsecutiveCount = options.GetConfig().InstanceManagerCfg.HealthCheckConfig.UnavailableCheckersCfg.RestHealthCfg.ConsecutiveTime
-			// Add 5s buffer
+			linkBlockTagValidTimeMs = options.GetConfig().InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig.LinkBlockTagValidTimeMs
+			// an extra 5s buffer
 			maxFailureWaitTime = time.Duration(healthCheckIntervalMs*consecutiveFailureCount+5000) * time.Millisecond
-			// Add one buffer
-			recoveryWaitTime = time.Duration(healthCheckIntervalMs*(recoverConsecutiveCount+1)) * time.Millisecond
+			// one extra cycle of buffer, plus the blacklist expiry time
+			recoveryWaitTime = time.Duration(healthCheckIntervalMs*(recoverConsecutiveCount+1)+int(linkBlockTagValidTimeMs)) * time.Millisecond
 		})
 
 		BeforeEach(func() {
 			clientRs = NewRSClient("http://localhost:" + pdListenPort)
-			// According to pd_test.go config, prefill port is pdPrefillPort, decode port is pdDecodePort
+			// per pd_test.go config, the prefill port is 8081 and the decode port is 8082
 			mockPrefillClient = NewMockServerClient(pdPrefillPort)
 			mockDecodeClient = NewMockServerClient(pdDecodePort)
 
-			// Ensure all instances start with healthy status
+			// ensure all instances start in a healthy state
 			_, err := mockPrefillClient.MockHealth()
 			Expect(err).NotTo(HaveOccurred())
 			_, err = mockDecodeClient.MockHealth()
 			Expect(err).NotTo(HaveOccurred())
 
-			// Wait for RS health check to take effect
+			// wait for the RS health check to take effect
 			time.Sleep(1 * time.Second)
 		})
 
-		It("verify RS healthy status - returns 200 when all instances are healthy", func() {
-			// Check overall health status via RS /health endpoint
+		It("verify RS health state - returns 200 when all instances are healthy", func() {
+			// check the overall health state through the RS /health endpoint
 			resp, err := clientRs.CheckRSHealth()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -845,15 +984,15 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			resp.Body.Close()
 		})
 
-		It("verify RS fault status detection - RS returns 500 when Mock instance is faulty, RS returns 200 after recovery", func() {
-			// Set one Mock instance to unhealthy status
+		It("verify RS fault-state detection - RS returns 500 when a mock instance faults, and 200 after recovery", func() {
+			// set a mock instance to an unhealthy state
 			_, err := mockPrefillClient.MockUnHealth()
 			Expect(err).NotTo(HaveOccurred())
 
-			// Use config constants to calculate wait time
+			// compute the wait time using the config constants
 			time.Sleep(maxFailureWaitTime)
 
-			// RS should detect fault and return non-200 status
+			// RS should detect the fault and return a non-200 status
 			resp, err := clientRs.CheckRSHealth()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
@@ -861,14 +1000,14 @@ var _ = Describe(PDTestContext, Ordered, func() {
 
 			var result openai.ChatCompletionResponse
 
-			// Recover Mock instance health status
+			// restore the mock instance to a healthy state
 			_, err = mockPrefillClient.MockHealth()
 			Expect(err).NotTo(HaveOccurred())
 
-			// Wait for RS health check to detect recovery (requires consecutive successes, interval 10s)
+			// wait for the RS health check to detect recovery (requires consecutive successes, at 10s intervals)
 			time.Sleep(recoveryWaitTime)
 
-			// RS should recover healthy status
+			// RS should return to a healthy state
 			resp, err = clientRs.CheckRSHealth()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -885,7 +1024,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 
 	})
 
-	Context("Finish Reason Log Verification", func() {
+	Context("Finish Reason log verification tests", func() {
 		var (
 			clientRs          *RSClient
 			mockPrefillClient *MockServerClient
@@ -896,7 +1035,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			mockPrefillClient = NewMockServerClient(pdPrefillPort)
 		})
 
-		It("finish reason: when max_tokens=2, finish_reason is length", func() {
+		It("finish reason verification: finish_reason is length when max_tokens=2", func() {
 			reqId := "test-finish-length"
 			body := map[string]interface{}{
 				"model":      "pangu",
@@ -916,7 +1055,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
 		})
 
-		It("finish reason: without max_tokens, finish_reason is stop", func() {
+		It("finish reason verification: finish_reason is stop without max_tokens", func() {
 			reqId := "test-finish-stop"
 			body := map[string]interface{}{
 				"model":    "pangu",
@@ -935,12 +1074,12 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
 		})
 
-		It("finish reason: with tools, finish_reason is tool_calls", func() {
+		It("finish reason verification: finish_reason is tool_calls when tools are supplied", func() {
 			reqId := "test-finish-tool"
 			body := map[string]interface{}{
 				"model":      "pangu",
 				"max_tokens": 12,
-				"messages":   []map[string]string{{"role": "user", "content": "Get Beijing weather in Celsius"}},
+				"messages":   []map[string]string{{"role": "user", "content": "Get Beijing weather using Celsius"}},
 				"tools": []map[string]interface{}{
 					{
 						"type": "function",
@@ -979,8 +1118,8 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			Eventually(session.Out, 10*time.Second).Should(gbytes.Say(expectedRegexp))
 		})
 
-		It("finish reason: when prefill returns 500, finish_reason is unknown", func() {
-			By("set prefill1 instance to return 500 error")
+		It("finish reason verification: finish_reason is unknown when prefill returns 500", func() {
+			By("configure the prefill1 instance to return a 500 error")
 			errBody := strings.NewReader(`{"code": 500}`)
 			req, err := http.NewRequest("POST", fmt.Sprintf("http://127.0.0.1:%s/mock_error", pdPrefillPort), errBody)
 			Expect(err).NotTo(HaveOccurred())
@@ -994,7 +1133,7 @@ var _ = Describe(PDTestContext, Ordered, func() {
 				mockPrefillClient.RemoveError()
 			})
 
-			By("send request and verify finish_reason = unknown in logs")
+			By("send the request and verify finish_reason = unknown in the log")
 			reqId := "test-finish-unknown"
 			body := map[string]interface{}{
 				"model":    "pangu",
@@ -1014,7 +1153,103 @@ var _ = Describe(PDTestContext, Ordered, func() {
 		})
 	})
 
-	Context("P/D Fault Reliability Test", func() {
+	Context("API Connection Retry Tests", func() {
+		var (
+			clientRs          *RSClient
+			mockPrefillClient *MockServerClient
+			mockDecodeClient  *MockServerClient
+		)
+
+		BeforeEach(func() {
+			clientRs = NewRSClient("http://localhost:" + pdListenPort)
+			mockPrefillClient = NewMockServerClient(pdPrefillPort)
+			mockDecodeClient = NewMockServerClient(pdDecodePort)
+
+			_, err := mockPrefillClient.RemoveConnErr()
+			Expect(err).NotTo(HaveOccurred())
+			_, err = mockDecodeClient.RemoveConnErr()
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		AfterEach(func() {
+			mockPrefillClient.RemoveConnErr()
+			mockDecodeClient.RemoveConnErr()
+		})
+
+		It("eof: retry succeeds after a prefill EOF", func() {
+			By("configure prefill to inject the eof error twice")
+			Expect(setMockConnErr(mockPrefillClient, "eof", 2)).To(BeNil())
+
+			By("send the request and verify the retry log")
+			resp, err := clientRs.SendChatCompletion(TimeoutCtx(context.Background(), 30*time.Second), NewBasicChatRequestBody(), nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var result openai.ChatCompletionResponse
+			Expect(ParseResponse(resp, &result)).NotTo(HaveOccurred())
+			Expect(result.Choices).NotTo(BeEmpty())
+
+			Eventually(session.Out, 5*time.Second).Should(gbytes.Say("connection error on attempt"))
+		})
+
+		It("eof: retry succeeds after a decode EOF", func() {
+			By("configure decode to inject the eof error twice")
+			Expect(setMockConnErr(mockDecodeClient, "eof", 2)).To(BeNil())
+
+			By("send the request and verify the retry log")
+			resp, err := clientRs.SendChatCompletion(TimeoutCtx(context.Background(), 30*time.Second), NewBasicChatRequestBody(), nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var result openai.ChatCompletionResponse
+			Expect(ParseResponse(resp, &result)).NotTo(HaveOccurred())
+			Expect(result.Choices).NotTo(BeEmpty())
+
+			Eventually(session.Out, 5*time.Second).Should(gbytes.Say("connection error on attempt"))
+		})
+
+		It("eof: the request fails after exceeding the max retry count", func() {
+			By("configure decode to inject the eof error 5 times (exceeds connection-retry=3)")
+			Expect(setMockConnErr(mockDecodeClient, "eof", 5)).To(BeNil())
+
+			By("send the request and verify the request fails (eof is classified as InternalErr=500)")
+			resp, err := clientRs.SendChatCompletion(TimeoutCtx(context.Background(), 30*time.Second), NewBasicChatRequestBody(), nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
+
+			Eventually(session.Out, 5*time.Second).Should(gbytes.Say("connection error on attempt"))
+		})
+
+		It("connection_reset: retry succeeds after a decode connection reset", func() {
+			By("configure decode to inject the connection_reset error twice")
+			Expect(setMockConnErr(mockDecodeClient, "connection_reset", 2)).To(BeNil())
+
+			By("send the request and verify the retry log")
+			resp, err := clientRs.SendChatCompletion(TimeoutCtx(context.Background(), 30*time.Second), NewBasicChatRequestBody(), nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var result openai.ChatCompletionResponse
+			Expect(ParseResponse(resp, &result)).NotTo(HaveOccurred())
+			Expect(result.Choices).NotTo(BeEmpty())
+
+			Eventually(session.Out, 5*time.Second).Should(gbytes.Say("connection error on attempt"))
+		})
+
+		It("connection_reset: the request fails after exceeding the max retry count", func() {
+			By("configure decode to inject the connection_reset error 5 times (exceeds connection-retry=3)")
+			Expect(setMockConnErr(mockDecodeClient, "connection_reset", 5)).To(BeNil())
+
+			By("send the request and verify the request fails (connection_reset is classified as BadGateway=502)")
+			resp, err := clientRs.SendChatCompletion(TimeoutCtx(context.Background(), 30*time.Second), NewBasicChatRequestBody(), nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusBadGateway))
+
+			Eventually(session.Out, 5*time.Second).Should(gbytes.Say("connection error on attempt"))
+		})
+	})
+
+	Context("P/D anomaly reliability tests", func() {
 		var (
 			clientRs            *RSClient
 			mockPrefillClient   *MockServerClient
@@ -1042,12 +1277,12 @@ var _ = Describe(PDTestContext, Ordered, func() {
 			})
 		})
 
-		It("in non-xpyd scenario, killed P instance should not be cleaned up by status API", func() {
-			By("kill prefill1 instance (simulate completely unavailable)")
+		It("in non-xpyd scenarios, a killed P is not cleaned up by the status endpoint", func() {
+			By("kill the prefill1 instance (simulate full unavailability)")
 			mockPrefill1Session.Kill()
 			mockPrefill1Session.Wait()
 
-			By("wait for status API to show P instance in fault state")
+			By("wait until the status endpoint shows the P instance in fault state")
 			var statusResp map[string]interface{}
 			Eventually(func() bool {
 				resp, err := clientRs.GetStatus()
@@ -1080,12 +1315,12 @@ var _ = Describe(PDTestContext, Ordered, func() {
 					}
 				}
 				return false
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "status API should return data including prefill1 instance")
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "status endpoint should return data and include the prefill1 instance")
 
-			By("wait 45s then check status API")
+			By("wait 45s then check the status endpoint")
 			time.Sleep(45 * time.Second)
 
-			By("check status API to confirm P instance still exists, not cleaned up")
+			By("check the status endpoint to confirm the P instance still exists and was not cleaned up")
 			Eventually(func() bool {
 				resp, err := clientRs.GetStatus()
 				if err != nil {
@@ -1117,9 +1352,9 @@ var _ = Describe(PDTestContext, Ordered, func() {
 					}
 				}
 				return false
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "in non-xpyd scenario, faulty P instance should still exist, not cleaned up")
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "in non-xpyd scenarios, the faulted P instance should still exist and not be cleaned up")
 
-			By("in non-xpyd scenario, status API should not clean up faulty P instances")
+			By("in non-xpyd scenarios, the status endpoint should not clean up faulted P instances")
 		})
 	})
 })
@@ -1160,4 +1395,42 @@ func InjectRecoverHealthConfigToYaml(configPath string, consecutiveTime int) err
 	}
 
 	return os.WriteFile(configPath, data, 0644)
+}
+
+type connErrRequestBody struct {
+	Mode  string `json:"mode"`
+	Count int    `json:"count"`
+}
+
+func setMockConnErr(client *MockServerClient, mode string, count int) error {
+	body := connErrRequestBody{
+		Mode:  mode,
+		Count: count,
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("POST", client.BaseURL+"/mock_conn_err", bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("mock conn err returned status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *MockServerClient) RemoveConnErr() (*http.Response, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+"/remove_conn_err", nil)
+	if err != nil {
+		return nil, err
+	}
+	return c.HTTPClient.Do(req)
 }

@@ -105,6 +105,16 @@ func (i *VllmPDSeparateInfer) ChatCompletionsInfer(ctx *gin.Context) {
 	i.PdInfer(ctx, handler.ChatCompletionsPath, true, "", "", "", false)
 }
 
+// MessagesInfer returns an error because the legacy v0 inference mode does not
+// support the Anthropic /v1/messages endpoint; pipeline mode must be used.
+func (i *VllmPDSeparateInfer) MessagesInfer(ctx *gin.Context) {
+	logger.Log().Warnf("v0 inference mode does not support v1/messages interface, using pipeline mode")
+	ctx.JSON(http.StatusNotImplemented, gin.H{
+		"error": "MessagesInfer is not supported by VllmPDSeparateInfer",
+		"code":  "METHOD_NOT_SUPPORTED",
+	})
+}
+
 func (i *VllmPDSeparateInfer) TestInstance(ctx *gin.Context, path string, isChat bool, instance *client.Instance) (
 	successToCheck bool, testSuccess bool, errDetails *errs.RSError) {
 	var inferError *errs.RSError
@@ -139,7 +149,8 @@ func (i *VllmPDSeparateInfer) TestInstance(ctx *gin.Context, path string, isChat
 	}
 
 	// Determine if probe is successful
-	successToCheck, testSuccess = handler.IsTargetPhasePassed(targetStage, inferError.ErrorStage, constant.StageChain[i.cfg.InferMode])
+	successToCheck, testSuccess = handler.IsTargetPhasePassed(targetStage,
+		constant.StageChain[i.cfg.InferMode], instance.FaultType, inferError)
 	return successToCheck, testSuccess, inferError
 }
 
@@ -511,7 +522,7 @@ func (i *VllmPDSeparateInfer) doEncodeReq(ctx *gin.Context, generateReq *request
 	encodeCtx := cancelCtx.WrapContext(tracer.EncodeCtx, id, constant.Encode)
 	traceEventMsg := fmt.Sprintf("send request to encode instance [%s] [%s], slo tag is [%s], stream = [%v], reqLoad = [%v]", id, insClient.GetEndpoint(), generateReq.GetSLOTag(), false, generateReq.GetPromptTokenCount())
 	tracer.Tracer.Event("", trace.TraceEventEncodeStart, traceEventMsg)
-	res, rsErr, details = insClient.Generate(encodeCtx, generateReq.GetHeader(), path, encodeBody, id, constant.StageEncode)
+	res, rsErr, details = insClient.Generate(encodeCtx, generateReq.GetHeader(), path, encodeBody, id, constant.StageEncode, generateReq.GetRequestId(), generateReq.IsMessages())
 	if rsErr != nil {
 		if errors.Is(encodeCtx.Err(), context.Canceled) {
 			tracer.Tracer.Event("", trace.TraceEventUserCancelled,
@@ -583,7 +594,7 @@ func (i *VllmPDSeparateInfer) doPrefillReq(ctx *gin.Context, generateReq *reques
 	prefillCtx := cancelCtx.WrapContext(tracer.PrefillCtx, id, constant.Prefill)
 	traceEventMsg := fmt.Sprintf("send request to prefill instance [%s] [%s], slo tag is [%s], stream = [%v], reqLoad = [%v]", id, insClient.GetEndpoint(), generateReq.GetSLOTag(), false, generateReq.GetPromptTokenCount())
 	tracer.Tracer.Event("", trace.TraceEventPrefillStart, traceEventMsg)
-	res, rsErr, details = insClient.Generate(prefillCtx, generateReq.GetHeader(), path, prefillBody, id, constant.StagePrefill)
+	res, rsErr, details = insClient.Generate(prefillCtx, generateReq.GetHeader(), path, prefillBody, id, constant.StagePrefill, generateReq.GetRequestId(), generateReq.IsMessages())
 	if rsErr != nil {
 		if errors.Is(prefillCtx.Err(), context.Canceled) {
 			tracer.Tracer.Event("", trace.TraceEventUserCancelled,
@@ -717,7 +728,7 @@ func (i *VllmPDSeparateInfer) doDecodeReq(ctx *gin.Context, generateReq *request
 	traceEventMsg := fmt.Sprintf("send request to decode instance [%s] [%s], stream = [%v], reqLoad = [%v]", id, client.GetEndpoint(), generateReq.IsStream(), generateReq.GetPromptTokenCount())
 	tracer.Tracer.Event("", trace.TraceEventDecodeStart, traceEventMsg)
 	var res *http.Response
-	res, rsErr, details = client.Generate(decodeCtx, generateReq.GetHeader(), path, decodeBody, id, constant.StageDecode)
+	res, rsErr, details = client.Generate(decodeCtx, generateReq.GetHeader(), path, decodeBody, id, constant.StageDecode, generateReq.GetRequestId(), generateReq.IsMessages())
 	if rsErr != nil {
 		if errors.Is(decodeCtx.Err(), context.Canceled) {
 			tracer.Tracer.Event("", trace.TraceEventUserCancelled,
@@ -799,15 +810,16 @@ func (i *VllmPDSeparateInfer) writeDecodeRes(ctx *gin.Context, generateReq *requ
 	if generateReq.IsStream() {
 		firstTokenFromPrefill := &atomic.Bool{}
 		firstTokenFromPrefill.Store(generateReq.OutputFirstTokenFromPrefill())
+		passTokenTime := handler.GetPassTokenTime(generateReq.IsChat(), false, generateReq.GetMaxToken(), firstTokenFromPrefill.Load())
 		if i.cfg.V1StreamWritingEnable {
 			usage, errDetails, finishReason, _ = handler.WriteStreamResV1(ctx, generateReq, decodeRes, tracer, perfMetrics, decodeId, constant.StageDecode,
-				i.workerEventCollector, generateReq.IsChat(), false, firstTokenFromPrefill)
+				i.workerEventCollector, passTokenTime, firstTokenFromPrefill)
 			return
 		} else {
-			usage, errDetails, finishReason, _ = handler.WriteStreamRes(ctx, generateReq, decodeRes, tracer, perfMetrics, decodeId, constant.StageDecode, i.workerEventCollector, generateReq.IsChat(), false, firstTokenFromPrefill)
+			usage, errDetails, finishReason, _ = handler.WriteStreamRes(ctx, generateReq, decodeRes, tracer, perfMetrics, decodeId, constant.StageDecode, i.workerEventCollector, passTokenTime, firstTokenFromPrefill)
 			return
 		}
 	} else {
-		return handler.WriteNonStreamRes(ctx, generateReq, decodeRes, tracer, perfMetrics, decodeId, constant.StageDecode, false, generateReq.GetFirstToken())
+		return handler.WriteNonStreamRes(ctx, generateReq, decodeRes, tracer, perfMetrics, decodeId, constant.StageDecode, false, generateReq.IsMessages(), generateReq.GetFirstToken())
 	}
 }

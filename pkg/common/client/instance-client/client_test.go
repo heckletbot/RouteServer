@@ -181,7 +181,7 @@ func TestVllmClient_Generate(t *testing.T) {
 				return tt.doReqResp, nil
 			})
 
-			resp, err, _ := client.Generate(context.Background(), http.Header{}, "/generate", nil, "", "")
+			resp, err, _ := client.Generate(context.Background(), http.Header{}, "/generate", nil, "", "", "test-req", false)
 			if tt.expectedErrMsg != "" {
 				if resp != nil {
 					t.Errorf("Generate() resp = %v, want nil", resp)

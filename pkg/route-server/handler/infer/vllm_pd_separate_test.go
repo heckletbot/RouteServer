@@ -154,7 +154,7 @@ func TestPrepareRequest(t *testing.T) {
 		"messages": [
 			{
 				"role": "user",
-				"content": "你好"
+				"content": "Hello"
 			}
 		],
 		"max_tokens": 32,
@@ -179,35 +179,35 @@ func TestPrepareRequest(t *testing.T) {
 
 func TestIsTestSuccess_ErrorAfterTarget(t *testing.T) {
 	stageChain := []string{"stage1", "stage2", "stage3"}
-	testValid, testSuccess := handler.IsTargetPhasePassed("stage2", "stage3", stageChain)
+	testValid, testSuccess := handler.IsTargetPhasePassed("stage2", stageChain, "", &errs.RSError{ErrorStage: "stage3"})
 	assert.True(t, testValid)
 	assert.Equal(t, true, testSuccess)
 }
 
 func TestIsTestSuccess_ErrorAtTarget(t *testing.T) {
 	stageChain := []string{"stage1", "stage2", "stage3"}
-	testValid, testSuccess := handler.IsTargetPhasePassed("stage2", "stage2", stageChain)
+	testValid, testSuccess := handler.IsTargetPhasePassed("stage2", stageChain, "", &errs.RSError{ErrorStage: "stage2"})
 	assert.True(t, testValid)
 	assert.Equal(t, false, testSuccess)
 }
 
 func TestIsTestSuccess_ErrorBeforeTarget(t *testing.T) {
 	stageChain := []string{"stage1", "stage2", "stage3"}
-	testValid, testSuccess := handler.IsTargetPhasePassed("stage3", "stage2", stageChain)
+	testValid, testSuccess := handler.IsTargetPhasePassed("stage3", stageChain, "", &errs.RSError{ErrorStage: "stage2"})
 	assert.False(t, testValid)
 	assert.Equal(t, false, testSuccess)
 }
 
 func TestIsTestSuccess_TargetStageNotFound(t *testing.T) {
 	stageChain := []string{"stage1", "stage2", "stage3"}
-	testValid, testSuccess := handler.IsTargetPhasePassed("invalid", "stage2", stageChain)
+	testValid, testSuccess := handler.IsTargetPhasePassed("invalid", stageChain, "", &errs.RSError{ErrorStage: "stage2"})
 	assert.False(t, testValid)
 	assert.Equal(t, false, testSuccess)
 }
 
 func TestIsTestSuccess_ErrorStageNotFound(t *testing.T) {
 	stageChain := []string{"stage1", "stage2", "stage3"}
-	testValid, testSuccess := handler.IsTargetPhasePassed("stage2", "invalid", stageChain)
+	testValid, testSuccess := handler.IsTargetPhasePassed("stage2", stageChain, "", &errs.RSError{ErrorStage: "invalid"})
 	assert.False(t, testValid)
 	assert.Equal(t, false, testSuccess)
 }

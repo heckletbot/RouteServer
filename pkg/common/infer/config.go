@@ -16,6 +16,8 @@
 
 package utils
 
+import "fmt"
+
 type PipelineFileConfig struct {
 	InferModes  []string       `yaml:"infer_modes"`
 	PipelineCfg PipelineConfig `yaml:"pipeline_cfg"`
@@ -67,17 +69,34 @@ func (cfg *ExecuteConfig) Clone() ExecuteConfig {
 }
 
 type ScheduleConfig struct {
-	InstanceType string   `yaml:"instance_type"`
-	SkipPolicy   string   `yaml:"skip_policy"`
-	RequestLoad  []string `yaml:"request_load"`
+	InstanceType string                 `yaml:"instance_type"`
+	SkipPolicy   string                 `yaml:"skip_policy"`
+	RequestLoad  []string               `yaml:"request_load"`
+	Params       map[string]interface{} `yaml:"params,omitempty"`
 }
 
 func (cfg *ScheduleConfig) Clone() ScheduleConfig {
+	paramsClone := make(map[string]interface{}, len(cfg.Params))
+	for k, v := range cfg.Params {
+		paramsClone[k] = v
+	}
 	return ScheduleConfig{
 		InstanceType: cfg.InstanceType,
 		SkipPolicy:   cfg.SkipPolicy,
 		RequestLoad:  append([]string{}, cfg.RequestLoad...),
+		Params:       paramsClone,
 	}
+}
+
+func (cfg *ScheduleConfig) GetStringParam(key string) string {
+	if cfg.Params == nil {
+		return ""
+	}
+	val, ok := cfg.Params[key]
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("%v", val)
 }
 
 func (phaseCfg *PhaseConfig) Clone() *PhaseConfig {

@@ -28,37 +28,37 @@ func TestHasKeyDifference(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "完全相同的键",
+			name:     "same keys",
 			map1:     map[string]int{"a": 1, "b": 2},
 			map2:     map[string]string{"a": "x", "b": "y"},
 			expected: false,
 		},
 		{
-			name:     "键数量不同",
+			name:     "different number of keys",
 			map1:     map[string]int{"a": 1, "b": 2, "c": 3},
 			map2:     map[string]string{"a": "x", "b": "y"},
 			expected: true,
 		},
 		{
-			name:     "一个键不同",
+			name:     "one key differs",
 			map1:     map[string]int{"a": 1, "b": 2},
 			map2:     map[string]string{"a": "x", "c": "y"},
 			expected: true,
 		},
 		{
-			name:     "一个映射为空",
+			name:     "one map is empty",
 			map1:     map[string]int{},
 			map2:     map[string]string{"a": "x"},
 			expected: true,
 		},
 		{
-			name:     "两个映射都为空",
+			name:     "both maps are empty",
 			map1:     map[string]int{},
 			map2:     map[string]string{},
 			expected: false,
 		},
 		{
-			name:     "键存在差异",
+			name:     "keys contain differences",
 			map1:     map[string]int{"a": 1, "b": 2},
 			map2:     map[string]string{"b": "y", "c": "z"},
 			expected: true,

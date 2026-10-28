@@ -155,18 +155,20 @@ var _ = Describe(pdBlacklistCtx, Ordered, func() {
 		cfg.InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig.LinkBlockTagValidTimeMs = 10000
 		// instance-block-ratio = 70: 1 blocked decode / 2 total = 50% < 70%, prefill NOT isolated
 		cfg.InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig.InstanceBlockRatio = 70
-		tempTemplatePath := filepath.Join(deployPath, TEMP_TEMPLATE)
+
+		By("create rs config paths")
+		etcdCtxDir := filepath.Join(projectRoot, "e2etest", "environment", pdBlacklistCtx)
+		Expect(os.RemoveAll(etcdCtxDir)).To(BeNil())
+		Expect(os.MkdirAll(etcdCtxDir, 0755)).To(BeNil())
+		tempTemplatePath := filepath.Join(etcdCtxDir, TEMP_TEMPLATE)
 		modifiedYaml, err := yaml.Marshal(&cfg)
 		Expect(err).To(BeNil())
 		Expect(os.WriteFile(tempTemplatePath, modifiedYaml, 0644)).To(BeNil())
 
 		DeferCleanup(func() {
-			os.Remove(tempTemplatePath)
+			os.RemoveAll(etcdCtxDir)
 		})
 
-		By("create rs config paths")
-		etcdCtxDir := filepath.Join(projectRoot, "e2etest", "environment", pdBlacklistCtx)
-		Expect(os.RemoveAll(etcdCtxDir)).To(BeNil())
 		candidate1CfgDir := filepath.Join(etcdCtxDir, candidate1)
 		candidate2CfgDir := filepath.Join(etcdCtxDir, candidate2)
 		worker1CfgDir := filepath.Join(etcdCtxDir, worker1)
@@ -812,18 +814,20 @@ var _ = Describe(pdBlacklist2p1dCtx, Ordered, func() {
 		cfg.InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig.LinkBlockWindowsMs = 100
 		cfg.InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig.LinkBlockTagValidTimeMs = linkBlockTagValidTimeMs2p1d //20s
 		cfg.InstanceManagerCfg.HealthCheckConfig.AvailableCheckersCfg.LinkBlacklistConfig.InstanceBlockRatio = 70
-		tempTemplatePath := filepath.Join(deployPath, TEMP_TEMPLATE)
+
+		By("create rs config paths for 2p1d")
+		etcdCtxDir := filepath.Join(projectRoot, "e2etest", "environment", pdBlacklist2p1dCtx)
+		Expect(os.RemoveAll(etcdCtxDir)).To(BeNil())
+		Expect(os.MkdirAll(etcdCtxDir, 0755)).To(BeNil())
+		tempTemplatePath := filepath.Join(etcdCtxDir, TEMP_TEMPLATE)
 		modifiedYaml, err := yaml.Marshal(&cfg)
 		Expect(err).To(BeNil())
 		Expect(os.WriteFile(tempTemplatePath, modifiedYaml, 0644)).To(BeNil())
 
 		DeferCleanup(func() {
-			os.Remove(tempTemplatePath)
+			os.RemoveAll(etcdCtxDir)
 		})
 
-		By("create rs config paths for 2p1d")
-		etcdCtxDir := filepath.Join(projectRoot, "e2etest", "environment", pdBlacklist2p1dCtx)
-		Expect(os.RemoveAll(etcdCtxDir)).To(BeNil())
 		candidate1CfgDir := filepath.Join(etcdCtxDir, candidate1)
 		candidate2CfgDir := filepath.Join(etcdCtxDir, candidate2)
 		worker1CfgDir := filepath.Join(etcdCtxDir, worker1)
