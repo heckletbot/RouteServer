@@ -446,7 +446,6 @@ func applyDefaultConfig(cfg *config.Config) error {
 
 	ApplyDefaultRateLimitCfg(cfg)
 	ApplyDefaultMetaCleanupCfg(cfg)
-	ApplyDefaultServerCfg(cfg)
 
 	config.ApplyDefaultProbeCfg(&cfg.ProbeCfg)
 
@@ -463,12 +462,6 @@ func applyDefaultConfig(cfg *config.Config) error {
 		return err
 	}
 	return nil
-}
-
-func ApplyDefaultServerCfg(cfg *config.Config) {
-	if cfg.ServerConfig.MaxRequestBodySizeMB == 0 {
-		cfg.ServerConfig.MaxRequestBodySizeMB = 50
-	}
 }
 
 func InitConfigConstance(cfg *config.Config) {
