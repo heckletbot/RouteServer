@@ -33,7 +33,7 @@ Configure the inference instance interface through environment variables:
 
 1. **Extract the package**
    ```bash
-   unzip route-server-*.zip
+   unzip DistributedScheduler-*.zip
    ```
 
 2. **Run the deployment script**

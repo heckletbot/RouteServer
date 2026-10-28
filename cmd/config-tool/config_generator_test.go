@@ -1538,13 +1538,14 @@ func Test_modifyClusterConfig(t *testing.T) {
 		cfg *config.Config
 	}
 	tests := []struct {
-		name          string
-		args          args
-		wantSuccess   bool
-		isCandidate   string
-		etcdEndpoints string
-		mode          string
-		expectCfgFunc func(cfg *config.Config) bool
+		name               string
+		args               args
+		wantSuccess        bool
+		isCandidate        string
+		etcdEndpoints      string
+		etcdAutoSyncSecond string
+		mode               string
+		expectCfgFunc      func(cfg *config.Config) bool
 	}{
 		{
 			name:        "invalid bool",
@@ -1569,10 +1570,11 @@ func Test_modifyClusterConfig(t *testing.T) {
 			},
 		},
 		{
-			name:          "etcd normal case",
-			isCandidate:   "True",
-			etcdEndpoints: "etcd_host:1234,etcd_host:1235",
-			wantSuccess:   true,
+			name:               "etcd normal case",
+			isCandidate:        "True",
+			etcdEndpoints:      "etcd_host:1234,etcd_host:1235",
+			etcdAutoSyncSecond: "10",
+			wantSuccess:        true,
 			args: args{
 				cfg: &config.Config{
 					ClusterCfg: config.ClusterConfig{
@@ -1604,10 +1606,11 @@ func Test_modifyClusterConfig(t *testing.T) {
 			},
 		},
 		{
-			name:          "etcd etcd not nil cfg",
-			isCandidate:   "True",
-			etcdEndpoints: "etcd_host:1234,etcd_host:1235",
-			wantSuccess:   true,
+			name:               "etcd etcd not nil cfg",
+			isCandidate:        "True",
+			etcdEndpoints:      "etcd_host:1234,etcd_host:1235",
+			etcdAutoSyncSecond: "10",
+			wantSuccess:        true,
 			args: args{
 				cfg: &config.Config{
 					ClusterCfg: config.ClusterConfig{
@@ -1641,6 +1644,23 @@ func Test_modifyClusterConfig(t *testing.T) {
 			},
 		},
 		{
+			name:               "etcd invalid auto sync second",
+			isCandidate:        "True",
+			etcdEndpoints:      "etcd_host:1234,etcd_host:1235",
+			etcdAutoSyncSecond: "not-a-number",
+			wantSuccess:        false,
+			args: args{
+				cfg: &config.Config{
+					ClusterCfg: config.ClusterConfig{
+						RoleCandidate: false,
+					},
+				},
+			},
+			expectCfgFunc: func(cfg *config.Config) bool {
+				return true
+			},
+		},
+		{
 			name:        "cluster mode singleton normal case",
 			isCandidate: "False",
 			mode:        "singleton",
@@ -1662,11 +1682,12 @@ func Test_modifyClusterConfig(t *testing.T) {
 			},
 		},
 		{
-			name:          "cluster mode etcd normal case",
-			etcdEndpoints: "etcd_host:1234,etcd_host:1235",
-			isCandidate:   "True",
-			mode:          "etcd",
-			wantSuccess:   true,
+			name:               "cluster mode etcd normal case",
+			etcdEndpoints:      "etcd_host:1234,etcd_host:1235",
+			etcdAutoSyncSecond: "10",
+			isCandidate:        "True",
+			mode:               "etcd",
+			wantSuccess:        true,
 			args: args{
 				cfg: &config.Config{
 					InstanceManagerCfg: config.InstanceManagerCfg{
@@ -1710,6 +1731,7 @@ func Test_modifyClusterConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			IsCandidate = tt.isCandidate
 			EtcdEndpoints = tt.etcdEndpoints
+			EtcdAutoSyncSecond = tt.etcdAutoSyncSecond
 			Mode = tt.mode
 			success := modifyClusterConfig(tt.args.cfg)
 			assert.Equal(t, tt.wantSuccess, success, "modifyClusterConfig() = %v, want %v", success, tt.wantSuccess)

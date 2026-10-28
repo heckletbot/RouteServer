@@ -42,7 +42,7 @@ func TestTraceTokenLog(t *testing.T) {
 	expected := `x-span-id=span123456|x-user-alias=userABC|CompletionMetric: ` +
 		`{'trace_id': 'chat-789b', 'num_prompt_tokens': 50, 'num_output_tokens': 80, 'num_cached_tokens': 0, 'ttft': 300.00, 'tpot': 52.00, 'latency': 1200.00}`
 
-	assert.Equal(t, expected, result, "TraceTokenLog 返回值不匹配")
+	assert.Equal(t, expected, result, "TraceTokenLog return value mismatch")
 }
 
 func TestTraceTokenLogWithCacheToken(t *testing.T) {
@@ -68,5 +68,5 @@ func TestTraceTokenLogWithCacheToken(t *testing.T) {
 	expected := `x-span-id=span123456|x-user-alias=userABC|CompletionMetric: ` +
 		`{'trace_id': 'chat-789b', 'num_prompt_tokens': 50, 'num_output_tokens': 80, 'num_cached_tokens': 15, 'ttft': 300.00, 'tpot': 52.00, 'latency': 1200.00}`
 
-	assert.Equal(t, expected, result, "TraceTokenLog 返回值不匹配")
+	assert.Equal(t, expected, result, "TraceTokenLog return value mismatch")
 }

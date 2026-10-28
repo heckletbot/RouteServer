@@ -19,6 +19,7 @@ package pipeline
 import (
 	"fmt"
 	"html"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,10 +37,16 @@ import (
 )
 
 const (
-	LoadTypeUsage = "usage"
-	LoadTypeImage = "image"
-	LoadTypeText  = "text"
-	LoadTypeBytes = "bytes"
+	LoadTypeUsage        = "usage"
+	LoadTypeImage        = "image"
+	LoadTypeText         = "text"
+	LoadTypeBytes        = "bytes"
+	LoadTypeTextAndImage = "text-and-image"
+)
+
+const (
+	ImageLoadTokensKey     = "image_load_tokens"
+	DefaultImageLoadTokens = 1000
 )
 
 const (
@@ -47,7 +54,7 @@ const (
 	SkipPolicyZeroImage = "skip_on_zero_image"
 )
 
-type InitRequestLoadFunc func(ctx *PipelineContext, spanName string) (load int32, loadType string)
+type InitRequestLoadFunc func(ctx *PipelineContext, spanName string, params map[string]interface{}) (load int32, loadType string)
 type SkipPolicyFunc func(ctx *PipelineContext) (skip bool, reason string)
 
 var skipPolicyFuncMap = map[string]SkipPolicyFunc{
@@ -57,10 +64,11 @@ var skipPolicyFuncMap = map[string]SkipPolicyFunc{
 }
 
 var initRequestLoadFuncMap = map[string]InitRequestLoadFunc{
-	LoadTypeUsage: InitUsageRequestLoad,
-	LoadTypeImage: InitImageRequestLoad,
-	LoadTypeText:  InitTextRequestLoad,
-	LoadTypeBytes: InitByteRequestLoad,
+	LoadTypeUsage:        InitUsageRequestLoad,
+	LoadTypeImage:        InitImageRequestLoad,
+	LoadTypeText:         InitTextRequestLoad,
+	LoadTypeBytes:        InitByteRequestLoad,
+	LoadTypeTextAndImage: InitTextAndImageRequestLoad,
 }
 
 type SchedulePhase struct {
@@ -69,6 +77,8 @@ type SchedulePhase struct {
 	targetInstanceType  string
 	ReqTimeoutMS        uint
 	InitRequestLoadFunc func(ctx *PipelineContext, spanName string)
+	scheduleParams      map[string]interface{}
+	imageLoadTokens     int32
 }
 
 func (s *SchedulePhase) Init(phaseCfg *common_infer.PhaseConfig) error {
@@ -80,6 +90,20 @@ func (s *SchedulePhase) Init(phaseCfg *common_infer.PhaseConfig) error {
 	if s.targetInstanceType == "" {
 		return fmt.Errorf("missing instance type")
 	}
+
+	if phaseCfg.ScheduleParams.Params != nil {
+		s.scheduleParams = phaseCfg.ScheduleParams.Params
+	} else {
+		s.scheduleParams = make(map[string]interface{})
+	}
+
+	s.imageLoadTokens = int32(DefaultImageLoadTokens)
+	if val, ok := s.scheduleParams[ImageLoadTokensKey]; ok {
+		if tokens, err := strconv.ParseInt(fmt.Sprintf("%v", val), 10, 32); err == nil && tokens > 0 {
+			s.imageLoadTokens = int32(tokens)
+		}
+	}
+	s.scheduleParams[ImageLoadTokensKey] = s.imageLoadTokens
 
 	if len(phaseCfg.ScheduleParams.RequestLoad) == 0 {
 		return fmt.Errorf("at least 1 load type should be contained for schedule")
@@ -248,7 +272,7 @@ func (s *SchedulePhase) InitRequestLoad(ctx *PipelineContext, spanName string) {
 			continue
 		}
 
-		count, actualLoadType := initRequestLoadFunc(ctx, spanName)
+		count, actualLoadType := initRequestLoadFunc(ctx, spanName, s.scheduleParams)
 		ctx.GetRequestCtx().RequestLoadsCount.Store(actualLoadType, count)
 		if count > 0 {
 			break
@@ -279,7 +303,7 @@ func skipOnZeroImage(ctx *PipelineContext) (bool, string) {
 	return false, ""
 }
 
-func InitUsageRequestLoad(ctx *PipelineContext, spanName string) (int32, string) {
+func InitUsageRequestLoad(ctx *PipelineContext, spanName string, params map[string]interface{}) (int32, string) {
 	subCtx := ctx.GetSubRequests(spanName)
 	usage := ctx.GetRequestCtx().UsagePromptLen.Load()
 	if usage != 0 {
@@ -288,7 +312,7 @@ func InitUsageRequestLoad(ctx *PipelineContext, spanName string) (int32, string)
 	return usage, LoadTypeUsage
 }
 
-func InitImageRequestLoad(ctx *PipelineContext, spanName string) (int32, string) {
+func InitImageRequestLoad(ctx *PipelineContext, spanName string, params map[string]interface{}) (int32, string) {
 	parsedReq := ctx.GetRequestCtx().ParsedRequest
 	subCtx := ctx.GetSubRequests(spanName)
 	imageCount, _ := parsedReq.RawBody.GetImageCount()
@@ -298,9 +322,14 @@ func InitImageRequestLoad(ctx *PipelineContext, spanName string) (int32, string)
 	return int32(imageCount), LoadTypeImage
 }
 
-func GetPromptString(isChat bool, content []utils.ChatContent) string {
+func GetPromptString(isChat bool, isMessages bool, content []utils.ChatContent) string {
 	if len(content) == 0 {
 		return ""
+	}
+
+	// Anthropic messages mode builds a plain "[role]: content" format
+	if isMessages {
+		return buildMessagesFormat(content)
 	}
 
 	// completion mode
@@ -309,9 +338,22 @@ func GetPromptString(isChat bool, content []utils.ChatContent) string {
 	}
 
 	// For chat messages, convert to ChatML format
+	return buildChatMLFormat(content)
+}
+
+func buildMessagesFormat(content []utils.ChatContent) string {
 	var builder strings.Builder
 	for _, msg := range content {
-		// Escape special characters to prevent injection attacks
+		escapedRole := html.EscapeString(msg.Role)
+		escapedContent := html.EscapeString(msg.Content)
+		builder.WriteString(fmt.Sprintf("[%s]: %s\n", escapedRole, escapedContent))
+	}
+	return builder.String()
+}
+
+func buildChatMLFormat(content []utils.ChatContent) string {
+	var builder strings.Builder
+	for _, msg := range content {
 		escapedRole := html.EscapeString(msg.Role)
 		escapedContent := html.EscapeString(msg.Content)
 		builder.WriteString(fmt.Sprintf("<|im_start|>%s\n%s<|im_end|>\n", escapedRole, escapedContent))
@@ -325,7 +367,7 @@ func SetApcPromptCacheKeyAndStrategy(parsedReq *request.GenerateRequestImplV1, c
 		return nil
 	}
 
-	promptString := GetPromptString(parsedReq.IsChat(), content)
+	promptString := GetPromptString(parsedReq.IsChat(), parsedReq.IsMessages(), content)
 
 	strategy := apcManager.GetDefaultStrategyInstance()
 	if strategy == nil {
@@ -341,7 +383,7 @@ func SetApcPromptCacheKeyAndStrategy(parsedReq *request.GenerateRequestImplV1, c
 	return nil
 }
 
-func InitTextRequestLoad(ctx *PipelineContext, spanName string) (int32, string) {
+func InitTextRequestLoad(ctx *PipelineContext, spanName string, params map[string]interface{}) (int32, string) {
 	startTime := time.Now()
 	defer func() {
 		duration := time.Since(startTime).Seconds()
@@ -349,7 +391,7 @@ func InitTextRequestLoad(ctx *PipelineContext, spanName string) (int32, string) 
 	}()
 	parsedReq := ctx.GetParsedRequest()
 	subCtx := ctx.GetSubRequests(spanName)
-	content, promptLen := request.TryParseContentAndLen(parsedReq.RawBody, parsedReq.GetRequestId(), parsedReq.IsChat())
+	content, promptLen := request.TryParseContentAndLen(parsedReq.RawBody, parsedReq.GetRequestId(), parsedReq.IsChat(), parsedReq.IsMessages())
 	if promptLen > 0 {
 		parsedReq.Chat = content
 		subCtx.SetPromptLen(promptLen)
@@ -361,10 +403,31 @@ func InitTextRequestLoad(ctx *PipelineContext, spanName string) (int32, string) 
 	return promptLen, LoadTypeText
 }
 
-func InitByteRequestLoad(ctx *PipelineContext, spanName string) (int32, string) {
+func InitByteRequestLoad(ctx *PipelineContext, spanName string, params map[string]interface{}) (int32, string) {
 	parsedReq := ctx.GetParsedRequest()
 	subCtx := ctx.GetSubRequests(spanName)
 	promptLen := int32(len(parsedReq.OriginBodyBytes))
 	subCtx.SetPromptLen(promptLen)
 	return promptLen, LoadTypeBytes
+}
+
+func InitTextAndImageRequestLoad(ctx *PipelineContext, spanName string, params map[string]interface{}) (int32, string) {
+	imageLoadTokens := int32(DefaultImageLoadTokens)
+	if val, ok := params[ImageLoadTokensKey]; ok {
+		if tokens, ok := val.(int32); ok && tokens > 0 {
+			imageLoadTokens = tokens
+		}
+	}
+
+	parsedReq := ctx.GetRequestCtx().ParsedRequest
+	subCtx := ctx.GetSubRequests(spanName)
+
+	imageCount, textStringLen := parsedReq.RawBody.GetImageCount()
+	imageTokens := int32(imageCount) * imageLoadTokens
+	totalLoad := int32(textStringLen) + imageTokens
+
+	if totalLoad > 0 {
+		subCtx.SetPromptLen(totalLoad)
+	}
+	return totalLoad, LoadTypeTextAndImage
 }

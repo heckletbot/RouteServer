@@ -42,7 +42,7 @@ This single command performs the following steps:
 After the build completes, you can find the deployable zip at:
 
 ```
-output/route-server-<version>-<timestamp>.zip
+output/DistributedScheduler-<version>-<timestamp>.zip
 ```
 
 For deployment instructions, see the [Deployment Guide](./deploy.md).
@@ -56,7 +56,7 @@ For deployment instructions, see the [Deployment Guide](./deploy.md).
 | `build` | Compile both `route-server` and `config_generator` |
 | `build-binary` | Compile `route-server` only |
 | `build-config-tool` | Compile `config_generator` only |
-| `package` | Build + copy deploy assets + create `.zip` archive |
+| `package` | Build + copy deploy assets + generate `version.info` + create `.zip` archive |
 | `test` | Run all tests, log to `build/test.log` |
 | `test-coverage` | Run all tests with coverage, report to `build/coverage.out` |
 | `test-unit` | Run unit tests only (`-short`), log to `build/unit-test.log` |
@@ -81,9 +81,9 @@ Output:
 
 ```
 output/
-└── route-server/
-    ├── route-server/bin/route-server       # Server binary
-    └── config_generator                    # Config tool
+├── DistributedScheduler/
+│   └── bin/route-server                 # Server binary
+└── config_generator                     # Config tool
 ```
 
 Version injection: when building inside a git repository, the `route-server` binary has metadata embedded via ldflags:
@@ -93,7 +93,7 @@ Version injection: when building inside a git repository, the `route-server` bin
 | `version` | `git describe --tags --always --dirty` |
 | `tagOrBranch` | `git rev-parse --abbrev-ref HEAD` |
 | `commitId` | `git rev-parse HEAD` |
-| `buildTime` | UTC timestamp |
+| `buildTime` | UTC timestamp (`YYYYMMDDhhmmss`) |
 
 If git is not available, these fields default to `"unknown"`.
 
@@ -105,7 +105,7 @@ Build only `route-server`. Useful for faster feedback during server development.
 make build-binary
 ```
 
-Output: `output/route-server/route-server/bin/route-server`
+Output: `output/DistributedScheduler/bin/route-server`
 
 ### build-config-tool
 
@@ -115,28 +115,39 @@ Build only `config_generator`. Useful when working on config generation logic.
 make build-config-tool
 ```
 
-Output: `output/route-server/config_generator`
+Output: `output/config_generator`
 
 ### package
 
-Build both binaries, copy deploy assets, and create a `.zip` archive.
+Build both binaries, copy deploy assets, generate `version.info`, and create a `.zip` archive.
 
 ```bash
 make package
 ```
 
-Output: `output/route-server-<version>-<timestamp>.zip`
+Output: `output/DistributedScheduler-<version>-<timestamp>.zip`
+
+The `version.info` file under `output/DistributedScheduler/` records the build metadata (read from git at build time):
+
+```
+Build Tag/Branch: <branch>
+Build Commit ID: <commit>
+Build Time: <timestamp>
+```
 
 Package contents:
 
 ```
-route-server/
-├── route-server/bin/route-server
+<zip-root>/
+├── Dockerfile
 ├── config_generator
 ├── deploy.sh
 ├── *.yaml                              # All YAML templates from deploy/
 ├── scale/
-└── pipelines/
+├── pipelines/
+└── DistributedScheduler/
+    ├── bin/route-server                # Server binary
+    └── version.info                    # Build metadata
 ```
 
 ---

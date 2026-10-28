@@ -116,11 +116,6 @@ func (r *RoundRobin) DispatchRequest(request utils.GenerateRequest, params map[s
 	if nodesCount == 0 {
 		return "", false, nil
 	}
-	if insBlackMap != nil {
-		if nodesCount == int64(len(insBlackMap)) {
-			return "", true, nil
-		}
-	}
 	oldIndex := atomic.AddInt64(&r.currIndex, 1) - 1
 	if oldIndex < 0 {
 		// overflowed, reset to 1

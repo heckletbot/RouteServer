@@ -18,6 +18,7 @@ package middleware
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -241,20 +242,20 @@ func Test_GetRemainingTokens(t *testing.T) {
 
 	// Initially should have full bucket
 	tokens := rl.GetRemainingTokens(path)
-	if tokens != 10 {
+	if math.Abs(tokens-10) > 1e-6 {
 		t.Errorf("Expected 10 tokens initially, got %.1f", tokens)
 	}
 
 	// After one request
 	rl.AllowRequest(path)
 	tokens = rl.GetRemainingTokens(path)
-	if tokens != 9 {
+	if math.Abs(tokens-9) > 1e-6 {
 		t.Errorf("Expected 9 tokens after 1 request, got %.1f", tokens)
 	}
 
 	// Exempt path should always return full amount
 	exemptTokens := rl.GetRemainingTokens("/health")
-	if exemptTokens != 10 {
+	if math.Abs(exemptTokens-10) > 1e-6 {
 		t.Errorf("Exempt path should always return full tokens, got %.1f", exemptTokens)
 	}
 }

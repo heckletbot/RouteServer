@@ -110,15 +110,16 @@ func writeResToClient(res *http.Response, ctx *PipelineContext, phase Phase) (rs
 	writerResponseHeaders(res, ctx)
 
 	if reqCtx.ParsedRequest.IsStream() {
+		passTokenTime := handler.GetPassTokenTime(ctx.IsChat(), ctx.IsLayerWise, reqCtx.ParsedRequest.GetMaxToken(), ctx.GetRequestCtx().IsFirstTokenFromPrefill.Load())
 		if options.GetConfig().ServerConfig.V1StreamWritingEnable {
 			usage, details, finishReason, hasDoneWritten = handler.WriteStreamResV1(ctx.GetRequestCtx().MainGinCtx, reqCtx.ParsedRequest, res,
 				reqCtx.Tracer.Tracer, ctx.GetPerfMetrics(), instanceId, constant.StageDecode, ctx.InferManager.WorkerEventCollector,
-				ctx.IsChat, ctx.IsLayerWise, ctx.GetRequestCtx().IsFirstTokenFromPrefill)
+				passTokenTime, ctx.GetRequestCtx().IsFirstTokenFromPrefill)
 			ctx.GetRequestCtx().HasDoneWritten = hasDoneWritten
 		} else {
 			usage, details, finishReason, hasDoneWritten = handler.WriteStreamRes(ctx.GetRequestCtx().MainGinCtx, reqCtx.ParsedRequest, res,
 				reqCtx.Tracer.Tracer, ctx.GetPerfMetrics(), instanceId, constant.StageDecode, ctx.InferManager.WorkerEventCollector,
-				ctx.IsChat, ctx.IsLayerWise, ctx.GetRequestCtx().IsFirstTokenFromPrefill)
+				passTokenTime, ctx.GetRequestCtx().IsFirstTokenFromPrefill)
 			ctx.GetRequestCtx().HasDoneWritten = hasDoneWritten
 		}
 	} else {
@@ -126,7 +127,7 @@ func writeResToClient(res *http.Response, ctx *PipelineContext, phase Phase) (rs
 		if ctx.GetRequestCtx().IsFirstTokenFromPrefill.Load() {
 			firstTokenBody = ctx.RequestContext.ParsedRequest.GetFirstTokenBody()
 		}
-		usage, details, finishReason = handler.WriteNonStreamRes(ctx.GetRequestCtx().MainGinCtx, reqCtx.ParsedRequest, res, reqCtx.Tracer.Tracer, ctx.GetPerfMetrics(), instanceId, constant.StageDecode, ctx.IsLayerWise, firstTokenBody)
+		usage, details, finishReason = handler.WriteNonStreamRes(ctx.GetRequestCtx().MainGinCtx, reqCtx.ParsedRequest, res, reqCtx.Tracer.Tracer, ctx.GetPerfMetrics(), instanceId, constant.StageDecode, ctx.IsLayerWise, ctx.IsMessages(), firstTokenBody)
 	}
 	return
 }

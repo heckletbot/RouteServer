@@ -224,15 +224,15 @@ func TestRewrite(t *testing.T) {
 }
 
 func TestTransparentPass(t *testing.T) {
-	randJson := "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
+	randJson := "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
 	testRequestRewrite(t, true, []byte(randJson), nil,
-		"{\"ignore_eos\":false,\"max_tokens\":1,\"messages\":[{\"content\":\"你好\",\"role\":\"user\"}],\"model\":\"deepseek\",\"stream\":false,\"temperature\":0,\"top_k\":5,\"top_p\":0.8}",
-		"{\"ignore_eos\":false,\"max_tokens\":100,\"messages\":[{\"content\":\"你好\",\"role\":\"user\"}],\"model\":\"deepseek\",\"stream\":true,\"stream_options\":{\"continuous_usage_stats\":false,\"include_usage\":true},\"temperature\":0,\"top_k\":5,\"top_p\":0.8}")
+		"{\"ignore_eos\":false,\"max_tokens\":1,\"messages\":[{\"content\":\"Hello\",\"role\":\"user\"}],\"model\":\"deepseek\",\"stream\":false,\"temperature\":0,\"top_k\":5,\"top_p\":0.8}",
+		"{\"ignore_eos\":false,\"max_tokens\":100,\"messages\":[{\"content\":\"Hello\",\"role\":\"user\"}],\"model\":\"deepseek\",\"stream\":true,\"stream_options\":{\"continuous_usage_stats\":false,\"include_usage\":true},\"temperature\":0,\"top_k\":5,\"top_p\":0.8}")
 
-	randJson = "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"max_completion_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
+	randJson = "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}],\"max_completion_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
 	testRequestRewrite(t, true, []byte(randJson), nil,
-		"{\"ignore_eos\":false,\"max_completion_tokens\":1,\"max_tokens\":1,\"messages\":[{\"content\":\"你好\",\"role\":\"user\"}],\"model\":\"deepseek\",\"stream\":false,\"temperature\":0,\"top_k\":5,\"top_p\":0.8}",
-		"{\"ignore_eos\":false,\"max_completion_tokens\":100,\"messages\":[{\"content\":\"你好\",\"role\":\"user\"}],\"model\":\"deepseek\",\"stream\":true,\"stream_options\":{\"continuous_usage_stats\":false,\"include_usage\":true},\"temperature\":0,\"top_k\":5,\"top_p\":0.8}")
+		"{\"ignore_eos\":false,\"max_completion_tokens\":1,\"max_tokens\":1,\"messages\":[{\"content\":\"Hello\",\"role\":\"user\"}],\"model\":\"deepseek\",\"stream\":false,\"temperature\":0,\"top_k\":5,\"top_p\":0.8}",
+		"{\"ignore_eos\":false,\"max_completion_tokens\":100,\"messages\":[{\"content\":\"Hello\",\"role\":\"user\"}],\"model\":\"deepseek\",\"stream\":true,\"stream_options\":{\"continuous_usage_stats\":false,\"include_usage\":true},\"temperature\":0,\"top_k\":5,\"top_p\":0.8}")
 
 	randJson = "{\"model\":\"deepseek\", \"abc\":\"aargs\"}"
 	testRequestRewrite(t, true, []byte(randJson), nil,
@@ -241,14 +241,14 @@ func TestTransparentPass(t *testing.T) {
 }
 
 func TestKvTransParamsPass(t *testing.T) {
-	randJson := "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
+	randJson := "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
 	testRequestRewrite(t, true, []byte(randJson),
 		map[string]any{
 			"s1": "v1",
 			"s2": "v2",
 		},
-		"{\"ignore_eos\":false,\"max_tokens\":1,\"messages\":[{\"content\":\"你好\",\"role\":\"user\"}],\"model\":\"deepseek\",\"stream\":false,\"temperature\":0,\"top_k\":5,\"top_p\":0.8}",
-		"{\"ignore_eos\":false,\"kv_transfer_params\":{\"s1\":\"v1\",\"s2\":\"v2\"},\"max_tokens\":100,\"messages\":[{\"content\":\"你好\",\"role\":\"user\"}],\"model\":\"deepseek\",\"stream\":true,\"stream_options\":{\"continuous_usage_stats\":false,\"include_usage\":true},\"temperature\":0,\"top_k\":5,\"top_p\":0.8}")
+		"{\"ignore_eos\":false,\"max_tokens\":1,\"messages\":[{\"content\":\"Hello\",\"role\":\"user\"}],\"model\":\"deepseek\",\"stream\":false,\"temperature\":0,\"top_k\":5,\"top_p\":0.8}",
+		"{\"ignore_eos\":false,\"kv_transfer_params\":{\"s1\":\"v1\",\"s2\":\"v2\"},\"max_tokens\":100,\"messages\":[{\"content\":\"Hello\",\"role\":\"user\"}],\"model\":\"deepseek\",\"stream\":true,\"stream_options\":{\"continuous_usage_stats\":false,\"include_usage\":true},\"temperature\":0,\"top_k\":5,\"top_p\":0.8}")
 
 	randJson = "{\"model\":\"deepseek\", \"abc\":\"aargs\"}"
 	testRequestRewrite(t, true, []byte(randJson), map[string]any{
@@ -260,23 +260,23 @@ func TestKvTransParamsPass(t *testing.T) {
 }
 
 func TestChatContentLenParse(t *testing.T) {
-	normalChatJson := "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
+	normalChatJson := "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
 	expectContent := []utils.ChatContent{
 		{
 			Role:    "user",
-			Content: "你好",
+			Content: "Hello",
 		},
 	}
-	testContentParse(t, normalChatJson, true, int32(6), expectContent)
+	testContentParse(t, normalChatJson, true, int32(5), expectContent)
 	// test mis send request
 	testContentParse(t, normalChatJson, false, int32(0), make([]utils.ChatContent, 0))
 
-	multipleChatJson := "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"},{\"role\":\"assist\",\"content\":\"hello\"}],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
+	multipleChatJson := "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"},{\"role\":\"assist\",\"content\":\"hello\"}],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
 
-	testContentParse(t, multipleChatJson, true, int32(11), []utils.ChatContent{
+	testContentParse(t, multipleChatJson, true, int32(10), []utils.ChatContent{
 		{
 			Role:    "user",
-			Content: "你好",
+			Content: "Hello",
 		},
 		{
 			Role:    "assist",
@@ -284,34 +284,34 @@ func TestChatContentLenParse(t *testing.T) {
 		},
 	})
 
-	multipleModeChatJson := "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"message\":\"你好\"}]}],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
-	testContentParse(t, multipleModeChatJson, true, int32(64), []utils.ChatContent{
+	multipleModeChatJson := "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"message\":\"Hello\"}]}],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
+	testContentParse(t, multipleModeChatJson, true, int32(63), []utils.ChatContent{
 		{
-			Content: "[{\"content\":[{\"message\":\"你好\",\"type\":\"text\"}],\"role\":\"user\"}]",
+			Content: "[{\"content\":[{\"message\":\"Hello\",\"type\":\"text\"}],\"role\":\"user\"}]",
 		},
 	})
 
-	multipleModeChatJson = "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"message\":\"你好\"}]},{\"role\":\"assist\",\"content\":[{\"type\":\"text\",\"message\":\"你好\"}]}],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
-	testContentParse(t, multipleModeChatJson, true, int32(129), []utils.ChatContent{
+	multipleModeChatJson = "{\"model\":\"deepseek\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"message\":\"Hello\"}]},{\"role\":\"assist\",\"content\":[{\"type\":\"text\",\"message\":\"Hello\"}]}],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
+	testContentParse(t, multipleModeChatJson, true, int32(127), []utils.ChatContent{
 		{
-			Content: "[{\"content\":[{\"message\":\"你好\",\"type\":\"text\"}],\"role\":\"user\"},{\"content\":[{\"message\":\"你好\",\"type\":\"text\"}],\"role\":\"assist\"}]",
+			Content: "[{\"content\":[{\"message\":\"Hello\",\"type\":\"text\"}],\"role\":\"user\"},{\"content\":[{\"message\":\"Hello\",\"type\":\"text\"}],\"role\":\"assist\"}]",
 		},
 	})
 }
 
 func TestCompletionLenParse(t *testing.T) {
-	normalComp := "{\"model\":\"deepseek\",\"prompt\":\"你好\",\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
-	testContentParse(t, normalComp, false, int32(6), []utils.ChatContent{
+	normalComp := "{\"model\":\"deepseek\",\"prompt\":\"Hello\",\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
+	testContentParse(t, normalComp, false, int32(5), []utils.ChatContent{
 		{
-			Content: "你好",
+			Content: "Hello",
 		},
 	})
 
 	testContentParse(t, normalComp, true, int32(0), make([]utils.ChatContent, 0))
-	multiContentCmpl := "{\"model\":\"deepseek\",\"prompt\":[\"你好\", \"hello\", \"123\"],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
-	testContentParse(t, multiContentCmpl, false, int32(24), []utils.ChatContent{
+	multiContentCmpl := "{\"model\":\"deepseek\",\"prompt\":[\"Hello\", \"hello\", \"123\"],\"max_tokens\":100,\"top_k\":5,\"top_p\":0.8,\"temperature\":0,\"ignore_eos\":false,\"stream\":true,\"stream_options\":{\"include_usage\":true,\"continuous_usage_stats\":false}}"
+	testContentParse(t, multiContentCmpl, false, int32(23), []utils.ChatContent{
 		{
-			Content: "[\"你好\",\"hello\",\"123\"]",
+			Content: "[\"Hello\",\"hello\",\"123\"]",
 		},
 	})
 }
@@ -517,7 +517,7 @@ func TestParseMaxTokens(t *testing.T) {
 			}
 			httpRequest.Header.Set("Content-Type", "application/json")
 
-			_, err := NewBasicRequestImplForPipeline(httpRequest, tc.isChat)
+			_, err := NewBasicRequestImplForPipeline(httpRequest)
 			if tc.expectError {
 				assert.Error(t, err, "expected error but got nil")
 			} else {

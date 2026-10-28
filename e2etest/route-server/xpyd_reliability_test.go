@@ -139,10 +139,12 @@ var _ = Describe(XPYDReliabilityTestContext, Ordered, func() {
 		}
 		outData, err := yaml.Marshal(&cfg)
 		Expect(err).To(BeNil())
-		Expect(os.WriteFile(filepath.Join(deployPath, XPYD_TEMP_TEMPLATE), outData, 0644)).To(BeNil())
 
 		etcdCtxDir := filepath.Join(projectRoot, "e2etest", "environment", XPYDReliabilityTestContext)
 		Expect(os.RemoveAll(etcdCtxDir)).To(BeNil())
+		Expect(os.MkdirAll(etcdCtxDir, 0755)).To(BeNil())
+		tempTemplatePath := filepath.Join(etcdCtxDir, XPYD_TEMP_TEMPLATE)
+		Expect(os.WriteFile(tempTemplatePath, outData, 0644)).To(BeNil())
 		candidate1CfgDir := filepath.Join(etcdCtxDir, candidate1)
 		candidate2CfgDir := filepath.Join(etcdCtxDir, candidate2)
 		worker1CfgDir := filepath.Join(etcdCtxDir, worker1)
@@ -169,7 +171,7 @@ var _ = Describe(XPYDReliabilityTestContext, Ordered, func() {
 
 		By("generate candidate1 config")
 		candidate1ToolParam := DisableHTTPSConfig([]string{
-			"-template", filepath.Join(deployPath, XPYD_TEMP_TEMPLATE),
+			"-template", tempTemplatePath,
 			"-host", "127.0.0.1",
 			"-target", candidate1CfgDir,
 			"-infer-mode", "PD",
@@ -187,7 +189,7 @@ var _ = Describe(XPYDReliabilityTestContext, Ordered, func() {
 
 		By("generate candidate2 config")
 		candidate2ToolParam := DisableHTTPSConfig([]string{
-			"-template", filepath.Join(deployPath, XPYD_TEMP_TEMPLATE),
+			"-template", tempTemplatePath,
 			"-host", "127.0.0.1",
 			"-target", candidate2CfgDir,
 			"-infer-mode", "PD",
@@ -205,7 +207,7 @@ var _ = Describe(XPYDReliabilityTestContext, Ordered, func() {
 
 		By("generate worker1 config")
 		worker1ToolParam := DisableHTTPSConfig([]string{
-			"-template", filepath.Join(deployPath, XPYD_TEMP_TEMPLATE),
+			"-template", tempTemplatePath,
 			"-host", "127.0.0.1",
 			"-target", worker1CfgDir,
 			"-infer-mode", "PD",
@@ -223,7 +225,7 @@ var _ = Describe(XPYDReliabilityTestContext, Ordered, func() {
 
 		By("generate worker2 config")
 		worker2ToolParam := DisableHTTPSConfig([]string{
-			"-template", filepath.Join(deployPath, XPYD_TEMP_TEMPLATE),
+			"-template", tempTemplatePath,
 			"-host", "127.0.0.1",
 			"-target", worker2CfgDir,
 			"-infer-mode", "PD",
@@ -240,7 +242,7 @@ var _ = Describe(XPYDReliabilityTestContext, Ordered, func() {
 		Expect(exec.Command(configToolPath, worker2ToolParam...).Run()).To(BeNil())
 
 		DeferCleanup(func() {
-			os.Remove(filepath.Join(deployPath, XPYD_TEMP_TEMPLATE))
+			os.RemoveAll(etcdCtxDir)
 			os.RemoveAll(candidate1CfgDir)
 			os.RemoveAll(worker1CfgDir)
 			os.RemoveAll(candidate2CfgDir)
@@ -312,13 +314,25 @@ var _ = Describe(XPYDReliabilityTestContext, Ordered, func() {
 		GinkgoWriter.Printf("[worker] route-server is ready on port %d\n", worker2HTTPPort)
 
 		By("wait for leader election and worker registration via etcd")
-		Eventually(func() bool {
+		// Either candidate may win the etcd lease: leader election is
+		// first-come-first-served and depends on startup timing. Hard-coding
+		// candidate1 makes the test flaky whenever candidate2 connects first.
+		Eventually(func() string {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			resp, getErr := etcdClient.Get(ctx, rsLeaderKey, clientv3.WithPrefix())
-			return getErr == nil && len(resp.Kvs) > 0 && strings.Contains(string(resp.Kvs[0].Value), "candidate1")
-		}, 30*time.Second, 1*time.Second).Should(BeTrue(), "candidate1 should be elected as leader in etcd")
-		GinkgoWriter.Printf("[etcd] candidate1 elected, confirmed via %s\n", rsLeaderKey)
+			if getErr != nil || len(resp.Kvs) == 0 {
+				return ""
+			}
+			if strings.Contains(string(resp.Kvs[0].Value), "candidate1") {
+				return "candidate1"
+			}
+			if strings.Contains(string(resp.Kvs[0].Value), "candidate2") {
+				return "candidate2"
+			}
+			return ""
+		}, 30*time.Second, 1*time.Second).ShouldNot(BeEmpty(), "either candidate should be elected as leader in etcd")
+		GinkgoWriter.Printf("[etcd] leader elected, confirmed via %s\n", rsLeaderKey)
 
 		Eventually(func() bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

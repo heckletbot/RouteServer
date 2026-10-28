@@ -397,7 +397,7 @@ func (p *Pipeline) preparePipeline(ctx *PipelineContext) *errs.RSError {
 	reqCtx := ctx.GetRequestCtx()
 	// only the main pipeline will recompute req id
 	if p.isMain {
-		parsedReq, err := request.NewBasicRequestImplForPipeline(ctx.ClientGinCtx.Request, ctx.IsChat)
+		parsedReq, err := request.NewBasicRequestImplForPipeline(ctx.ClientGinCtx.Request)
 		// Generate tracer first, then process error
 		reqCtx.ParsedRequest = parsedReq
 		reqId := ctx.RequestId()
@@ -407,7 +407,7 @@ func (p *Pipeline) preparePipeline(ctx *PipelineContext) *errs.RSError {
 			return errs.NewRSMaError(errs.BadReqErr.BuildArgs(
 				fmt.Sprintf("fail to create generate request: %v", err)), constant.StagePrepare)
 		}
-		reqCtx.ParsedRequest.SetRequestId(request.GetInferRequestId(&ctx.ClientGinCtx.Request.Header, ctx.IsChat))
+		reqCtx.ParsedRequest.SetRequestId(request.GetInferRequestId(&ctx.ClientGinCtx.Request.Header, ctx.IsChat()))
 		extraInfo := request.RewriteRequestIDDetail(ctx.ClientGinCtx)
 		tracer.E2ECtx = tracer.Tracer.StartSpan(ctx.ClientGinCtx.Request.Context(), trace.RequestSpanE2E, extraInfo, trace.GtLogPermission)
 

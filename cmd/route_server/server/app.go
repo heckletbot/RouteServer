@@ -459,6 +459,9 @@ func applyDefaultConfig(cfg *config.Config) error {
 	ApplyDefaultClientWriteTimeout(cfg)
 
 	constant.ServerName = cfg.ServerConfig.Name
+	if err := config.ApplyMessageErrorConfig(cfg.ServerConfig.AnthropicErrorTypeConfigFileName); err != nil {
+		return err
+	}
 	return nil
 }
 

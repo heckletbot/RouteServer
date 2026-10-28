@@ -47,6 +47,18 @@ func TestRequestBodyLimit(t *testing.T) {
 			bodySize:       60 * 1024 * 1024, // 60MB
 			expectedStatus: http.StatusRequestEntityTooLarge,
 		},
+		{
+			name:           "Zero maxSize should not limit body size",
+			maxSize:        0,
+			bodySize:       60 * 1024 * 1024, // 60MB, larger than any limit
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Negative maxSize should not limit body size",
+			maxSize:        -1,
+			bodySize:       60 * 1024 * 1024, // 60MB
+			expectedStatus: http.StatusOK,
+		},
 	}
 
 	for _, tt := range tests {

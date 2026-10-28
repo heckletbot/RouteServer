@@ -68,21 +68,18 @@ func (sp *StreamDataProcessor) ParseAndRecordTokens() *openai.Usage {
 		return nil
 	}
 	//lastLines[0] for choice, lastLines[1] for usage, lastLines[2] for done in stream mode
-	body, err := ParseResponseBody([]byte(sp.lastLines[len(sp.lastLines)-2]))
+	buf := []byte(sp.lastLines[len(sp.lastLines)-2])
+	body, err := ParseResponseBody(buf)
 	if err != nil {
 		return nil
 	}
-	if body.Usage == nil {
+	if body.Usage == nil || body.Usage.PromptTokens == 0 {
 		return nil
 	}
-	if body.Usage.PromptTokens == 0 {
-		return nil
-	} else {
-		metrics.RecordPromptTokenCount(body.Usage.PromptTokens)
-		metrics.RecordOutputTotalTokenCount(body.Usage.CompletionTokens)
-		metrics.RecordTotalOutputToken(body.Usage.CompletionTokens)
-		return body.Usage
-	}
+	metrics.RecordPromptTokenCount(body.Usage.PromptTokens)
+	metrics.RecordOutputTotalTokenCount(body.Usage.CompletionTokens)
+	metrics.RecordTotalOutputToken(body.Usage.CompletionTokens)
+	return body.Usage
 }
 
 func (sp *StreamDataProcessor) GetRawResBody() []byte {
@@ -96,14 +93,17 @@ func (sp *StreamDataProcessor) ParseFinishReason() string {
 	if len(sp.lastLines) < 3 {
 		return constant.UnKnownReason
 	}
+	// Try lastLines[0] first
 	body, err := ParseResponseBody([]byte(sp.lastLines[0]))
-	if err != nil {
-		return constant.UnKnownReason
+	if err == nil && len(body.Choices) > 0 {
+		return body.Choices[0].FinishReason
 	}
-	if len(body.Choices) == 0 {
-		return constant.UnKnownReason
+	// Fallback to lastLines[len-2]
+	body, err = ParseResponseBody([]byte(sp.lastLines[len(sp.lastLines)-2]))
+	if err == nil && len(body.Choices) > 0 {
+		return body.Choices[0].FinishReason
 	}
-	return body.Choices[0].FinishReason
+	return constant.UnKnownReason
 }
 
 func (sp *StreamDataProcessor) ParseAndRecordError() (*utils.InstanceFailureDetails, string, []byte, bool) {

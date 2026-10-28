@@ -1548,7 +1548,7 @@ HTTP 500
     "inst": [
         {
             "instance": "prefill_01",
-            "type": 寿
+            "type": 0
         }
     ]
 }

@@ -21,28 +21,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
-
 	"github.com/gin-gonic/gin"
 
+	"infer-dp-scheduler/pkg/common/anthropic"
+	"infer-dp-scheduler/pkg/common/constant"
+	"infer-dp-scheduler/pkg/common/logger"
 	"infer-dp-scheduler/pkg/common/openai"
+	"infer-dp-scheduler/pkg/common/utils"
 )
 
 const (
-	MockContent = "test"
-	Model       = "deepseek-r1"
+	Token = "test"
+	Model = "deepseek-r1"
 
 	LinkDownVersionOmni       = "omni"
 	LinkDownVersionVllmAscend = "vllm_ascend"
 	LinkDownVersionVllmNew    = "vllm_new"
+
+	ConnErrModeConnReset = "connection_reset"
+	ConnErrModeEof       = "eof"
 )
 
 type MMChatCompletionRequest struct {
@@ -81,6 +85,7 @@ type MMChatCompletionRequest struct {
 type InferPara struct {
 	TTFT                     uint
 	TPOT                     uint
+	TokenSize                int
 	Addr                     string
 	Port                     string
 	Collector                *Collector
@@ -92,10 +97,13 @@ type InferPara struct {
 	LinkDownList             map[string]struct{}
 	LinkDownVersion          string
 	LinkDownTokenBeforeError int
+	LinkDownSleepSeconds     int
 	IsEncoder                bool
 	IsHybrid                 bool
 	HangRequestIds           map[string]struct{}
 	HangRequestIdsMu         sync.Mutex
+	ConnErrConfig            *MockConnErrBody
+	ConnErrMu                sync.Mutex
 }
 
 type StreamError struct {
@@ -133,6 +141,7 @@ type LinkDownBody struct {
 	MetaDataList     []KVMetaData `json:"meta_data_list"`
 	Version          string       `json:"version"`
 	TokenBeforeError int          `json:"token_before_error"`
+	SleepSeconds     int          `json:"sleep_seconds"`
 }
 
 type MockErrorBody struct {
@@ -147,7 +156,35 @@ func (i *InferPara) ChatCompletionsInfer(ctx *gin.Context) {
 	}
 }
 
+// handleMetaserverRequest sends a layerwise metaserver request if configured in kvTransferParams.
+// Returns true when an error response has already been written to ctx, so the caller should return.
+func (i *InferPara) handleMetaserverRequest(ctx *gin.Context, kvTransferParams map[string]any) bool {
+	if kvTransferParams == nil {
+		return false
+	}
+	metaserverURL, exists := kvTransferParams["metaserver"]
+	if !exists {
+		return false
+	}
+	urlStr, ok := metaserverURL.(string)
+	if !ok || urlStr == "" {
+		return false
+	}
+	fmt.Printf("Detected metaserver URL: %s, sending request...\n", urlStr)
+	// Send request to metaserver and wait for response
+	if err := i.sendMetaserverRequest(urlStr, kvTransferParams, false); err != nil {
+		fmt.Printf("Failed to send metaserver request: %v\n", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Metaserver request failed: %v", err)})
+		return true
+	}
+	fmt.Printf("Metaserver request completed successfully\n")
+	return false
+}
+
 func (i *InferPara) dealChatCompletion(ctx *gin.Context) {
+	if i.injectConnErr(ctx) {
+		return
+	}
 	bodyBytes, err := io.ReadAll(ctx.Request.Body)
 	if err != nil {
 		fmt.Printf("failed to parse req err = %v, context err = %v\n", err, ctx.Request.Context().Err())
@@ -163,19 +200,8 @@ func (i *InferPara) dealChatCompletion(ctx *gin.Context) {
 	var requestId = ctx.Request.Header.Get("X-Request-Id")
 
 	// layerwise behavior
-	if request.KvTransferParams != nil {
-		if metaserverURL, exists := request.KvTransferParams["metaserver"]; exists {
-			if urlStr, ok := metaserverURL.(string); ok && urlStr != "" {
-				fmt.Printf("Detected metaserver URL: %s, sending request...\n", urlStr)
-				// Send request to metaserver and wait for response
-				if err := i.sendMetaserverRequest(urlStr, request.KvTransferParams, false); err != nil {
-					fmt.Printf("Failed to send metaserver request: %v\n", err)
-					ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Metaserver request failed: %v", err)})
-					return
-				}
-				fmt.Printf("Metaserver request completed successfully\n")
-			}
-		}
+	if i.handleMetaserverRequest(ctx, request.KvTransferParams) {
+		return
 	}
 
 	if !request.Stream {
@@ -206,12 +232,15 @@ func (i *InferPara) dealChatCompletion(ctx *gin.Context) {
 		}
 
 		if i.IsLinkDown {
+			if i.LinkDownSleepSeconds > 0 {
+				time.Sleep(time.Duration(i.LinkDownSleepSeconds) * time.Second)
+			}
 			switch i.LinkDownVersion {
 			case LinkDownVersionVllmAscend:
 				errData := map[string]any{
 					"error": map[string]any{
 						"message": "pd link is down!",
-						"type":    "InternalServerError",
+						"type":    "PDLinkDownError",
 						"param":   nil,
 						"code":    500,
 					},
@@ -287,7 +316,7 @@ func (i *InferPara) dealChatCompletion(ctx *gin.Context) {
 				{
 					Index: 0,
 					Message: openai.ChatCompletionMessage{
-						Content: MockContent,
+						Content: Token,
 					},
 				},
 			},
@@ -311,10 +340,10 @@ func (i *InferPara) dealChatCompletion(ctx *gin.Context) {
 		}
 		time.Sleep(time.Duration(i.TTFT) * time.Millisecond)
 		i.Collector.TimeToFirstTime.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
-		ctx.Writer.WriteHeader(http.StatusOK)
+
 		ctx.Header("X-Request-Id", ctx.Request.Header.Get("X-Request-Id"))
 		ctx.Header(constant.HeaderContentLength, strconv.Itoa(len(bytes)))
-
+		ctx.Writer.WriteHeader(http.StatusOK)
 		ctx.Writer.Write(bytes)
 		ctx.Writer.Flush()
 		return
@@ -342,6 +371,9 @@ func (i *InferPara) dealChatCompletion(ctx *gin.Context) {
 }
 
 func (i *InferPara) dealMMChatCompletion(ctx *gin.Context) {
+	if i.injectConnErr(ctx) {
+		return
+	}
 	bodyBytes, err := io.ReadAll(ctx.Request.Body)
 	if err != nil {
 		fmt.Printf("failed to parse req err = %v, context err = %v\n", err, ctx.Request.Context().Err())
@@ -358,19 +390,8 @@ func (i *InferPara) dealMMChatCompletion(ctx *gin.Context) {
 	requestId := ctx.Request.Header.Get("X-Request-Id")
 
 	// layerwise behavior
-	if request.KvTransferParams != nil {
-		if metaserverURL, exists := request.KvTransferParams["metaserver"]; exists {
-			if urlStr, ok := metaserverURL.(string); ok && urlStr != "" {
-				fmt.Printf("Detected metaserver URL: %s, sending request...\n", urlStr)
-				// Send request to metaserver and wait for response
-				if err := i.sendMetaserverRequest(urlStr, request.KvTransferParams, false); err != nil {
-					fmt.Printf("Failed to send metaserver request: %v\n", err)
-					ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Metaserver request failed: %v", err)})
-					return
-				}
-				fmt.Printf("Metaserver request completed successfully\n")
-			}
-		}
+	if i.handleMetaserverRequest(ctx, request.KvTransferParams) {
+		return
 	}
 
 	if !request.Stream {
@@ -401,12 +422,15 @@ func (i *InferPara) dealMMChatCompletion(ctx *gin.Context) {
 		}
 
 		if i.IsLinkDown {
+			if i.LinkDownSleepSeconds > 0 {
+				time.Sleep(time.Duration(i.LinkDownSleepSeconds) * time.Second)
+			}
 			switch i.LinkDownVersion {
 			case LinkDownVersionVllmAscend:
 				errData := map[string]any{
 					"error": map[string]any{
 						"message": "pd link is down!",
-						"type":    "InternalServerError",
+						"type":    "PDLinkDownError",
 						"param":   nil,
 						"code":    500,
 					},
@@ -482,7 +506,7 @@ func (i *InferPara) dealMMChatCompletion(ctx *gin.Context) {
 				{
 					Index: 0,
 					Message: openai.ChatCompletionMessage{
-						Content: MockContent,
+						Content: Token,
 					},
 				},
 			},
@@ -563,7 +587,7 @@ func (i *InferPara) getChatResToken(reqID string, tokenIdx int, usage *openai.Us
 		}
 	} else {
 		delta = openai.ChatCompletionStreamChoiceDelta{
-			Content: fmt.Sprintf("%s_%v", MockContent, tokenIdx),
+			Content: i.tokenContent(tokenIdx),
 		}
 	}
 
@@ -609,6 +633,147 @@ func (i *InferPara) getChatResToken(reqID string, tokenIdx int, usage *openai.Us
 	return responseBytes, nil
 }
 
+func (i *InferPara) tokenContent(tokenIdx int) string {
+	if i.TokenSize > 0 {
+		return strings.Repeat("a", i.TokenSize)
+	}
+	return fmt.Sprintf("%s_%v", Token, tokenIdx)
+}
+
+func buildSSEEvent(event string, data interface{}) ([]byte, error) {
+	var dataBytes []byte
+	if data != nil {
+		var err error
+		dataBytes, err = utils.SonicApi.Marshal(data)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var b []byte
+	b = append(b, []byte("event: ")...)
+	b = append(b, []byte(event)...)
+	b = append(b, '\n')
+	b = append(b, []byte("data: ")...)
+	if len(dataBytes) > 0 {
+		b = append(b, dataBytes...)
+	}
+	b = append(b, '\n')
+	b = append(b, '\n')
+	return b, nil
+}
+
+func (i *InferPara) getMessageResToken(reqID string, tokenIdx int, usage *openai.Usage, isLastToken bool, hasMaxTokens bool, hasTools bool) ([]byte, error) {
+	var responseBytes []byte
+	// 1. First token - message_start + content_block_start
+	if tokenIdx == 0 {
+		msgStart := map[string]interface{}{
+			"type": "message_start",
+			"message": map[string]interface{}{
+				"id":    "msg_" + reqID,
+				"model": Model,
+				"usage": map[string]int{
+					"input_tokens":  25,
+					"output_tokens": 0,
+				},
+			},
+		}
+		bytes, err := buildSSEEvent("message_start", msgStart)
+		if err != nil {
+			return nil, err
+		}
+		responseBytes = append(responseBytes, bytes...)
+
+		blockStart := map[string]interface{}{
+			"type":  "content_block_start",
+			"index": 0,
+			"content_block": map[string]string{
+				"type": "text",
+				"text": "",
+			},
+		}
+		bytes, err = buildSSEEvent("content_block_start", blockStart)
+		if err != nil {
+			return nil, err
+		}
+		responseBytes = append(responseBytes, bytes...)
+
+		return responseBytes, nil
+	}
+
+	// 2. Last token
+	if isLastToken {
+		textDelta := map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": 0,
+			"delta": map[string]string{
+				"type": "text_delta",
+				"text": i.tokenContent(tokenIdx),
+			},
+		}
+		bytes, err := buildSSEEvent("content_block_delta", textDelta)
+		if err != nil {
+			return nil, err
+		}
+		responseBytes = append(responseBytes, bytes...)
+
+		blockStop := map[string]interface{}{
+			"type":  "content_block_stop",
+			"index": 0,
+		}
+		bytes, err = buildSSEEvent("content_block_stop", blockStop)
+		if err != nil {
+			return nil, err
+		}
+		responseBytes = append(responseBytes, bytes...)
+
+		stopReason := "end_turn"
+		if hasMaxTokens {
+			stopReason = "max_tokens"
+		}
+		if hasTools {
+			stopReason = "tool_use"
+		}
+		msgDelta := map[string]interface{}{
+			"type": "message_delta",
+			"delta": map[string]string{
+				"stop_reason": stopReason,
+			},
+			"usage": map[string]int{
+				"input_tokens":  25,
+				"output_tokens": tokenIdx + 1,
+			},
+		}
+		bytes, err = buildSSEEvent("message_delta", msgDelta)
+		if err != nil {
+			return nil, err
+		}
+		responseBytes = append(responseBytes, bytes...)
+
+		msgStop := map[string]string{
+			"type": "message_stop",
+		}
+		bytes, err = buildSSEEvent("message_stop", msgStop)
+		if err != nil {
+			return nil, err
+		}
+		responseBytes = append(responseBytes, bytes...)
+
+		return responseBytes, nil
+	}
+
+	// 3. Middle token - plain text delta
+	textDelta := map[string]interface{}{
+		"type":  "content_block_delta",
+		"index": 0,
+		"delta": map[string]string{
+			"type": "text_delta",
+			"text": i.tokenContent(tokenIdx),
+		},
+	}
+	return buildSSEEvent("content_block_delta", textDelta)
+}
+
 func (i *InferPara) getCompletionResToken(reqID string, tokenIdx int, usage *openai.Usage, isLastToken bool, hasMaxTokens bool, hasTools bool) ([]byte, error) {
 	var finishReason string
 	if isLastToken {
@@ -629,7 +794,7 @@ func (i *InferPara) getCompletionResToken(reqID string, tokenIdx int, usage *ope
 			Choices: []openai.CompletionChoice{
 				{
 					Index:        0,
-					Text:         fmt.Sprintf("%s_%v", MockContent, tokenIdx),
+					Text:         i.tokenContent(tokenIdx),
 					FinishReason: finishReason,
 				},
 			},
@@ -644,7 +809,7 @@ func (i *InferPara) getCompletionResToken(reqID string, tokenIdx int, usage *ope
 			Choices: []openai.CompletionChoice{
 				{
 					Index:        0,
-					Text:         fmt.Sprintf("%s_%v", MockContent, tokenIdx),
+					Text:         i.tokenContent(tokenIdx),
 					FinishReason: finishReason,
 				},
 			},
@@ -664,6 +829,9 @@ func (i *InferPara) getCompletionResToken(reqID string, tokenIdx int, usage *ope
 }
 
 func (i *InferPara) CompletionsInfer(ctx *gin.Context) {
+	if i.injectConnErr(ctx) {
+		return
+	}
 	bodyBytes, err := io.ReadAll(ctx.Request.Body)
 	if err != nil {
 		fmt.Printf("failed to parse req err = %v, context err = %v\n", err, ctx.Request.Context().Err())
@@ -724,66 +892,8 @@ func (i *InferPara) CompletionsInfer(ctx *gin.Context) {
 		}
 
 		if i.IsLinkDown {
-			switch i.LinkDownVersion {
-			case LinkDownVersionVllmAscend:
-				errData := map[string]any{
-					"error": map[string]any{
-						"message": "pd link is down!",
-						"type":    "InternalServerError",
-						"param":   nil,
-						"code":    500,
-					},
-				}
-				bytes, err := utils.SonicApi.Marshal(errData)
-				if err != nil {
-					fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
-					ctx.JSON(http.StatusInternalServerError, err)
-					return
-				}
-				ctx.Writer.WriteHeader(http.StatusInternalServerError)
-				ctx.Writer.Write(bytes)
-				ctx.Writer.Flush()
-				return
-			case LinkDownVersionVllmNew:
-				errData := map[string]any{
-					"error": map[string]any{
-						"message": "KV cache load failed for one or more remote blocks. The request can be retried.",
-						"type":    "InternalServerError",
-						"param":   nil,
-						"code":    500,
-					},
-				}
-				bytes, err := utils.SonicApi.Marshal(errData)
-				if err != nil {
-					fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
-					ctx.JSON(http.StatusInternalServerError, err)
-					return
-				}
-				ctx.Writer.WriteHeader(http.StatusInternalServerError)
-				ctx.Writer.Write(bytes)
-				ctx.Writer.Flush()
-				return
-			default:
-				response := openai.CompletionResponse{
-					ID:      "cmpl-" + requestId,
-					Object:  "chat.completion",
-					Created: 1,
-					Model:   Model,
-					Choices: []openai.CompletionChoice{
-						{
-							Index:        0,
-							Text:         "",
-							FinishReason: "abort",
-						},
-					},
-					KvTransferParams: map[string]any{
-						"address": i.Addr,
-						"port":    i.Port,
-					},
-				}
-				ctx.JSON(http.StatusOK, response)
-				return
-			}
+			i.writeLinkDownError(ctx, requestId)
+			return
 		}
 
 		response := openai.CompletionResponse{
@@ -794,7 +904,7 @@ func (i *InferPara) CompletionsInfer(ctx *gin.Context) {
 			Choices: []openai.CompletionChoice{
 				{
 					Index: 0,
-					Text:  MockContent,
+					Text:  Token,
 				},
 			},
 			// kv transfer metadata for mock pd link down
@@ -833,7 +943,65 @@ func (i *InferPara) CompletionsInfer(ctx *gin.Context) {
 	i.writeRes(ctx, request.MaxTokens, i.getCompletionResToken, usage, kvTransferMetaData, requestId, request.MaxTokens > 0, false)
 }
 
-// hangingWithRequestId hangs in specific request_id scenario
+func (i *InferPara) writeLinkDownError(ctx *gin.Context, requestId string) {
+	if i.LinkDownSleepSeconds > 0 {
+		time.Sleep(time.Duration(i.LinkDownSleepSeconds) * time.Second)
+	}
+
+	var errData map[string]any
+	switch i.LinkDownVersion {
+	case LinkDownVersionVllmAscend:
+		errData = map[string]any{
+			"error": map[string]any{
+				"message": "pd link is down!",
+				"type":    "PDLinkDownError",
+				"param":   nil,
+				"code":    500,
+			},
+		}
+	case LinkDownVersionVllmNew:
+		errData = map[string]any{
+			"error": map[string]any{
+				"message": "KV cache load failed for one or more remote blocks. The request can be retried.",
+				"type":    "InternalServerError",
+				"param":   nil,
+				"code":    500,
+			},
+		}
+	default:
+		response := openai.CompletionResponse{
+			ID:      "cmpl-" + requestId,
+			Object:  "chat.completion",
+			Created: 1,
+			Model:   Model,
+			Choices: []openai.CompletionChoice{
+				{
+					Index:        0,
+					Text:         "Abort for KV loading failure",
+					FinishReason: "abort",
+				},
+			},
+			KvTransferParams: map[string]any{
+				"address": i.Addr,
+				"port":    i.Port,
+			},
+		}
+		ctx.JSON(http.StatusOK, response)
+		return
+	}
+
+	bytes, err := utils.SonicApi.Marshal(errData)
+	if err != nil {
+		fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusInternalServerError, err)
+		return
+	}
+	ctx.Writer.WriteHeader(http.StatusInternalServerError)
+	ctx.Writer.Write(bytes)
+	ctx.Writer.Flush()
+}
+
+// hangingWithRequestId hangs in specific request_id scenarios
 func (i *InferPara) hangingWithRequestId(requestId string) {
 	for i.IsHang || i.isRequestIdHanging(requestId) {
 		time.Sleep(1 * time.Second)
@@ -985,8 +1153,8 @@ func (i *InferPara) writeRes(ctx *gin.Context, maxTokens int, tokenBytes func(st
 	}
 
 	lastResponse, err := tokenBytes(ctx.Request.Header.Get("X-Request-Id"), 0, usage, true, hasMaxTokens, hasTools)
-	// For streaming interface, when max token is not provided or is 1, one token will be output
-	// Native vLLM seems to not support max token being 0
+	// For streaming interfaces, when max token is unset or is 1, a single token is emitted
+	// Native vLLM apparently does not support max token of 0
 	if maxTokens == 0 || maxTokens == 1 {
 		i.Collector.TimeToFirstTime.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
 		i.Collector.End2EndTime.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
@@ -997,6 +1165,53 @@ func (i *InferPara) writeRes(ctx *gin.Context, maxTokens int, tokenBytes func(st
 	}
 	ctx.Writer.Write(lastResponse)
 	writeSSEDone(ctx)
+}
+
+// writeAnthropicRes is dedicated to Anthropic-format streaming responses
+func (i *InferPara) writeAnthropicRes(ctx *gin.Context, maxTokens int, tokenBytes func(string, int, *openai.Usage, bool, bool, bool) ([]byte, error),
+	usage *openai.Usage, kvTransferMetaData string, requestId string, hasMaxTokens bool, hasTools bool) {
+	// Loop over all tokens; the last token's complete end events are handled internally by getMessageResToken
+	for j := 0; j < maxTokens; j++ {
+		if i.IsError {
+			i.writeAnthropicErrorStreamResponse(ctx)
+			return
+		}
+		if i.IsLinkDown {
+			if handled := i.writeLinkDownResponse(ctx, maxTokens, tokenBytes, kvTransferMetaData, requestId, hasMaxTokens, hasTools, j); handled {
+				return
+			}
+		}
+		if i.shouldHang(requestId) {
+			i.hangingWithRequestId(requestId)
+		}
+		i.sleepAndObserveTokenLatency(j)
+
+		isLastToken := j == maxTokens-1
+		responseBytes, err := tokenBytes(ctx.Request.Header.Get("X-Request-Id"), j, nil, isLastToken, hasMaxTokens, hasTools)
+		if err != nil {
+			fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		_, err = ctx.Writer.Write(responseBytes)
+		if err != nil {
+			fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.Writer.Flush()
+	}
+
+	// Update monitoring metrics
+	if maxTokens == 0 || maxTokens == 1 {
+		i.Collector.TimeToFirstTime.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
+		i.Collector.End2EndTime.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
+	} else {
+		i.Collector.TimePerOutputToken.WithLabelValues(Model).Observe(float64(i.TPOT) / 1000.0)
+		totalTime := i.TTFT + i.TPOT*(uint(maxTokens)-1)
+		i.Collector.End2EndTime.WithLabelValues(Model).Observe(float64(totalTime) / 1000.0)
+	}
 }
 
 func (i *InferPara) writeErrorStreamResponse(ctx *gin.Context) {
@@ -1017,6 +1232,31 @@ func (i *InferPara) writeErrorStreamResponse(ctx *gin.Context) {
 	}
 	writeSSEData(ctx, bytes)
 	writeSSEDone(ctx)
+}
+
+// writeAnthropicErrorStreamResponse writes an Anthropic-format streaming error event
+func (i *InferPara) writeAnthropicErrorStreamResponse(ctx *gin.Context) {
+	errData := map[string]any{
+		"type": "error",
+		"error": map[string]any{
+			"type": "internal_error",
+			"message": fmt.Sprintf("mock error happened in instance [%s:%s] with code %v",
+				i.Addr, i.Port, i.ErrorCode),
+		},
+	}
+	bytes, err := buildSSEEvent("error", errData)
+	if err != nil {
+		fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusInternalServerError, err)
+		return
+	}
+	_, err = ctx.Writer.Write(bytes)
+	if err != nil {
+		fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusInternalServerError, err)
+		return
+	}
+	ctx.Writer.Flush()
 }
 
 func (i *InferPara) sleepAndObserveTokenLatency(j int) {
@@ -1058,6 +1298,9 @@ func (i *InferPara) writeLinkDownResponse(ctx *gin.Context, maxTokens int, token
 			}
 			ctx.Writer.Flush()
 			return false
+		}
+		if i.LinkDownSleepSeconds > 0 {
+			time.Sleep(time.Duration(i.LinkDownSleepSeconds) * time.Second)
 		}
 		switch i.LinkDownVersion {
 		case LinkDownVersionOmni:
@@ -1237,12 +1480,13 @@ func (i *InferPara) LinkDownHandler(ctx *gin.Context) {
 	if linkDownBody.TokenBeforeError > 0 {
 		i.LinkDownTokenBeforeError = linkDownBody.TokenBeforeError
 	}
+	i.LinkDownSleepSeconds = linkDownBody.SleepSeconds
 	for _, metaData := range linkDownBody.MetaDataList {
 		key := fmt.Sprintf("%s:%s", metaData.Address, metaData.Port)
 		i.LinkDownList[key] = struct{}{}
 	}
-	logger.Log().Infof("instance %s:%s status: link -> linkdown with %+v, version=%s, token_before_error=%d",
-		i.Addr, i.Port, linkDownBody.MetaDataList, i.LinkDownVersion, i.LinkDownTokenBeforeError)
+	logger.Log().Infof("instance %s:%s status: link -> linkdown with %+v, version=%s, token_before_error=%d, sleep_seconds=%d",
+		i.Addr, i.Port, linkDownBody.MetaDataList, i.LinkDownVersion, i.LinkDownTokenBeforeError, i.LinkDownSleepSeconds)
 	ctx.JSON(200, fmt.Sprintf("instance %s:%s status: link -> linkdown", i.Addr, i.Port))
 }
 
@@ -1251,6 +1495,7 @@ func (i *InferPara) LinkUpHandler(ctx *gin.Context) {
 	i.LinkDownList = make(map[string]struct{})
 	i.LinkDownVersion = ""
 	i.LinkDownTokenBeforeError = 0
+	i.LinkDownSleepSeconds = 0
 	logger.Log().Infof("instance %s:%s status: linkdown -> link", i.Addr, i.Port)
 	ctx.JSON(200, fmt.Sprintf("instance %s:%s status: linkdown -> link", i.Addr, i.Port))
 }
@@ -1267,7 +1512,7 @@ func (i *InferPara) UnHangErrorInstanceHandler(ctx *gin.Context) {
 	ctx.JSON(200, fmt.Sprintf("instance %s:%s status: hang -> unhang ", i.Addr, i.Port))
 }
 
-// HangSpecificRequestHandler sets specific request_id to hang
+// HangSpecificRequestHandler hangs requests with a specific request_id
 func (i *InferPara) HangSpecificRequestHandler(ctx *gin.Context) {
 	requestId := ctx.Query("request_id")
 	i.HangRequestIdsMu.Lock()
@@ -1277,7 +1522,7 @@ func (i *InferPara) HangSpecificRequestHandler(ctx *gin.Context) {
 	ctx.JSON(200, fmt.Sprintf("request %s will hang", requestId))
 }
 
-// UnHangSpecificRequestHandler releases specific request_id from hang
+// UnHangSpecificRequestHandler un-hangs requests with a specific request_id
 func (i *InferPara) UnHangSpecificRequestHandler(ctx *gin.Context) {
 	requestId := ctx.Query("request_id")
 	i.HangRequestIdsMu.Lock()
@@ -1287,7 +1532,7 @@ func (i *InferPara) UnHangSpecificRequestHandler(ctx *gin.Context) {
 	ctx.JSON(200, fmt.Sprintf("request %s will not hang", requestId))
 }
 
-// isRequestIdHanging checks if specific request_id needs to hang
+// isRequestIdHanging checks whether a specific request_id should hang
 func (i *InferPara) isRequestIdHanging(requestId string) bool {
 	i.HangRequestIdsMu.Lock()
 	defer i.HangRequestIdsMu.Unlock()
@@ -1300,7 +1545,7 @@ func (i *InferPara) isRequestIdHanging(requestId string) bool {
 	return false
 }
 
-// shouldHang checks if hang is needed (global or for specific request_id)
+// shouldHang checks whether to hang (globally or for a specific request_id)
 func (i *InferPara) shouldHang(requestId string) bool {
 	if i.IsHang {
 		return true
@@ -1324,4 +1569,216 @@ func (i *InferPara) ModelNameHandler(ctx *gin.Context) {
 		Data: datas,
 	}
 	ctx.JSON(200, modelNameBody)
+}
+
+type MockConnErrBody struct {
+	Mode  string `json:"mode"`
+	Count int    `json:"count"`
+}
+
+func (i *InferPara) MockConnErrHandler(ctx *gin.Context) {
+	var body MockConnErrBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	if body.Count <= 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be > 0"})
+		return
+	}
+	i.ConnErrMu.Lock()
+	i.ConnErrConfig = &body
+	i.ConnErrMu.Unlock()
+	logger.Log().Infof("instance %s:%s: set conn err mode=%s count=%d", i.Addr, i.Port, body.Mode, body.Count)
+	ctx.JSON(200, fmt.Sprintf("instance %s:%s: conn err mode=%s count=%d", i.Addr, i.Port, body.Mode, body.Count))
+}
+
+func (i *InferPara) RemoveConnErrHandler(ctx *gin.Context) {
+	i.ConnErrMu.Lock()
+	i.ConnErrConfig = nil
+	i.ConnErrMu.Unlock()
+	logger.Log().Infof("instance %s:%s: removed conn err", i.Addr, i.Port)
+	ctx.JSON(200, fmt.Sprintf("instance %s:%s: conn err removed", i.Addr, i.Port))
+}
+
+func (i *InferPara) shouldInjectConnErr() (bool, string) {
+	i.ConnErrMu.Lock()
+	defer i.ConnErrMu.Unlock()
+	if i.ConnErrConfig == nil || i.ConnErrConfig.Count <= 0 {
+		return false, ""
+	}
+	mode := i.ConnErrConfig.Mode
+	i.ConnErrConfig.Count--
+	if i.ConnErrConfig.Count <= 0 {
+		i.ConnErrConfig = nil
+	}
+	return true, mode
+}
+
+func (i *InferPara) injectConnErr(ctx *gin.Context) bool {
+	should, mode := i.shouldInjectConnErr()
+	if !should {
+		return false
+	}
+	hj, ok := ctx.Writer.(http.Hijacker)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "cannot hijack connection"})
+		return true
+	}
+	conn, _, err := hj.Hijack()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "hijack failed"})
+		return true
+	}
+	if mode == ConnErrModeConnReset {
+		if tcpConn, ok := conn.(*net.TCPConn); ok {
+			_ = tcpConn.SetLinger(0)
+		}
+	}
+	conn.Close()
+	return true
+}
+
+func (i *InferPara) MessageInfer(ctx *gin.Context) {
+	i.dealMessagesCompletion(ctx)
+}
+
+func (i *InferPara) dealMessagesCompletion(ctx *gin.Context) {
+	bodyBytes, err := io.ReadAll(ctx.Request.Body)
+	if err != nil {
+		fmt.Printf("failed to parse req err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusBadRequest, err)
+		return
+	}
+
+	request := &anthropic.AnthropicRequest{}
+	if err = utils.SonicApi.Unmarshal(bodyBytes, request); err != nil {
+		fmt.Printf("failed to parse req err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusBadRequest, err)
+		return
+	}
+
+	requestId := ctx.Request.Header.Get("X-Request-Id")
+
+	// layerwise behavior - metaserver
+	if i.handleMetaserverRequest(ctx, request.KvTransferParams) {
+		return
+	}
+
+	if request.Stream {
+		i.handleStreamResponse(ctx, request, requestId)
+		return
+	}
+
+	i.handleNonStreamResponse(ctx, request, requestId)
+}
+
+// handleStreamResponse handles streaming responses
+func (i *InferPara) handleStreamResponse(ctx *gin.Context, request *anthropic.AnthropicRequest, requestId string) {
+	ctx.Header("Content-Type", "text/event-stream")
+	ctx.Header("Cache-Control", "no-cache")
+	ctx.Header("Transfer-Encoding", "chunked")
+	ctx.Header("X-Request-Id", ctx.Request.Header.Get("X-Request-Id"))
+	ctx.Writer.WriteHeader(http.StatusOK)
+
+	maxTokens := request.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = 4
+	}
+
+	usage := &openai.Usage{
+		PromptTokens:            2000,
+		CompletionTokens:        maxTokens,
+		TotalTokens:             2000 + maxTokens,
+		PromptTokensDetails:     &openai.PromptTokensDetails{CachedTokens: 1000},
+		CompletionTokensDetails: nil,
+	}
+
+	kvTransferMetaData := fmt.Sprintf("%s:%s", request.KvTransferParams["address"], request.KvTransferParams["port"])
+	i.writeAnthropicRes(ctx, maxTokens, i.getMessageResToken, usage, kvTransferMetaData, requestId, request.MaxTokens > 0, len(request.Tools) > 0)
+}
+
+// handleNonStreamResponse handles non-streaming responses
+func (i *InferPara) handleNonStreamResponse(ctx *gin.Context, request *anthropic.AnthropicRequest, requestId string) {
+	ctx.Writer.Header().Set("Content-Type", "application/json")
+
+	if i.IsError {
+		i.writeNonStreamErrorResponse(ctx)
+		return
+	}
+
+	if i.shouldHang(requestId) {
+		i.hangingWithRequestId(requestId)
+	}
+
+	i.writeNonStreamNormalResponse(ctx, request, requestId)
+}
+
+// writeNonStreamErrorResponse writes a non-streaming error response
+func (i *InferPara) writeNonStreamErrorResponse(ctx *gin.Context) {
+	// Anthropic error format
+	errData := map[string]any{
+		"type": "error",
+		"error": map[string]any{
+			"type": "internal_error",
+			"message": fmt.Sprintf("mock error happened in instance [%s:%s] with code %v",
+				i.Addr, i.Port, i.ErrorCode),
+		},
+	}
+	rawBytes, err := utils.SonicApi.Marshal(errData)
+	if err != nil {
+		fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusInternalServerError, err)
+		return
+	}
+	ctx.Writer.WriteHeader(i.ErrorCode)
+	_, err = ctx.Writer.Write(rawBytes)
+	ctx.Writer.Flush()
+	return
+}
+
+// writeNonStreamNormalResponse writes a non-streaming normal response
+func (i *InferPara) writeNonStreamNormalResponse(ctx *gin.Context, request *anthropic.AnthropicRequest, requestId string) {
+	maxTokens := request.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = 4
+	}
+
+	content := []anthropic.AnthropicContent{
+		{Type: anthropic.ContentTypeText, Text: Token},
+	}
+
+	anthropicResponse := anthropic.AnthropicResponse{
+		ID:           "msg_" + requestId,
+		Type:         "message",
+		Role:         "assistant",
+		Model:        Model,
+		Content:      content,
+		StopReason:   "end_turn",
+		StopSequence: nil,
+		Usage: anthropic.AnthropicUsage{
+			InputTokens:  2000,
+			OutputTokens: maxTokens,
+		},
+		KvTransferParams: map[string]any{
+			"address": i.Addr,
+			"port":    i.Port,
+		},
+	}
+
+	bytes, err := utils.SonicApi.Marshal(anthropicResponse)
+	if err != nil {
+		fmt.Printf("failed to write err = %v, context err = %v\n", err, ctx.Request.Context().Err())
+		ctx.JSON(http.StatusInternalServerError, err)
+		return
+	}
+
+	time.Sleep(time.Duration(i.TTFT) * time.Millisecond)
+	i.Collector.TimeToFirstTime.WithLabelValues(Model).Observe(float64(i.TTFT) / 1000.0)
+
+	ctx.Header("X-Request-Id", ctx.Request.Header.Get("X-Request-Id"))
+	ctx.Header(constant.HeaderContentLength, strconv.Itoa(len(bytes)))
+	ctx.Writer.WriteHeader(http.StatusOK)
+	ctx.Writer.Write(bytes)
+	ctx.Writer.Flush()
 }

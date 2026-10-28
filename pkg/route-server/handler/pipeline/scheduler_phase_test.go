@@ -247,7 +247,6 @@ func TestSchedulePhase_MemoryLeaks(t *testing.T) {
 		// Create complex context
 		ctx := &PipelineContext{
 			ClientGinCtx: c,
-			IsChat:       false,
 			RequestContext: &RequestContext{
 				ServingRequestId:  "test-req",
 				SubRequests:       sync.Map{},

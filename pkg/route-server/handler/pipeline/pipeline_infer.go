@@ -125,12 +125,18 @@ func NewPipelineInfer(instanceMgr instances.Manager, schedulerMgr scheduler.Mana
 }
 
 func (pi *PipelineInfer) CompletionsInfer(ctx *gin.Context) {
-	pipelineCtx := NewPipelineContext(ctx, false, pi)
+	pipelineCtx := NewPipelineContext(ctx, pi)
 	pi.doInfer(pipelineCtx)
 }
 
 func (pi *PipelineInfer) ChatCompletionsInfer(ctx *gin.Context) {
-	pipelineCtx := NewPipelineContext(ctx, true, pi)
+	pipelineCtx := NewPipelineContext(ctx, pi)
+	pi.doInfer(pipelineCtx)
+}
+
+// MessagesInfer handles the Anthropic /v1/messages endpoint through the pipeline.
+func (pi *PipelineInfer) MessagesInfer(ctx *gin.Context) {
+	pipelineCtx := NewPipelineContext(ctx, pi)
 	pi.doInfer(pipelineCtx)
 }
 
@@ -184,7 +190,7 @@ func (pi *PipelineInfer) TestInstance(ctx *gin.Context, path string, isChat bool
 		SkipFlags: map[string]string{},
 	}
 
-	pipelineCtx := NewPipelineContext(ctx, isChat, pi)
+	pipelineCtx := NewPipelineContext(ctx, pi)
 	pipelineCtx.RequestContext.InferMsg = inferMsg
 	pi.doInfer(pipelineCtx)
 
@@ -203,7 +209,7 @@ func (pi *PipelineInfer) TestInstance(ctx *gin.Context, path string, isChat bool
 		return false, false, inferErr
 	}
 
-	successToCheck, testSuccess = handler.IsTargetPhasePassed(targetStageName, inferErr.ErrorStage, pi.getAllStageChain())
+	successToCheck, testSuccess = handler.IsTargetPhasePassed(targetStageName, pi.getAllStageChain(), instance.FaultType, inferErr)
 	return successToCheck, testSuccess, inferErr
 }
 

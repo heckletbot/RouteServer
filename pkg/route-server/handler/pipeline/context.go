@@ -17,6 +17,7 @@
 package pipeline
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,8 +39,6 @@ import (
 )
 
 type PipelineContext struct {
-	// whether this request is chat or completion
-	IsChat      bool
 	IsLayerWise bool
 	// ClientGinCtx of client request
 	ClientGinCtx *gin.Context
@@ -121,12 +120,11 @@ func NewRequestContext(c *gin.Context) *RequestContext {
 	}
 }
 
-func NewPipelineContext(c *gin.Context, isChat bool, infer *PipelineInfer) *PipelineContext {
+func NewPipelineContext(c *gin.Context, infer *PipelineInfer) *PipelineContext {
 	if c == nil || infer == nil {
 		return nil
 	}
 	return &PipelineContext{
-		IsChat:                isChat,
 		IsLayerWise:           infer.Cfg.InferMode == constant.LayerwiseMode || infer.Cfg.InferMode == constant.LayerwiseMMMode,
 		ClientGinCtx:          c,
 		ServerCfg:             infer.Cfg,
@@ -146,7 +144,7 @@ func (ctx *PipelineContext) RequestId() string {
 			if reqCtx.ParsedRequest != nil {
 				bodyReqId = reqCtx.ParsedRequest.BodyReqId
 			}
-			reqCtx.ServingRequestId = request.GetOrGenerateRequestId(ctx.ClientGinCtx, ctx.IsChat, bodyReqId)
+			reqCtx.ServingRequestId = request.GetOrGenerateRequestId(ctx.ClientGinCtx, ctx.IsChat(), bodyReqId)
 		}
 		reqCtx.reqIdMutex.Unlock()
 	}
@@ -154,8 +152,11 @@ func (ctx *PipelineContext) RequestId() string {
 }
 
 func (ctx *PipelineContext) RequestPath() string {
-	if ctx.IsChat {
+	if ctx.IsChat() {
 		return handler.ChatCompletionsPath
+	}
+	if ctx.IsMessages() {
+		return handler.MessagesPath
 	}
 	return handler.CompletionsPath
 }
@@ -282,6 +283,27 @@ func (ctx *PipelineContext) SetFirstTokenSend() {
 
 func (ctx *PipelineContext) GetGinCtxMutex() *sync.Mutex {
 	return &ctx.RequestContext.ginCtxMutex
+}
+
+// matchesRequestPath reports whether the request URL path matches the given
+// endpoint path (allowing with or without a leading slash, for backward
+// compatibility with callers that pass either form).
+func (p *PipelineContext) matchesRequestPath(endpointPath string) bool {
+	if p.RequestContext == nil || p.RequestContext.MainGinCtx == nil {
+		return false
+	}
+	path := p.RequestContext.MainGinCtx.Request.URL.Path
+	return path == endpointPath || path == strings.TrimPrefix(endpointPath, "/")
+}
+
+// IsChat reports whether the request targets the OpenAI chat completions endpoint.
+func (p *PipelineContext) IsChat() bool {
+	return p.matchesRequestPath(handler.ChatCompletionsPath)
+}
+
+// IsMessages reports whether the request targets the Anthropic messages endpoint.
+func (p *PipelineContext) IsMessages() bool {
+	return p.matchesRequestPath(handler.MessagesPath)
 }
 
 func (ctx *PipelineContext) BlackId(instanceType string) string {

@@ -527,7 +527,7 @@ func (m *mockInstanceClient) HealthCheck() (bool, int, error) {
 	return true, 200, nil
 }
 
-func (m *mockInstanceClient) Generate(ctx context.Context, header http.Header, path string, body io.Reader, instanceId string, stage string) (*http.Response, *errs.RSError, *utils.InstanceFailureDetails) {
+func (m *mockInstanceClient) Generate(ctx context.Context, header http.Header, path string, body io.Reader, instanceId string, stage string, reqId string, isMessages bool) (*http.Response, *errs.RSError, *utils.InstanceFailureDetails) {
 	bodyBytes, _ := io.ReadAll(body)
 	call := mockCall{
 		path:     path,
@@ -606,7 +606,7 @@ func createTestPipelineContext(t *testing.T, requestBody map[string]interface{},
 	ginCtx.Request = httpReq
 
 	assert.NoError(t, err)
-	ctx := NewPipelineContext(ginCtx, false, pipelineInfer)
+	ctx := NewPipelineContext(ginCtx, pipelineInfer)
 
 	return ctx
 }

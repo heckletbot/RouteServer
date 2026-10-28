@@ -356,6 +356,8 @@ func (fcm *FailureCheckerModule) sendFakeRequestTestIsAlive(instance *client.Ins
 
 	// Track consecutive failure count
 	consecutiveFailures := 0
+	// Track the count of probes whose testSuccess was effectively false
+	testErrorCnt := 0
 	// Create ticker
 	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
 	defer ticker.Stop()
@@ -370,8 +372,11 @@ func (fcm *FailureCheckerModule) sendFakeRequestTestIsAlive(instance *client.Ins
 
 		successToCheck, testSuccess, errDetails := fcm.leaderHealthChecker.probeInferRequestModel.sendProbeInferRequestWithTimeout(
 			instance, "failure")
-		if successToCheck && testSuccess {
-			return true, fmt.Sprintf("fake request success")
+		if successToCheck {
+			if testSuccess {
+				return true, fmt.Sprintf("fake request success")
+			}
+			testErrorCnt++
 		}
 		if fcm.isInstanceInternalError(instance, errDetails) {
 			// If the detected instance returns 500 error, increment consecutiveFailures
@@ -391,6 +396,11 @@ func (fcm *FailureCheckerModule) sendFakeRequestTestIsAlive(instance *client.Ins
 	logger.Log().Warnf("instance %s fake request failed consecutive %d times on instnace", endpoint, consecutiveFailures)
 	if consecutiveFailures >= request.FailureThreshold {
 		return false, fmt.Sprintf("%d consecutive fake request failed in %d ms", consecutiveFailures, interval*attempts)
+	}
+	// If every probe's testSuccess was effective but failed, the instance is
+	// considered unavailable regardless of whether the failures were 500 errors.
+	if testErrorCnt == maxSendTime && attempts > 0 {
+		return false, fmt.Sprintf("all %d fake requests test failed", attempts)
 	}
 	return true, fmt.Sprintf("fake request failed %d times", consecutiveFailures)
 }

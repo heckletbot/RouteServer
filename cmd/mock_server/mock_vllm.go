@@ -40,6 +40,7 @@ var (
 	isHang         bool
 	isLinkDown     bool
 	isHealth       bool
+	tokenSize      int
 	enableHTTPS    bool
 	caCertFile     string
 	certFile       string
@@ -60,6 +61,7 @@ func main() {
 	flag.BoolVar(&isHang, "isHang", false, "indicates if the instance is \"hang\"(faulty status)")
 	flag.BoolVar(&isLinkDown, "isLinkDown", false, "indicates if the instance is \"link down\"(faulty status)")
 	flag.BoolVar(&isHealth, "isHealth", true, "indicates if the instance is healthy")
+	flag.IntVar(&tokenSize, "token-size", 0, "size of each token content in bytes, 0 means default short token")
 	flag.BoolVar(&enableHTTPS, "enable_https", false, "enable HTTPS server (mutually exclusive with HTTP)")
 	flag.StringVar(&caCertFile, "ca_cert", "", "CA certificate file path (required for HTTPS)")
 	flag.StringVar(&certFile, "cert", "", "server certificate file path (required for HTTPS)")
@@ -69,6 +71,7 @@ func main() {
 	infer := &server.InferPara{
 		TTFT:           ttft,
 		TPOT:           tpot,
+		TokenSize:      tokenSize,
 		IsError:        isError,
 		IsHang:         isHang,
 		IsLinkDown:     isLinkDown,
@@ -89,6 +92,7 @@ func main() {
 	engine.GET("/mock_unhealth", infer.MockUnHealth)
 	engine.POST("/v1/completions", infer.CompletionsInfer)
 	engine.POST("/v1/chat/completions", infer.ChatCompletionsInfer)
+	engine.POST("/v1/messages", infer.MessageInfer)
 	engine.GET("/metrics", infer.Collector.HandleMetricsRequest)
 	engine.POST("/metrics/update", infer.Collector.UpdateMetricsValue)
 	engine.GET("/mock_error", infer.MockErrorInstanceHandler)
@@ -101,6 +105,8 @@ func main() {
 	engine.GET("/v1/models", infer.ModelNameHandler)
 	engine.POST("/linkdown", infer.LinkDownHandler)
 	engine.GET("/linkup", infer.LinkUpHandler)
+	engine.POST("/mock_conn_err", infer.MockConnErrHandler)
+	engine.GET("/remove_conn_err", infer.RemoveConnErrHandler)
 
 	var err error
 	if enableHTTPS {

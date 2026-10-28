@@ -17,6 +17,7 @@
 package config
 
 import (
+	"infer-dp-scheduler/pkg/common/anthropic"
 	instance_metrics "infer-dp-scheduler/pkg/common/instance-metrics"
 	"infer-dp-scheduler/pkg/common/logger"
 	"infer-dp-scheduler/pkg/common/utils"
@@ -30,6 +31,7 @@ const (
 	DefaultMaxIdleConns        = 20480
 	DefaultMaxIdleConnsPerHost = 1800
 	DefaultIdleConnTimeout     = 10
+	DefaultConnectionRetry     = 3
 	TraceTypeLog               = "log"
 	TraceTypeNone              = "none"
 	TraceTypeOtel              = "otel"
@@ -92,23 +94,28 @@ type TLSCertificateConfig struct {
 	EnableMTLS  bool   `yaml:"enable-mtls"`
 }
 
+type AnthropicErrorTypeConfig struct {
+	Mappings []anthropic.ErrorMapping `yaml:"mappings"`
+}
+
 type ServerConfig struct {
-	Addr                       string                `yaml:"addr"`
-	HttpPort                   string                `yaml:"http-port"`
-	OpsPort                    string                `yaml:"ops-port"`
-	Name                       string                `yaml:"name"`
-	InferMode                  string                `yaml:"infer-mode"`
-	InferenceModuleType        string                `yaml:"inference-module-type"`
-	RateLimitCfg               *RateLimitCfg         `yaml:"rate-limit"`
-	TraceCfg                   *TraceConfig          `yaml:"trace,omitempty"`
-	V1StreamWritingEnable      bool                  `yaml:"v1-stream-writing-enabled"`
-	ResponseHeaderBlacklist    []HeaderMatchMode     `yaml:"response-header-blacklist"`
-	ClientWriteTimeoutMs       int64                 `yaml:"client-write-timeout-ms"`
-	ReWriteRequestID           bool                  `yaml:"rewrite-request-id"`
-	TLSConfig                  *TLSCertificateConfig `yaml:"tls,omitempty"`
-	OpsTLSConfig               *TLSCertificateConfig `yaml:"ops-tls,omitempty"`
-	MaxRequestBodySizeMB       int64                 `yaml:"max-request-body-size-mb"`
-	EnableOpsAPIsOnServicePort bool                  `yaml:"enable-ops-apis-on-service-port"`
+	Addr                             string                `yaml:"addr"`
+	HttpPort                         string                `yaml:"http-port"`
+	OpsPort                          string                `yaml:"ops-port"`
+	Name                             string                `yaml:"name"`
+	InferMode                        string                `yaml:"infer-mode"`
+	InferenceModuleType              string                `yaml:"inference-module-type"`
+	RateLimitCfg                     *RateLimitCfg         `yaml:"rate-limit"`
+	TraceCfg                         *TraceConfig          `yaml:"trace,omitempty"`
+	V1StreamWritingEnable            bool                  `yaml:"v1-stream-writing-enabled"`
+	ResponseHeaderBlacklist          []HeaderMatchMode     `yaml:"response-header-blacklist"`
+	ClientWriteTimeoutMs             int64                 `yaml:"client-write-timeout-ms"`
+	ReWriteRequestID                 bool                  `yaml:"rewrite-request-id"`
+	TLSConfig                        *TLSCertificateConfig `yaml:"tls,omitempty"`
+	OpsTLSConfig                     *TLSCertificateConfig `yaml:"ops-tls,omitempty"`
+	MaxRequestBodySizeMB             int64                 `yaml:"max-request-body-size-mb"`
+	EnableOpsAPIsOnServicePort       bool                  `yaml:"enable-ops-apis-on-service-port"`
+	AnthropicErrorTypeConfigFileName string                `yaml:"anthropic-error-type-config-file-name"`
 }
 
 type HttpConfig struct {
@@ -119,6 +126,7 @@ type HttpConfig struct {
 	MaxIdleConnsPerHost int                   `yaml:"max-idle-conns-per-host"`
 	IdleConnTimeout     int                   `yaml:"idle-conn-timeout"`
 	MaxConnsPerHost     int                   `yaml:"max-conns-per-host"`
+	ConnectionRetry     int                   `yaml:"connection-retry"`
 	TLSConfig           *TLSCertificateConfig `yaml:"tls,omitempty"`
 }
 
@@ -157,6 +165,7 @@ type MetricsCfg struct {
 	Enable                         bool   `yaml:"enable" default:"false"`
 	Duration                       int    `yaml:"duration" default:"60"`
 	MetricsCollectorConfigFileName string `yaml:"metrics-collector-config-file-name"`
+	FineGrainedTpot                bool   `yaml:"fine-grained-tpot" default:"false"`
 }
 
 type InstanceManagerCfg struct {
@@ -313,6 +322,7 @@ type EtcdConfig struct {
 	RetryInterval          int                   `json:"retry-interval-sec" yaml:"retry-interval-sec" default:"5"`
 	LeaseTtlSec            int                   `json:"lease-ttl-sec" yaml:"lease-ttl-sec" default:"3" validate:"min=1"`
 	LeaseRefreshIntervalMs int                   `json:"lease-refresh-interval-ms" yaml:"lease-refresh-interval-ms" default:"1000"`
+	AutoSyncIntervalSec    int                   `json:"auto-sync-interval-sec" yaml:"auto-sync-interval-sec"`
 	TLSConfig              *TLSCertificateConfig `yaml:"tls,omitempty"`
 }
 

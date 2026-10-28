@@ -29,8 +29,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"infer-dp-scheduler/cmd/route_server/server/options"
+	"infer-dp-scheduler/pkg/common/anthropic"
 	"infer-dp-scheduler/pkg/common/constant"
 	"infer-dp-scheduler/pkg/common/errs"
 	"infer-dp-scheduler/pkg/common/health"
@@ -40,17 +40,24 @@ import (
 	"infer-dp-scheduler/pkg/common/utils"
 	"infer-dp-scheduler/pkg/route-server/metrics"
 	"infer-dp-scheduler/pkg/route-server/scheduler"
+
+	"github.com/gin-gonic/gin"
 )
 
 const (
 	CompletionsPath       = "/v1/completions"
 	ChatCompletionsPath   = "/v1/chat/completions"
+	MessagesPath          = "/v1/messages"
 	ReadBufferSize        = 8 * 1024
 	DecodeRemainLineNums  = 3
 	PrefillRemainLineNums = 4
 )
 
-func IsTargetPhasePassed(targetStage string, errorStage string, stageChain []string) (testValid, testSuccess bool) {
+func IsTargetPhasePassed(targetStage string, stageChain []string, faultType string, inferErr *errs.RSError) (testValid, testSuccess bool) {
+	if inferErr == nil {
+		return true, true
+	}
+	errorStage := inferErr.ErrorStage
 	targetIndex := -1
 	errorIndex := -1
 
@@ -85,6 +92,17 @@ func IsTargetPhasePassed(targetStage string, errorStage string, stageChain []str
 		// error happens after target stage, so test is success and err should be ignored
 		testValid = true
 		testSuccess = true
+	}
+
+	// in link down, the recover will be false when probing P and 503 reported in D, mark test as failed
+	if faultType == health.LinkBlacklist && targetStage == constant.StagePrefill && errorStage == constant.StageDecode {
+		if inferErr.MaErr != nil && inferErr.MaErr.Code == errs.ServiceUnavailableErr.Code {
+			testValid = true
+			testSuccess = true
+		} else {
+			testValid = true
+			testSuccess = false
+		}
 	}
 
 	return testValid, testSuccess
@@ -154,7 +172,7 @@ func IsHeaderPrefixMatching(input string, blackHeaders map[string]bool) bool {
 }
 
 func WriteNonStreamRes(ctx *gin.Context, generateReq utils.GenerateRequest, decodeRes *http.Response,
-	tracer trace.RequestTracer, perfMetrics *PerfMetrics, decodeId string, spanName string, isLayerwise bool, firstTokenBody []byte) (*openai.Usage, *utils.InstanceFailureDetails, string) {
+	tracer trace.RequestTracer, perfMetrics *PerfMetrics, decodeId string, spanName string, isLayerwise bool, isMessages bool, firstTokenBody []byte) (*openai.Usage, *utils.InstanceFailureDetails, string) {
 	var usage *openai.Usage
 	rawBytes, err := io.ReadAll(decodeRes.Body)
 	retTime := time.Now()
@@ -170,7 +188,7 @@ func WriteNonStreamRes(ctx *gin.Context, generateReq utils.GenerateRequest, deco
 		}
 		return nil, utils.DetailsFromError(http.StatusOK, err), constant.UnKnownReason
 	}
-	nonStreamError, finishReason := utils.DetailsFromNonStreamResponse(decodeRes.StatusCode, rawBytes)
+	nonStreamError, finishReason := utils.DetailsFromNonStreamResponse(decodeRes.StatusCode, rawBytes, isMessages)
 	if nonStreamError != nil {
 		return usage, nonStreamError, finishReason
 	}
@@ -261,7 +279,37 @@ func ParseResponseBody(buf []byte) (*ResponseBody, error) {
 		logger.Log().Errorf("response json is invalid, %s", utils.AbstractLargeBytes(buf))
 		return nil, err
 	}
+	TryparseAnthropicBody(&body, buf)
 	return &body, nil
+}
+
+// TryparseAnthropicBody maps an Anthropic-format response into the OpenAI
+// ResponseBody shape (usage input/output tokens, stop_reason -> finish_reason)
+// so downstream processing can handle both protocols uniformly.
+func TryparseAnthropicBody(body *ResponseBody, buf []byte) {
+	jsonStr := string(buf)
+	if strings.Contains(jsonStr, `"input_tokens"`) {
+		var usageBody anthropic.AnthropicUsageBody
+		if err := utils.SonicApi.Unmarshal(buf, &usageBody); err == nil && usageBody.Usage != nil {
+			body.Usage = &openai.Usage{
+				PromptTokens:     usageBody.Usage.InputTokens,
+				CompletionTokens: usageBody.Usage.OutputTokens,
+				TotalTokens:      usageBody.Usage.InputTokens + usageBody.Usage.OutputTokens,
+			}
+		}
+	}
+	// Check if JSON contains Anthropic stop_reason
+	if len(body.Choices) == 0 && strings.Contains(jsonStr, `"stop_reason"`) {
+		var stopReasonBody anthropic.AnthropicStopReasonBody
+		if err := utils.SonicApi.Unmarshal(buf, &stopReasonBody); err == nil && stopReasonBody.StopReason != "" {
+			body.Choices = []*openai.ChoiceBody{{FinishReason: anthropic.MapStopReason(stopReasonBody.StopReason)}}
+		} else {
+			var deltaBody anthropic.AnthropicDeltaBody
+			if err := utils.SonicApi.Unmarshal(buf, &deltaBody); err == nil && deltaBody.Delta != nil && deltaBody.Delta.StopReason != "" {
+				body.Choices = []*openai.ChoiceBody{{FinishReason: anthropic.MapStopReason(deltaBody.Delta.StopReason)}}
+			}
+		}
+	}
 }
 
 func extractNonStreamBody(buf []byte) (*openai.Usage, string) {
@@ -275,18 +323,12 @@ func extractNonStreamBody(buf []byte) (*openai.Usage, string) {
 	} else {
 		finishReason = body.Choices[0].FinishReason
 	}
-	if body.Usage == nil {
-		logger.Log().Errorf("extract usage failed")
+	if body.Usage == nil || body.Usage.PromptTokens == 0 {
 		return nil, finishReason
 	}
-	if body.Usage.PromptTokens == 0 {
-		logger.Log().Errorf("extract usage failed")
-		return nil, finishReason
-	} else {
-		metrics.RecordPromptTokenCount(body.Usage.PromptTokens)
-		metrics.RecordOutputTotalTokenCount(body.Usage.CompletionTokens)
-		metrics.RecordTotalOutputToken(body.Usage.CompletionTokens)
-	}
+	metrics.RecordPromptTokenCount(body.Usage.PromptTokens)
+	metrics.RecordOutputTotalTokenCount(body.Usage.CompletionTokens)
+	metrics.RecordTotalOutputToken(body.Usage.CompletionTokens)
 	return body.Usage, finishReason
 }
 
@@ -307,6 +349,15 @@ func RsErrorFromResponse(stream bool, details *utils.InstanceFailureDetails, ins
 				fmt.Sprintf("connection error from backend [%s]", insId)), stage, errs.FailureTypeConnection)
 		}
 		if details.IsKVTransferErr {
+			if stream {
+				rsErr := errs.NewRSStreamError(&errs.EngineError{
+					EngineErrBody: []byte(details.ErrorMessage),
+					EngineStatus:  details.StatusCode,
+					InstanceID:    insId,
+				}, stage)
+				rsErr.FailureType = details.TypeFromDetails()
+				return rsErr
+			}
 			return errs.NewRSMaError(errs.InternalErr.BuildArgs(
 				fmt.Sprintf("kv transfer error from backend [%s]: %s", insId, details.ErrorMessage)), stage, errs.FailureTypeKVTransfer)
 		}
@@ -331,13 +382,7 @@ func WriteStreamRes(ctx *gin.Context, generateReq utils.GenerateRequest,
 	decodeId string,
 	spanName string,
 	workerEventCollector *health.WorkerEventCollector,
-	isChat bool, isLayerwise bool, firstTokenFromPrefill *atomic.Bool) (*openai.Usage, *utils.InstanceFailureDetails, string, bool) {
-	passTokenTime := 0
-	if isLayerwise {
-		passTokenTime = getLayerwisePassTokenTime(isChat, generateReq.GetMaxToken(), firstTokenFromPrefill.Load())
-	} else {
-		passTokenTime = getPassTokenTime(isChat, firstTokenFromPrefill.Load())
-	}
+	passTokenTime int, firstTokenFromPrefill *atomic.Bool) (*openai.Usage, *utils.InstanceFailureDetails, string, bool) {
 	usage := &openai.Usage{
 		PromptTokens:        0,
 		CompletionTokens:    0,
@@ -404,13 +449,7 @@ func WriteStreamRes(ctx *gin.Context, generateReq utils.GenerateRequest,
 func WriteStreamResV1(ctx *gin.Context, generateReq utils.GenerateRequest, decodeRes *http.Response,
 	tracer trace.RequestTracer, perfMetrics *PerfMetrics,
 	decodeId string, spanName string, workerEventCollector *health.WorkerEventCollector,
-	isChat bool, isLayerwise bool, firstTokenFromPrefill *atomic.Bool) (*openai.Usage, *utils.InstanceFailureDetails, string, bool) {
-	passTokenTime := 0
-	if isLayerwise {
-		passTokenTime = getLayerwisePassTokenTime(isChat, generateReq.GetMaxToken(), firstTokenFromPrefill.Load())
-	} else {
-		passTokenTime = getPassTokenTime(isChat, firstTokenFromPrefill.Load())
-	}
+	passTokenTime int, firstTokenFromPrefill *atomic.Bool) (*openai.Usage, *utils.InstanceFailureDetails, string, bool) {
 	usage := &openai.Usage{
 		PromptTokensDetails: &openai.PromptTokensDetails{},
 	}
@@ -464,7 +503,7 @@ func WriteStreamResV1(ctx *gin.Context, generateReq utils.GenerateRequest, decod
 func WritePrefillStreamRes(ctx *gin.Context, generateReq utils.GenerateRequest,
 	prefillRes *http.Response, tracer trace.RequestTracer, perfMetrics *PerfMetrics,
 	prefillId string, stage string, workerEventCollector *health.WorkerEventCollector,
-	isChat bool, isForcedReusePrefilledToken *atomic.Bool) ([]byte, *errs.RSError, *utils.InstanceFailureDetails, string) {
+	passTokenTime int, isForcedReusePrefilledToken *atomic.Bool) ([]byte, *errs.RSError, *utils.InstanceFailureDetails, string) {
 
 	buf := make([]byte, ReadBufferSize)
 	totalBuf := make([]byte, 0)
@@ -514,7 +553,7 @@ func WritePrefillStreamRes(ctx *gin.Context, generateReq utils.GenerateRequest,
 		perfMetrics.PrefillFinish = perfMetrics.FirstToken
 	}
 
-	totalBuf = truncateBuffer(totalBuf, len(totalBuf), getPassTokenTime(isChat, true))
+	totalBuf = truncateBuffer(totalBuf, len(totalBuf), passTokenTime)
 	totalBuf = RewriteRequestID(totalBuf, ctx.GetString(constant.RewriteRequestID), -1)
 	err := WriteBuffer(ctx, true, &totalBuf, len(totalBuf), nil)
 	if err != nil {
@@ -554,28 +593,22 @@ func truncateBuffer(buf []byte, endOffset int, tokenNum int) (truncatedBuf []byt
 	return truncatedBuf
 }
 
-func getLayerwisePassTokenTime(isChat bool, maxToken int32, outputTokenFromPrefill bool) int {
+// GetPassTokenTime returns how many SSE event lines to skip before writing the
+// first token. Under layerwise mode the decode side starts emitting from the
+// second token, so one fewer line is skipped unless the request outputs a
+// single token; chat requests additionally skip one more line for the role.
+func GetPassTokenTime(isChat bool, isLayerwise bool, maxToken int32, outputTokenFromPrefill bool) int {
 	if !outputTokenFromPrefill {
 		return 0
 	}
-	passTokenTime := 0
-	if maxToken == 1 {
-		passTokenTime++
+	passTokenTime := 1
+	if isLayerwise && maxToken != 1 {
+		passTokenTime--
 	}
 	if isChat {
 		passTokenTime++
 	}
 	return passTokenTime
-}
-
-func getPassTokenTime(isChat bool, outputTokenFromPrefill bool) int {
-	if !outputTokenFromPrefill {
-		return 0
-	}
-	if isChat {
-		return 2 // chatCompletion: skip first two lines (role and first token)
-	}
-	return 1 // completion: skip first line (first token)
 }
 
 func FinishPerfMetrics(perfMetrics *PerfMetrics) (firstDTokenLatencyMs, secondDTokenLatencyMs int64) {
@@ -812,6 +845,7 @@ func (ew *EventTrackingWriter) Write(p []byte) (n int, err error) {
 
 	start := 0
 	delim := []byte("\n\n")
+	dataPrefix := []byte("data:")
 	for {
 		// Find next \n\n in data[start:]
 		idx := bytes.Index(data[start:], delim)
@@ -820,6 +854,11 @@ func (ew *EventTrackingWriter) Write(p []byte) (n int, err error) {
 		}
 		// End position of complete event
 		end := start + idx + 2 // includes \n\n
+		originEvent := data[start:end]
+		// Skip to the next "data:" prefix to find the payload event.
+		if dataIdx := bytes.Index(data[start:], dataPrefix); dataIdx > 0 {
+			start += dataIdx
+		}
 		event := data[start:end]
 		shouldWriteThisEvent := true
 		if ew.linesToSkip > 0 && ew.skipped < ew.linesToSkip {
@@ -833,7 +872,7 @@ func (ew *EventTrackingWriter) Write(p []byte) (n int, err error) {
 		if shouldWriteThisEvent {
 			startWriteTime := time.Now()
 			// Write this event to client
-			_, writeErr := ew.w.Write(RewriteRequestID(event, ew.rewriteReqID, 1))
+			_, writeErr := ew.w.Write(RewriteRequestID(originEvent, ew.rewriteReqID, 1))
 			writeDone := time.Now()
 			curEventWriteDuration := writeDone.Sub(startWriteTime)
 			ew.WriteDuration += curEventWriteDuration
@@ -918,25 +957,22 @@ func (ew *EventTrackingWriter) addLastEvent(event []byte) {
 }
 
 func (ew *EventTrackingWriter) ParseAndRecordTokens() *openai.Usage {
-	if len(ew.lastEvents) < 2 { // it means that this is an error response
+	if len(ew.lastEvents) < 2 {
 		return nil
 	}
 	//lastThreeLine[0] for choice, lastThreeLine[1] for usage, lastThreeLine[2] for done in stream mode
-	body, err := ParseResponseBody(ew.extractContent(ew.lastEvents[len(ew.lastEvents)-2]))
+	buf := ew.extractContent(ew.lastEvents[len(ew.lastEvents)-2])
+	body, err := ParseResponseBody(buf)
 	if err != nil {
 		return nil
 	}
-	if body.Usage == nil {
+	if body.Usage == nil || body.Usage.PromptTokens == 0 {
 		return nil
 	}
-	if body.Usage.PromptTokens == 0 {
-		return nil
-	} else {
-		metrics.RecordPromptTokenCount(body.Usage.PromptTokens)
-		metrics.RecordOutputTotalTokenCount(body.Usage.CompletionTokens)
-		metrics.RecordTotalOutputToken(body.Usage.CompletionTokens)
-		return body.Usage
-	}
+	metrics.RecordPromptTokenCount(body.Usage.PromptTokens)
+	metrics.RecordOutputTotalTokenCount(body.Usage.CompletionTokens)
+	metrics.RecordTotalOutputToken(body.Usage.CompletionTokens)
+	return body.Usage
 }
 
 func (ew *EventTrackingWriter) extractContent(eventLine []byte) []byte {
@@ -950,14 +986,17 @@ func (ew *EventTrackingWriter) ParseFinishReason() string {
 	if len(ew.lastEvents) < 3 {
 		return constant.UnKnownReason
 	}
+	// Try lastEvents[0] first
 	body, err := ParseResponseBody(ew.extractContent(ew.lastEvents[0]))
-	if err != nil {
-		return constant.UnKnownReason
+	if err == nil && len(body.Choices) > 0 {
+		return body.Choices[0].FinishReason
 	}
-	if len(body.Choices) == 0 {
-		return constant.UnKnownReason
+	// Fallback to lastEvents[len-2]
+	body, err = ParseResponseBody(ew.extractContent(ew.lastEvents[len(ew.lastEvents)-2]))
+	if err == nil && len(body.Choices) > 0 {
+		return body.Choices[0].FinishReason
 	}
-	return body.Choices[0].FinishReason
+	return constant.UnKnownReason
 }
 
 func (ew *EventTrackingWriter) ParseAndRecordError() (*utils.InstanceFailureDetails, string, bool) {

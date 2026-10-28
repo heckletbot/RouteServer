@@ -86,6 +86,9 @@ type Metrics struct {
 }
 
 func InitMetrics(cfg *commoncfg.MetricsCfg) {
+	if cfg == nil {
+		cfg = &commoncfg.MetricsCfg{}
+	}
 	once.Do(func() {
 		metrics = &Metrics{
 			NumRunningRequests: newRunningRequestsGaugeVec(),
@@ -110,7 +113,7 @@ func InitMetrics(cfg *commoncfg.MetricsCfg) {
 			// Initialize prompt token count histogram
 			PromptTokenNum: newPromptTokenNumHistogram(),
 			// Initialize TPOT histogram
-			TimePerOutputToken: newTimePerOutputTokenHistogram(),
+			TimePerOutputToken: newTimePerOutputTokenHistogram(cfg.FineGrainedTpot),
 			// Initialize output token count histogram
 			TokensOutputPerRequest: newTokensOutputPerRequestHistogram(),
 			// Initialize healthy endpoints GaugeVec
@@ -257,11 +260,17 @@ func newPromptTokenNumHistogram() prometheus.Histogram {
 	})
 }
 
-func newTimePerOutputTokenHistogram() prometheus.Histogram {
+func newTimePerOutputTokenHistogram(fineGrained bool) prometheus.Histogram {
+	buckets := []float64{0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0, 20.0, 40.0, 80.0} // seconds/token
+	if fineGrained {
+		buckets = []float64{0.01, 0.011, 0.012, 0.013, 0.014, 0.015, 0.016, 0.017,
+			0.018, 0.019, 0.02, 0.021, 0.022, 0.023, 0.024, 0.025, 0.05, 0.075, 0.1,
+			0.15, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0, 20.0, 40.0, 80.0}
+	}
 	return promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "rs:time_per_output_token_ms",
 		Help:    "Distribution of time per output token (TPOT)",
-		Buckets: []float64{0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0, 20.0, 40.0, 80.0}, // seconds/token
+		Buckets: buckets,
 	})
 }
 
