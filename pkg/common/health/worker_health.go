@@ -229,7 +229,15 @@ func (syncer *WorkerEventSyncer) sendEventsLoop(eventCheckInterval time.Duration
 			if syncer.clusterService.IsLeader() {
 				syncer.leaderLocalMsgChannel <- req
 			} else {
-				syncer.sendEventsToLeaderAndUpdateStats(req, tmpReqList)
+				leader, _ := syncer.clusterService.GetLeader()
+				if leader == nil {
+					syncer.mu.Lock()
+					syncer.requestEvents = append(tmpReqList, syncer.requestEvents...)
+					syncer.mu.Unlock()
+					logger.Log().Debugf("skip sending WorkerEventsRequest: no leader available yet")
+				} else {
+					syncer.sendEventsToLeaderAndUpdateStats(req, tmpReqList)
+				}
 				metrics.SetEventsRemaining(len(syncer.requestEvents))
 			}
 

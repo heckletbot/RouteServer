@@ -83,6 +83,7 @@ type Manager interface {
 	HandleForceReadiness(ctx *gin.Context)
 	GetReadinessStatus(readiness map[string]int) ReadinessStatus
 	GetInstanceNum() map[string]int
+	IsInstanceAvailable(name string) bool
 }
 
 // ReadinessStatus contains detailed status information for readiness check
@@ -1476,6 +1477,7 @@ func (m *InstanceManager) SnapshotUnhealthyInstances() {
 		logger.Log().Warnf("failed snapshot unhealthy instances: %v", err)
 		return
 	}
+	m.lastSnapshotTimestamp = time.Now()
 	logger.Log().Infof("successfully snapshot unhealthy instances [%s] to cluster state", utils.MapKeysStr(m.unavailableMap))
 	m.lastSnapshotRecords = snapshotRecords
 }
@@ -1490,9 +1492,10 @@ func (m *InstanceManager) shouldSnapshotFailuresNoLock() (shouldSnapshot bool, r
 		snapshotInterval = 2 * time.Duration(m.cfg.HealthCheckConfig.RestHealthCommonConfig.Interval) * time.Millisecond
 	}
 	now := time.Now()
-	if now.Sub(m.lastSnapshotTimestamp) > snapshotInterval && len(m.unavailableMap) > 0 {
-		m.lastSnapshotTimestamp = now
-		return true, SnapshotReasonTimeRenewed
+	if now.Sub(m.lastSnapshotTimestamp) > snapshotInterval {
+		if len(m.unavailableMap) > 0 || len(m.lastSnapshotRecords) > 0 {
+			return true, SnapshotReasonTimeRenewed
+		}
 	}
 	// TODO: compare consecutive time then decide snapshot
 	return false, SnapshotReasonNoChanges
@@ -1502,6 +1505,13 @@ func (m *InstanceManager) isSnapshotFuncNil() bool {
 	m.failureSnapshotMutex.RLock()
 	defer m.failureSnapshotMutex.RUnlock()
 	return m.failureSnapshotFunc == nil
+}
+
+func (m *InstanceManager) IsInstanceAvailable(name string) bool {
+	m.routeMapMutex.RLock()
+	defer m.routeMapMutex.RUnlock()
+	_, ok := m.availableMap[name]
+	return ok
 }
 
 func (m *InstanceManager) copyHeaders(dst, src http.Header, useBlackList bool) {

@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: route-server
+  namespace: <namespace>
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: route-server-configmap-role
+  namespace: <namespace>
+rules:
+  # ConfigMap: Watch topology + persist failure snapshots.
+  # update is needed by the leader to write the failures-key.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update"]
+  # Lease: Leader election (candidate nodes create/update; all nodes get/watch).
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "watch"]
+  # Pods: list — only required when Pod List periodic reconciliation is enabled
+  # (fallback-pod-discovery-enabled: true). This is a one-shot List query (not a
+  # long-lived Watch), filtered by the apps.red.io/podgroup-name label to select
+  # Pods of this group. Omit this rule when reconciliation is disabled to keep
+  # RBAC minimal.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: route-server-configmap-binding
+  namespace: <namespace>
+subjects:
+  - kind: ServiceAccount
+    name: route-server
+roleRef:
+  kind: Role
+  name: route-server-configmap-role
+  apiGroup: rbac.authorization.k8s.io

@@ -33,6 +33,8 @@ INFER_MODULE_VERSION="pipeline"
 READINESS_CFG=""
 REUSE_PREFILLED_TOKENS="false"
 OPS_PORT=""
+ETCD_AUTO_SYNC_SECOND="10"
+CLUSTER_NAMESPACE=""
 OPS_ENABLE_HTTPS="true"
 OPS_ENABLE_MTLS="true"
 OPS_TLS_CERT_FILE=""
@@ -79,7 +81,8 @@ RS_INSTALL_DIR/<rs_name>/DistributedScheduler/log/route-server.log, must give fu
   echo "  --candidate switch to config this route-server instance to candidate, accept true or false, (default: true)"
   echo "  --etcd-endpoints endpoints for etcd, separate with comma, (e.g. localhost:2379,localhost:2480 )"
   echo "  --show-std-output show route-server process stdout and stderr, takes true if shows (default: false)"
-  echo "  --mode set the cluster mode of the route server (singleton/etcd) (default: "")"
+  echo "  --mode set the cluster mode of the route server (singleton/etcd/k8s-configmap) (default: "")"
+  echo "  --cluster-namespace namespace for cluster mode, defaults to POD_NAMESPACE env in k8s-configmap mode (default: "")"
   echo "  --infer-mode infer deploy mode (PD/PD-AM/EPD/Hybrid/Layerwise-CDCP/Layerwise-CPCD/VA-PD) (default: PD)"
   echo "  --infer-module-version infer module version(v0/pipeline) (default: pipeline)"
   echo "  --readiness-cfg readiness config, set the least number of instances for each role, separate with # (default: prefill:1#decode:1)"
@@ -285,12 +288,21 @@ while [[ $# -gt 0 ]]; do
       if [ -n "$2" ] && [[ "$2" != --* ]]; then
           MODE="$2"
           shift 2
-          if [[ "$MODE" != "singleton" && "$MODE" != "etcd" ]]; then
-              echo "Error: --mode must be either 'singleton' or 'etcd', got '$MODE'"
+          if [[ "$MODE" != "singleton" && "$MODE" != "etcd" && "$MODE" != "k8s-configmap" ]]; then
+              echo "Error: --mode must be either 'singleton', 'etcd' or 'k8s-configmap', got '$MODE'"
               exit 1
           fi
       else
           echo "Error: --mode requires a mode arg"
+          exit 1
+      fi
+      ;;
+  --cluster-namespace)
+      if [ -n "$2" ] && [[ "$2" != --* ]]; then
+          CLUSTER_NAMESPACE="$2"
+          shift 2
+      else
+          echo "Error: --cluster-namespace requires a namespace arg"
           exit 1
       fi
       ;;
@@ -804,6 +816,8 @@ chmod +x "${DEPLOY_ROOT_PATH}"/config_generator
   --infer-mode "${INFER_MODE}" \
   --infer-module-version "${INFER_MODULE_VERSION}" \
   --readiness-cfg "${READINESS_CFG}" \
+  --etcd-auto-sync-second "${ETCD_AUTO_SYNC_SECOND}" \
+  ${CLUSTER_NAMESPACE:+--cluster-namespace "${CLUSTER_NAMESPACE}"} \
   ${OPS_PORT:+--ops-port "${OPS_PORT}"} \
   --ops-enable-https "${OPS_ENABLE_HTTPS}" \
   --ops-enable-mtls "${OPS_ENABLE_MTLS}" \
@@ -828,6 +842,18 @@ chmod +x "${DEPLOY_ROOT_PATH}"/config_generator
   --etcd-ca-cert-file "${ETCD_CA_CERT_FILE}"
 
 cp "${DEPLOY_ROOT_PATH}/prometheus-template.yaml" "${RS_PATH}/${PACKAGE_DIR}/config"
+
+# In k8s-configmap mode, copy the configmap config template alongside
+# route-server.yaml so the route-server can load it via configmap-config-file.
+if [[ "${MODE}" == "k8s-configmap" ]]; then
+  if [ -f "${DEPLOY_ROOT_PATH}/k8s-configmap.yaml" ]; then
+    cp "${DEPLOY_ROOT_PATH}/k8s-configmap.yaml" "${RS_PATH}/${PACKAGE_DIR}/config"
+    echo "copied k8s-configmap.yaml to ${RS_PATH}/${PACKAGE_DIR}/config"
+  else
+    echo "Warning: MODE is k8s-configmap but k8s-configmap.yaml not found in deploy dir, \
+route-server will fail to start unless the file is provided manually"
+  fi
+fi
 
 export ENV_ROUTE_SERVER_CONFIG_PATH="${RS_PATH}/${PACKAGE_DIR}/config"
 

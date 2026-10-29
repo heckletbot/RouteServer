@@ -1,0 +1,93 @@
+# k8s-configmap.yaml — ConfigMap cluster service configuration.
+#
+# This file is copied alongside route-server.yaml into the RouteServer config
+# directory. It is referenced by the `configmap-config-file` field in
+# route-server.yaml's cluster section.
+#
+# Deployment outline: create the topology ConfigMap first, deploy the RBAC
+# resources from deploy/k8s-configmap/rbac.yaml, then start RouteServer with
+# cluster.type=k8s-configmap.
+
+# kubeconfig-path: leave empty to use in-cluster config (recommended when running
+# as a Pod). Set to an absolute path to use an explicit kubeconfig file.
+kubeconfig-path: ""
+
+# namespace: K8s namespace of the ConfigMap and Lease objects. Defaults to
+# POD_NAMESPACE env, then /var/run/secrets/.../namespace, then "default".
+namespace: <namespace>
+
+# configmap-name: name of the ConfigMap that holds the topology JSON and the
+# failures JSON. Must be created before RouteServer starts.
+configmap-name: <configmap-name>
+
+# topology-key: ConfigMap data key holding the rank_table.json content.
+topology-key: "podgroup-topology"
+
+# failures-key: ConfigMap data key holding the serialized failure snapshot.
+# Leave empty to disable failure persistence (not recommended for production).
+failures-key: "failures"
+
+owner-reference:
+  api-version: "apps.red.io/v1alpha1"
+  kind: "PodGroup"
+  name: <name>
+
+# instance-groups: maps topology server groups to RouteServer instance routes.
+# For each server in a group, EndpointCount routes are generated with ports
+# [StartingPort, StartingPort+EndpointCount-1]. The router group type (see
+# router-group-type below, default "master") is reserved for peers and must
+# not appear here.
+instance-groups:
+  - group-type: prefill
+    starting-port: 17000
+    endpoint-count: 2
+  - group-type: decode
+    starting-port: 18000
+    endpoint-count: 2
+
+# router-group-type: topology group_type value identifying RouteServer (Router)
+# peers. Servers in this group become Peers (not Instances). Default "master".
+# Change if your rank_table.json uses a different value (e.g. "router").
+router-group-type: "master"
+
+# leader-election-key: name of the Lease object used for leader election.
+# Must be unique within the namespace.
+leader-election-key: "rs-leader-election"
+
+# leader-election-*: client-go leader election parameters. Defaults are shorter
+# than the CRD mode (15s vs 30s) because ConfigMap-mode recovery reads a single
+# ConfigMap key rather than listing CRD status objects. Increase lease-duration
+# to 30s in unstable networks.
+leader-election-lease-duration-sec: 15
+leader-election-renew-deadline-sec: 10
+leader-election-retry-period-sec: 2
+
+# min-failure-persist-interval-sec: throttles ConfigMap writes during failure
+# storms. The health-check interval is typically 10s and snapshot interval 20s,
+# so 3s covers normal operation.
+min-failure-persist-interval-sec: 3
+
+# --- Pod List periodic reconciliation (optional, disabled by default) ---
+# The ConfigMap topology may stay unchanged for a long time during steady state
+# (no change means no update, which is expected). The leader periodically lists
+# Pods to reconcile: every fallback-pod-list-interval-sec seconds it checks
+# whether the ConfigMap was updated within that interval; if not, it lists Pods,
+# rebuilds the topology and updates the in-memory routes (without writing back
+# to the ConfigMap).
+# When enabled, the pods list permission must be granted in RBAC
+# (see deploy/k8s-configmap/rbac.yaml).
+fallback-pod-discovery-enabled: false
+fallback-pod-list-interval-sec: 60          # reconciliation interval (seconds); also the "no update" threshold that triggers the List
+# infer-group-name: instance isolation boundary (not a Namespace). Filters the
+# value of the apps.red.io/podgroup-name Pod label. Multiple inference instances
+# can be deployed in the same Namespace, each with a different infer-group-name.
+# Required when reconciliation is enabled. The Pod Namespace reuses `namespace` above.
+infer-group-name: <infer-group-name>
+# Pod label key configuration (optional when reconciliation is enabled; empty means defaults).
+# infer-group-label-key: Pod label key marking the inference group name (instance isolation boundary).
+#   Used together with infer-group-name to build the labelSelector when listing Pods.
+#   Default "apps.red.io/podgroup-name".
+# infer-group-role-type-label-key: Pod label key marking the group_type (e.g. master/prefill/decode).
+#   Default "apps.red.io/podgroup-role-type".
+infer-group-label-key: "apps.red.io/podgroup-name"
+infer-group-role-type-label-key: "apps.red.io/podgroup-role-type"

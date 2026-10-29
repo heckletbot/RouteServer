@@ -149,11 +149,12 @@ type RouteTable struct {
 }
 
 type Route struct {
-	Ip          string            `yaml:"ip" json:"ip"`
-	Port        int               `yaml:"port" json:"port"`
-	Role        string            `yaml:"role" json:"role"`
-	StaticInfos map[string]string `yaml:"static-infos,omitempty" json:"static-infos,omitempty"`
-	Tag         string            `yaml:"tag" json:"tag"`
+	Ip            string            `yaml:"ip" json:"ip"`
+	Port          int               `yaml:"port" json:"port"`
+	Role          string            `yaml:"role" json:"role"`
+	StaticInfos   map[string]string `yaml:"static-infos,omitempty" json:"static-infos,omitempty"`
+	Tag           string            `yaml:"tag" json:"tag"`
+	InstanceGroup string            `yaml:"instance-group,omitempty" json:"instance-group,omitempty"`
 }
 
 type MonitorCfg struct {
@@ -310,6 +311,15 @@ type ClusterConfig struct {
 	// etcd config
 	EtcdCfg *EtcdConfig `json:"etcd,omitempty" yaml:"etcd,omitempty"`
 
+	// ConfigMapConfigFile points to the k8s-configmap.yaml file. Only used when
+	// type=k8s-configmap. InitClusterConfig loads and parses this file into
+	// ConfigMapCfg at startup.
+	ConfigMapConfigFile string `json:"configmap-config-file,omitempty" yaml:"configmap-config-file,omitempty"`
+
+	// ConfigMapCfg holds the parsed k8s-configmap.yaml content. Populated by
+	// InitClusterConfig when type is k8s-configmap.
+	ConfigMapCfg *ConfigMapConfig `json:"configmap,omitempty" yaml:"configmap,omitempty"`
+
 	// EtcdHealthExpireTimeMs is the expiration time for etcd health cache; beyond this time, failure data from etcd is no longer trusted
 	// A value of 0 or negative means using the default (2 times FailureSnapshotIntervalMs, with a fallback of 40s)
 	EtcdHealthExpireTimeMs int `yaml:"etcd-health-expire-time-ms,omitempty"`
@@ -324,6 +334,105 @@ type EtcdConfig struct {
 	LeaseRefreshIntervalMs int                   `json:"lease-refresh-interval-ms" yaml:"lease-refresh-interval-ms" default:"1000"`
 	AutoSyncIntervalSec    int                   `json:"auto-sync-interval-sec" yaml:"auto-sync-interval-sec"`
 	TLSConfig              *TLSCertificateConfig `yaml:"tls,omitempty"`
+}
+
+// ConfigMapConfig is the on-disk structure of k8s-configmap.yaml. Loaded from
+// the path referenced by ClusterConfig.ConfigMapConfigFile.
+type ConfigMapConfig struct {
+	// KubeConfigPath is the kubeconfig file path. When empty, the KUBECONFIG
+	// environment variable and InClusterConfig are tried in order.
+	KubeConfigPath string `yaml:"kubeconfig-path"`
+	// Namespace is the namespace of the ConfigMap and Lease objects.
+	Namespace string `yaml:"namespace"`
+	// ConfigMapName is the name of the subscribed topology ConfigMap, created
+	// and reconciled by the management plane.
+	ConfigMapName string `yaml:"configmap-name"`
+	// TopologyKey is the ConfigMap data key holding the topology JSON.
+	TopologyKey string `yaml:"topology-key"`
+	// FailuresKey is the ConfigMap data key holding the failure snapshot JSON.
+	// When empty, failures are not persisted.
+	FailuresKey string `yaml:"failures-key"`
+	// OwnerReference configures the owner of the rs-status ConfigMap.
+	// When all three fields are set, RS creates the rs-status ConfigMap itself
+	// and sets ownerReferences; otherwise it falls back to the previous behavior
+	// of writing failures into the topology ConfigMap.
+	OwnerReference *OwnerReferenceConfig `yaml:"owner-reference"`
+	// InstanceGroups is the list of route generation parameters per instance group.
+	InstanceGroups []InstanceGroupConfig `yaml:"instance-groups"`
+	// RouterGroupType is the group_type value in the topology that represents
+	// the RouteServer (Router) role. Servers of this group_type produce Peers
+	// instead of Instances. Defaults to "master". Shared by both the ConfigMap
+	// watch path and the Pod List reconciliation path.
+	RouterGroupType string `yaml:"router-group-type"`
+	// LeaderElectionKey is the name of the Lease used for leader election.
+	LeaderElectionKey string `yaml:"leader-election-key"`
+	// LeaderElectionLeaseDurationSec is the leader election lease duration in seconds.
+	LeaderElectionLeaseDurationSec int `yaml:"leader-election-lease-duration-sec"`
+	// LeaderElectionRenewDeadlineSec is the leader election renew deadline in seconds.
+	LeaderElectionRenewDeadlineSec int `yaml:"leader-election-renew-deadline-sec"`
+	// LeaderElectionRetryPeriodSec is the leader election retry period in seconds.
+	LeaderElectionRetryPeriodSec int `yaml:"leader-election-retry-period-sec"`
+	// MinFailurePersistIntervalSec is the minimum interval in seconds between
+	// failure snapshot writes to the ConfigMap. Defaults to 3.
+	MinFailurePersistIntervalSec int `yaml:"min-failure-persist-interval-sec"`
+
+	// --- Pod List periodic reconciliation (optional, disabled by default) ---
+	// The leader periodically lists Pods to reconcile: if the ConfigMap was not
+	// updated within the reconciliation interval, it lists Pods, rebuilds the
+	// topology and updates the in-memory routes (without writing the ConfigMap).
+
+	// FallbackPodDiscoveryEnabled enables Pod List periodic reconciliation.
+	FallbackPodDiscoveryEnabled bool `yaml:"fallback-pod-discovery-enabled"`
+	// FallbackPodListIntervalSec is the reconciliation interval in seconds,
+	// default 60. It is also the "no update" threshold that triggers the List:
+	// the ticker fires every interval, and if the last ConfigMap topology update
+	// is older than this, a Pod List is performed.
+	FallbackPodListIntervalSec int `yaml:"fallback-pod-list-interval-sec"`
+	// InferGroupName is the inference group name used to filter the
+	// apps.red.io/podgroup-name Pod label value. It is an instance isolation
+	// boundary (not a Namespace): multiple instances may coexist in the same
+	// Namespace, each with a different InferGroupName. Required when
+	// reconciliation is enabled.
+	InferGroupName string `yaml:"infer-group-name"`
+	// InferGroupRoleTypeLabelKey is the Pod label key marking the group_type
+	// (e.g. master/prefill/decode). Used only by the Pod List reconciliation
+	// path (the ConfigMap watch path does not need it since the JSON already
+	// carries group_type). Defaults to "apps.red.io/podgroup-role-type".
+	InferGroupRoleTypeLabelKey string `yaml:"infer-group-role-type-label-key"`
+	// InferGroupLabelKey is the Pod label key marking the inference group name
+	// (instance isolation boundary). Together with InferGroupName it builds the
+	// labelSelector when listing Pods. Used only by the reconciliation path.
+	// Defaults to "apps.red.io/podgroup-name".
+	InferGroupLabelKey string `yaml:"infer-group-label-key"`
+}
+
+// InstanceGroupConfig maps a topology group_type to route generation parameters.
+type InstanceGroupConfig struct {
+	// GroupType corresponds to server_group_list[].group_type in the topology.
+	GroupType string `yaml:"group-type"`
+	// StartingPort is the starting port of each server under this group_type.
+	StartingPort int `yaml:"starting-port"`
+	// EndpointCount is the number of endpoints generated per server.
+	EndpointCount int `yaml:"endpoint-count"`
+}
+
+// OwnerReferenceConfig defines the owner resource for the rs-status ConfigMap.
+// When all three fields are set, RS creates an independent rs-status ConfigMap
+// with ownerReferences pointing to the configured resource. The uid is resolved
+// at runtime via API Server Get, so it does not need to be configured.
+type OwnerReferenceConfig struct {
+	// APIVersion is the API version of the owner resource (e.g. "apps.red.io/v1alpha1").
+	APIVersion string `yaml:"api-version"`
+	// Kind is the kind of the owner resource (e.g. "PodGroup").
+	Kind string `yaml:"kind"`
+	// Name is the name of the owner resource.
+	Name string `yaml:"name"`
+}
+
+// IsConfigured returns true when all three fields are non-empty, indicating
+// that RS should create a dedicated rs-status ConfigMap.
+func (o *OwnerReferenceConfig) IsConfigured() bool {
+	return o != nil && o.APIVersion != "" && o.Kind != "" && o.Name != ""
 }
 
 type SeedInfo struct {

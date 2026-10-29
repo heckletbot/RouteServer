@@ -19,12 +19,16 @@ package cluster
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	commonCfg "infer-dp-scheduler/pkg/common/config"
 	"infer-dp-scheduler/pkg/common/logger"
 	"infer-dp-scheduler/pkg/common/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/goccy/go-yaml"
 )
 
 const (
@@ -33,6 +37,7 @@ const (
 	DefaultLeaseRefreshIntervalMS = 1000
 	DefaultLeaseTtlSec            = 3
 	DefaultTransportTimeout       = 10000
+	LeaderElectionKey             = "rs-leader-election"
 )
 
 func ParsePeerReq(ctx *gin.Context) (*utils.Peer, error) {
@@ -73,8 +78,117 @@ func InitClusterConfig(cfg *commonCfg.Config) error {
 		applyDefaultEtcdCfg(clusterCfg.EtcdCfg)
 		applyDefaultEtcdHealthExpireTimeMs(clusterCfg, cfg.InstanceManagerCfg.HealthCheckConfig)
 		return checkEtcdCfg(clusterCfg.EtcdCfg)
+	case TypeK8sConfigMap:
+		cmCfg, err := loadConfigMapConfig(clusterCfg.ConfigMapConfigFile)
+		if err != nil {
+			return fmt.Errorf("failed to load configmap config: %v", err)
+		}
+		applyDefaultConfigMapCfg(cmCfg)
+		if err := checkConfigMapCfg(cmCfg); err != nil {
+			return err
+		}
+		clusterCfg.ConfigMapCfg = cmCfg
 	default:
 		logger.Log().Warnf("unsupported cluster service type[%v]", clusterCfg.ClusterServiceType)
+	}
+	return nil
+}
+
+// loadConfigMapConfig reads and parses the k8s-configmap.yaml file referenced
+// by ClusterConfig.ConfigMapConfigFile. The path may be absolute or relative.
+// Relative paths are resolved against ENV_ROUTE_SERVER_CONFIG_PATH (the same
+// directory route-server.yaml lives in), falling back to the process working
+// directory if that env is unset.
+func loadConfigMapConfig(configFile string) (*commonCfg.ConfigMapConfig, error) {
+	if strings.TrimSpace(configFile) == "" {
+		return nil, fmt.Errorf("configmap-config-file is required when type is [k8s-configmap]")
+	}
+	resolved := configFile
+	if !filepath.IsAbs(configFile) {
+		if base := os.Getenv("ENV_ROUTE_SERVER_CONFIG_PATH"); base != "" {
+			resolved = filepath.Join(base, configFile)
+		}
+	}
+	data, err := os.ReadFile(resolved)
+	if err != nil {
+		// Fall back to the literal path so the error message matches the config.
+		return nil, fmt.Errorf("failed to read configmap config file %s: %v", configFile, err)
+	}
+	var cmCfg commonCfg.ConfigMapConfig
+	if err := yaml.Unmarshal(data, &cmCfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal configmap config file %s: %v", configFile, err)
+	}
+	return &cmCfg, nil
+}
+
+func applyDefaultConfigMapCfg(cfg *commonCfg.ConfigMapConfig) {
+	if cfg.LeaderElectionLeaseDurationSec <= 0 {
+		cfg.LeaderElectionLeaseDurationSec = 15
+	}
+	if cfg.LeaderElectionRenewDeadlineSec <= 0 {
+		cfg.LeaderElectionRenewDeadlineSec = 10
+	}
+	if cfg.LeaderElectionRetryPeriodSec <= 0 {
+		cfg.LeaderElectionRetryPeriodSec = 2
+	}
+	if cfg.MinFailurePersistIntervalSec <= 0 {
+		cfg.MinFailurePersistIntervalSec = 3
+	}
+	if cfg.LeaderElectionKey == "" {
+		cfg.LeaderElectionKey = LeaderElectionKey
+	}
+}
+
+func checkConfigMapCfg(cfg *commonCfg.ConfigMapConfig) error {
+	if cfg.ConfigMapName == "" {
+		return fmt.Errorf("configmap configmap-name is required")
+	}
+	if cfg.TopologyKey == "" {
+		return fmt.Errorf("configmap topology-key is required")
+	}
+	if cfg.Namespace == "" {
+		logger.Log().Infof("configmap namespace not configured, will use POD_NAMESPACE env or default")
+	}
+	if cfg.LeaderElectionLeaseDurationSec <= cfg.LeaderElectionRenewDeadlineSec {
+		return fmt.Errorf("configmap leader election lease duration (%d) must be greater than renew deadline (%d)",
+			cfg.LeaderElectionLeaseDurationSec, cfg.LeaderElectionRenewDeadlineSec)
+	}
+	if cfg.LeaderElectionRenewDeadlineSec <= cfg.LeaderElectionRetryPeriodSec {
+		return fmt.Errorf("configmap leader election renew deadline (%d) must be greater than retry period (%d)",
+			cfg.LeaderElectionRenewDeadlineSec, cfg.LeaderElectionRetryPeriodSec)
+	}
+	if cfg.MinFailurePersistIntervalSec < 0 {
+		return fmt.Errorf("configmap min-failure-persist-interval-sec must not be negative, got %d",
+			cfg.MinFailurePersistIntervalSec)
+	}
+	if cfg.OwnerReference != nil {
+		if cfg.OwnerReference.APIVersion == "" {
+			return fmt.Errorf("configmap owner-reference.api-version is required when owner-reference is configured")
+		}
+		if cfg.OwnerReference.Kind == "" {
+			return fmt.Errorf("configmap owner-reference.kind is required when owner-reference is configured")
+		}
+		if cfg.OwnerReference.Name == "" {
+			return fmt.Errorf("configmap owner-reference.name is required when owner-reference is configured")
+		}
+	}
+	for i, ig := range cfg.InstanceGroups {
+		if ig.GroupType == "" {
+			return fmt.Errorf("configmap instance-groups[%d].group-type is empty", i)
+		}
+		if ig.GroupType == "master" {
+			return fmt.Errorf("configmap instance-groups[%d].group-type must not be master (master is reserved for peers)", i)
+		}
+		if ig.EndpointCount <= 0 {
+			return fmt.Errorf("configmap instance-groups[%d].endpoint-count must be positive, got %d", i, ig.EndpointCount)
+		}
+		if ig.StartingPort <= 0 || ig.StartingPort > 65535 {
+			return fmt.Errorf("configmap instance-groups[%d].starting-port out of range [1,65535], got %d", i, ig.StartingPort)
+		}
+		if ig.StartingPort+ig.EndpointCount-1 > 65535 {
+			return fmt.Errorf("configmap instance-groups[%d] port range [%d,%d] exceeds 65535",
+				i, ig.StartingPort, ig.StartingPort+ig.EndpointCount-1)
+		}
 	}
 	return nil
 }
