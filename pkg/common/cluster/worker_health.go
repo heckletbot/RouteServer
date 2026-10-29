@@ -49,6 +49,14 @@ type WorkerHealthChecker struct {
 }
 
 func NewWorkerHealthChecker(clusterService ClusterService) *WorkerHealthChecker {
+	if options.GetConfig().ClusterCfg.ClusterServiceType == TypeK8sConfigMap {
+		logger.Log().Infof("skip WorkerHealthChecker in k8s-configmap mode, worker health is managed by K8s pod lifecycle")
+		return &WorkerHealthChecker{
+			enable:    false,
+			closed:    atomic.Bool{},
+			closeChan: make(chan struct{}),
+		}
+	}
 	if options.GetConfig().MetaCleanupCfg == nil || options.GetConfig().MetaCleanupCfg.MaxWorkerDownTimeSec <= 0 {
 		logger.Log().Warnf("route server worker checker is disabled due to negative max-workers-down-time-sec")
 		return &WorkerHealthChecker{

@@ -38,6 +38,7 @@ import (
 	http2 "infer-dp-scheduler/pkg/common/http"
 	"infer-dp-scheduler/pkg/common/logger"
 	"infer-dp-scheduler/pkg/common/utils"
+	"infer-dp-scheduler/pkg/route-server/cluster/configmap"
 	"infer-dp-scheduler/pkg/route-server/cluster/etcd"
 	"infer-dp-scheduler/pkg/route-server/cluster/singleton"
 
@@ -77,6 +78,8 @@ func newClusterService(config *config.Config, client *peer_client.PeerClient) (c
 		service = &singleton.SingletonClusterService{}
 	case cluster.TypeEtcd:
 		service = &etcd.EtcdClusterService{}
+	case cluster.TypeK8sConfigMap:
+		service = &configmap.ConfigMapClusterService{}
 	case "":
 		service = &singleton.SingletonClusterService{}
 	default:

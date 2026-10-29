@@ -2023,6 +2023,9 @@ func TestShouldSnapshotFailuresNoLock(t *testing.T) {
 	assert.True(t, should)
 	assert.Equal(t, SnapshotReasonTimeRenewed, reason)
 
+	// Manually set lastSnapshotTimestamp to now, simulating a snapshot just completed
+	m.lastSnapshotTimestamp = time.Now()
+
 	// Call again, time difference is small, should not trigger
 	should, reason = m.shouldSnapshotFailuresNoLock()
 	assert.False(t, should)
