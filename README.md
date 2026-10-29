@@ -34,15 +34,15 @@ see our [architecture docs](docs/architecture.md) and [code-base structure](docs
 make clean && make package
 ```
 
-This will produce a zip package at `output/ModelOrch-<version>-<timestamp>.zip`.
+This will produce a zip package at `output/DistributedScheduler-<version>-<timestamp>.zip`.
 
 For detailed build instructions and available Makefile targets, see the [Build Guide](docs/build.md).
 
 ### Deploy with PD Separation Example
 
-1. Navigate to the package directory:
+1. Navigate to the package directory (the `output/` directory created by `make package`):
 ```bash
-cd output/RouteServer
+cd output
 ```
 
 2. Set environment variables for your inference framework instances (OpenAI format compatible):

@@ -30,6 +30,7 @@ ETCD_ENDPOINTS=${ETCD_ENDPOINTS}
 SHOW_STD_OUTPUT="false"
 INFER_MODE="PD"
 INFER_MODULE_VERSION="pipeline"
+MODE="singleton"
 READINESS_CFG=""
 REUSE_PREFILLED_TOKENS="false"
 OPS_PORT=""
@@ -68,8 +69,8 @@ show_help() {
   echo "  --remote-scheduler-type, accept <leader> or <endpoint> or disable, defaults to be disable"
   echo "  --remote-scheduler-endpoint remote endpoint of scheduler, eg. http://x.x.x.x:xxxx . \
 will change remote-scheduler-type to endpoint if this option is set"
-  echo "  --daemon      whether running as daemon mode, if set to true, then this script will \
-wait until route-server process exists"
+  echo "  --daemon      whether to stay attached after the startup check, accept true or false. \
+if true, this script will wait until the route-server process exits"
   echo "  --collect-metrics-unique-ip whether collecting metrics from unique instance per ip. eg. true. \
 if it not set, then collecting metrics from all instances."
   echo "  --log-file-path path to route server log file, if not set, then it will use \
@@ -79,7 +80,7 @@ RS_INSTALL_DIR/<rs_name>/DistributedScheduler/log/route-server.log, must give fu
   echo "  --candidate switch to config this route-server instance to candidate, accept true or false, (default: true)"
   echo "  --etcd-endpoints endpoints for etcd, separate with comma, (e.g. localhost:2379,localhost:2480 )"
   echo "  --show-std-output show route-server process stdout and stderr, takes true if shows (default: false)"
-  echo "  --mode set the cluster mode of the route server (singleton/etcd) (default: "")"
+  echo "  --mode set the cluster mode of the route server (singleton/etcd) (default: singleton)"
   echo "  --infer-mode infer deploy mode (PD/PD-AM/EPD/Hybrid/Layerwise-CDCP/Layerwise-CPCD/VA-PD) (default: PD)"
   echo "  --infer-module-version infer module version(v0/pipeline) (default: pipeline)"
   echo "  --readiness-cfg readiness config, set the least number of instances for each role, separate with # (default: prefill:1#decode:1)"
@@ -212,6 +213,10 @@ while [[ $# -gt 0 ]]; do
         ;;
     --daemon)
         if [ -n "$2" ] && [[ "$2" != --* ]]; then
+          if [[ "$2" != "true" && "$2" != "false" ]]; then
+            echo "Error: --daemon requires a boolean arg (true/false)"
+            exit 1
+          fi
           DAEMON="$2"
           shift 2
         else
@@ -581,7 +586,8 @@ while [[ $# -gt 0 ]]; do
         ;;
     *)
       echo "Error: Unknown option '$1'"
-      show_help
+      echo "Run '$0 --help' for the full option list."
+      exit 1
       ;;
   esac
 done
@@ -864,8 +870,8 @@ if ! ps -p "${PID}" > /dev/null; then
   exit 1
 fi
 
-if [ -z "$DAEMON" ]; then
-  echo "RouteServer process is running (PID: ${PID}), --daemon is not set, exit with 0"
+if [ "$DAEMON" != "true" ]; then
+  echo "RouteServer process is running (PID: ${PID}), --daemon is not true, exit with 0"
   exit 0
 else
   echo "--daemon is on, waiting for process ${PID} to exit"

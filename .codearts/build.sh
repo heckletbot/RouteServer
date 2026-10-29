@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Called by the "Run Shell command" step of the Huawei Cloud CodeArts build task:
-#   sh .codearts/build.sh
+#   bash .codearts/build.sh
 # Available environment variables:
 #   GOARCH  Target architecture, defaults to host architecture; set to arm64 for Ascend aarch64 cross-compilation
 set -e
@@ -44,15 +44,20 @@ BUILD_TIME=$(date -u '+%Y-%m-%d_%H%M%S')
 LDFLAGS="-X 'infer-dp-scheduler/cmd/route_server/server.version=${VERSION}' -X 'infer-dp-scheduler/cmd/route_server/server.tagOrBranch=${BRANCH}' -X 'infer-dp-scheduler/cmd/route_server/server.commitId=${COMMIT}' -X 'infer-dp-scheduler/cmd/route_server/server.buildTime=${BUILD_TIME}'"
 
 echo "building route-server ${VERSION} (${BRANCH} ${COMMIT}) for linux/${TARGET_ARCH} ..."
-mkdir -p output/route-server/route-server/bin
-go build -trimpath -ldflags "${LDFLAGS}" -o output/route-server/route-server/bin/route-server ./cmd/route_server
-go build -trimpath -o output/route-server/config_generator ./cmd/config-tool
+# Layout must match `make package`: deploy assets at the archive root, runnable
+# package under DistributedScheduler/. deploy.sh locates the package by that name.
+PACKAGE_DIR=DistributedScheduler
+mkdir -p "output/${PACKAGE_DIR}/bin"
+go build -trimpath -ldflags "${LDFLAGS}" -o "output/${PACKAGE_DIR}/bin/route-server" ./cmd/route_server
+go build -trimpath -o output/config_generator ./cmd/config-tool
 
 # Assemble the deployment package
-cp deploy/deploy.sh output/route-server/
-cp deploy/*.yaml output/route-server/
-cp -r deploy/scale output/route-server/
-cp -r deploy/pipelines output/route-server/
+cp deploy/deploy.sh output/
+cp deploy/*.yaml output/
+cp -r deploy/scale output/
+cp -r deploy/pipelines output/
+printf 'Build Tag/Branch: %s\nBuild Commit ID: %s\nBuild Time: %s\n' \
+    "${BRANCH}" "${COMMIT}" "${BUILD_TIME}" > "output/${PACKAGE_DIR}/version.info"
 
 PKG="route-server-${VERSION}-${BUILD_TIME}-linux-${TARGET_ARCH}.tar.gz"
 tar -czf "${PKG}" -C output .
