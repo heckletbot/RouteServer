@@ -1,5 +1,7 @@
 # Build Guide
 
+[English](build.md) | [简体中文](build.zh-CN.md)
+
 This document describes how to build RouteServer from source code using the provided `Makefile`.
 
 ## Prerequisites

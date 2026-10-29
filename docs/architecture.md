@@ -1,5 +1,7 @@
 # RouteServer Architecture
 
+[English](architecture.md) | [简体中文](architecture.zh-CN.md)
+
 RouteServer is a distributed OpenAI inference orchestration frontend, designed for Large Language Model (LLM) service scenarios. It supports inference workflows across various vLLM deployment patterns. Aiming to provide distributed high-availability inference request execution workflows, it achieves efficient, scalable, and reliable inference load-balancing services through centralized request scheduling, inference engine fault awareness and isolation, and cluster state coordination.
 
 - Supports two deployment modes:
@@ -7,12 +9,12 @@ RouteServer is a distributed OpenAI inference orchestration frontend, designed f
   - **Distributed deployment**: Supports distributed request processing with horizontal scaling to prevent RouteServer from becoming an inference performance bottleneck. Through leader election, it provides centralized and unified inference request scheduling to avoid scheduling conflict performance issues caused by distributed routers scheduling independently.
 
 - Supports multiple vLLM deployment modes:
-  - [PD Hybrid](docs/orchestrations/pd-hybrid.md): Prefill and Decode stages run in the same vLLM instance.
-  - [PD Disaggregate](docs/orchestrations/pd-disaggregate.md): Prefill and Decode stages disaggregated into separate vLLM instances for independent scaling.
-  - [EPD Disaggregate](docs/orchestrations/epd-disaggregate.md): Encode, Prefill, and Decode stages fully disaggregated into separate vLLM instances.
-  - [Layerwise CDCP](docs/orchestrations/layerwise-cdcp.md): vLLM PD disaggregated deployment where Prefill actively pushes prompt KV cache to Decode in a layerwise manner during prefilling. See [vllm-ascend issue](https://github.com/vllm-project/vllm-ascend/issues/4842).
+  - [PD Hybrid](orchestrations/pd-hybrid.md): Prefill and Decode stages run in the same vLLM instance.
+  - [PD Disaggregate](orchestrations/pd-disaggregate.md): Prefill and Decode stages disaggregated into separate vLLM instances for independent scaling.
+  - [EPD Disaggregate](orchestrations/epd-disaggregate.md): Encode, Prefill, and Decode stages fully disaggregated into separate vLLM instances.
+  - [Layerwise CDCP](orchestrations/layerwise-cdcp.md): vLLM PD disaggregated deployment where Prefill actively pushes prompt KV cache to Decode in a layerwise manner during prefilling. See [vllm-ascend issue](https://github.com/vllm-project/vllm-ascend/issues/4842).
 
-- Supports multiple load balancing and scheduling algorithms designed for LLM inference. See [load-balancing](docs/load-balancing.md).
+- Supports multiple load balancing and scheduling algorithms designed for LLM inference. See [load-balancing](load-balancing.md).
 
 - Multi-granularity fault detection, isolation, and automatic recovery: In both standalone and distributed systems, collects request processing information and perceives inference instance faults through mechanisms such as request error type identification, instance output token performance, and proactive probe requests, performing real-time isolation.
 
@@ -169,7 +171,7 @@ Additionally, a **request body size limiter** (`pkg/route-server/middleware/body
 
 This is the core inference workflow engine of RouteServer. It provides a **configuration-driven, DAG-based execution framework** that assembles inference workflows by declaring Phases and their dependencies in YAML configuration files.
 
-See [About Infer Pipeline](docs/orchestrations/about-infer-pipeline.md) for a detailed explanation of the pipeline framework.
+See [About Infer Pipeline](orchestrations/about-infer-pipeline.md) for a detailed explanation of the pipeline framework.
 
 ---
 

@@ -1,5 +1,7 @@
 # Scheduling Algorithms
 
+[English](load-balancing.md) | [简体中文](load-balancing.zh-CN.md)
+
 ## Overview
 
 In inference services, the scheduler is responsible for distributing incoming requests to appropriate worker instances. Under the PD disaggregation architecture, the Prefill and Decode phases each need to dispatch requests to their respective instances for execution.

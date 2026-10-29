@@ -1,5 +1,7 @@
 # Layerwise CDCP
 
+[English](layerwise-cdcp.md) | [简体中文](layerwise-cdcp.zh-CN.md)
+
 ## Deployment Mode Overview
 
 Layerwise CDCP (Client -> Decode -> Client -> Prefill, see [vllm-ascend issue](https://github.com/vllm-project/vllm-ascend/issues/4842)) is a layer-wise disaggregated deployment mode in RouteServer. In this mode, Prefill is handled by a remote compute node, and the current node only handles the Decode stage. The vLLM instance on the current node receives KV Cache from the remote prefill node in a layer-wise manner, avoiding the need for full KV Cache transfer upfront.

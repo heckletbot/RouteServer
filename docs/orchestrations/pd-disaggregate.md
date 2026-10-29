@@ -1,5 +1,7 @@
 # PD Disaggregate
 
+[English](pd-disaggregate.md) | [简体中文](pd-disaggregate.zh-CN.md)
+
 ## Deployment Mode Overview
 
 PD Disaggregate separates the Prefill and Decode stages into independent vLLM instances, allowing each to be scaled independently. In this mode, the Prefill instance processes the prompt and computes KV Cache, which is then transferred to a Decode instance for token generation.

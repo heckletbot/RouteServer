@@ -1,5 +1,7 @@
 # RouteServer API Documentation
 
+[English](restful-api.md) | [简体中文](restful-api.zh-CN.md)
+
 ## Port Description
 
 The **Listen Port** in each API description indicates which port the API listens on:
