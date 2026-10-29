@@ -1,5 +1,7 @@
 # Deployment Guide
 
+[English](deploy.md) | [简体中文](deploy.zh-CN.md)
+
 This guide describes deployment options. All deployment examples in this guide have HTTPS disabled. 
 
 For secure deployment in production environments, refer to [security reference](./security.md)

@@ -1,5 +1,7 @@
 # RouteServer Configuration Reference
 
+[English](config-spec.md) | [简体中文](config-spec.zh-CN.md)
+
 This document describes all configuration parameters for the RouteServer (`route-server.yaml`).
 
 ## Configuration Setup

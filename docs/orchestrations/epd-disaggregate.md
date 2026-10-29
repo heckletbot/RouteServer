@@ -1,5 +1,7 @@
 # EPD Disaggregate
 
+[English](epd-disaggregate.md) | [简体中文](epd-disaggregate.zh-CN.md)
+
 ## Deployment Mode Overview
 
 EPD Disaggregate fully separates the inference lifecycle into three independent roles — Encode, Prefill, and Decode — each running on dedicated vLLM instances. This is the most granular deployment mode in RouteServer, designed for multi-modal inference scenarios where visual inputs (images) need to be encoded before text generation.

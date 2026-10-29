@@ -1,5 +1,7 @@
 # RouteServer Security Hardening & TLS Deployment Guide
 
+[English](security.md) | [简体中文](security.zh-CN.md)
+
 This guide is designed to assist operations and security teams in hardening network listening interfaces, environment configurations, and external component communications for the **RouteServer** service. By properly configuring network boundaries, implementing secure environment variables, and enforcing mutual TLS (mTLS) authentication, you can eliminate the risks of cleartext data transmission and unauthorized access.
 
 ---

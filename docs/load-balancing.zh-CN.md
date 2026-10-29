@@ -1,5 +1,7 @@
 # 调度算法
 
+[English](load-balancing.md) | [简体中文](load-balancing.zh-CN.md)
+
 ## 概述
 
 推理服务中，调度器负责将到来的请求分发到合适的工作实例。在 PD 分离架构下，Prefill 和 Decode 两个阶段各自需要将请求调度到对应的实例执行。
@@ -22,9 +24,9 @@
 最基础的调度算法，按轮询顺序将请求依次分发到各实例。鲁棒性较高，适用场景广泛，但不感知实例负载状态，仅保证请求在实例间均匀分配。当请求序列长短差异大时，无法保证各实例的真实负载均衡，可能产生快慢卡效应。
 
 ![传统调度算法](imgs/rr.jpg)
-<center>Round-Robin 调度算法示意图</center>
+<center>round-robin 调度算法示意图</center>
 
-该算法无状态感知、无负载建模，实现简单、开销极低，可作为其他算法的 fallback 算法使用。
+该算法无状态感知、无负载建模，实现简单、开销极低，可作为其他算法的回退算法使用。
 
 ### 2. 调度逻辑
 
@@ -81,14 +83,14 @@ $$\text{Load} = \text{total\_len} \times \frac{\lceil \text{req\_num} / \text{ba
 
 ### 1. 原理
 
-APC（Aware Prefix Cache）算法在 least-total-load 的基础上增加了前缀缓存感知能力。当请求的 Prompt 与某实例已有的 KV Cache 存在前缀匹配时，将请求调度到该实例可复用已有缓存，减少重复计算。适用于 Prefill 侧存在多轮对话等可 KV Cache 复用的场景。
+APC（Aware Prefix Cache）算法在 least-total-load 的基础上增加了前缀缓存感知能力。当请求的 Prompt 与某实例已有的 KV Cache 存在前缀匹配时，将请求调度到该实例可复用已有缓存，减少重复计算。适用于存在 KV Cache 复用的 Prefill 侧场景，如多轮对话。
 
 **架构：** APC 由两层组成：
 
 1. **APCScheduler**：调度器层，负责负载计算、实例选择和负载增减管理。
 2. **APCManager**：全局管理器，负责缓存查找、匹配、更新和持久化，支持多调度器通过共享内存协同。
 
-**缓存匹配策略：** 当前支持 RollingHash 策略——将 Prompt 按固定大小分块（`block-size-bytes`），计算每块的滚动哈希值，通过哈希值在缓存中查找与当前 Prompt 前缀匹配的实例，返回匹配比例（`matched_ratio`）。支持 Progressive Block 策略，以更大粒度块先做粗筛，再细粒度匹配。
+**缓存匹配策略：** 当前支持 RollingHash 策略——将 Prompt 按固定大小分块（`block-size-bytes`），计算每块的滚动哈希值，通过哈希值在缓存中查找与当前 Prompt 前缀匹配的实例，返回匹配比例（`matched_ratio`）。此外还支持 Progressive Block 策略，以更大粒度块先做粗筛，再细粒度匹配。
 
 **负载建模：** 在 least-total-load 公式基础上，将请求的 Prompt Token 长度按匹配比例折减：
 
@@ -107,7 +109,7 @@ $$\text{Load} = \text{total\_len} \times \frac{\lceil \text{req\_num} / \text{ba
 
 **缓存更新：** 仅当请求在 Prefill 阶段执行成功（`RequestPrefillSuccess` 事件）后才更新 APC 缓存，确保 KV Cache 确实已存在。缓存更新操作仅由集群 Leader 节点执行。
 
-**降级机制：** 当 APC 未启用或不可用时（如 Manager 未初始化、非 Leader 节点），`DispatchRequest` 返回错误，调度器自动降级到 fallback 算法（round-robin）。
+**降级机制：** 当 APC 未启用或不可用时（如 Manager 未初始化、非 Leader 节点），`DispatchRequest` 返回错误，调度器自动降级到回退算法（round-robin）。
 
 ### 3. 配置参数
 
@@ -158,7 +160,7 @@ $$\text{Load} = \text{total\_len} \times \frac{\lceil \text{req\_num} / \text{ba
 **过载判定与惩罚：** 当某个实例出现排队或快要排队情况，则认为该实例过载/即将过载，需要减少发送请求。根据实际经验，实例过载往往发生过快，所以需要提前预判。判定实例过载的条件：
 
 ```
-WaitingQueue >= 2  或  RunningQueue >= batchsize - 1
+WaitingQueue >= 2  or  RunningQueue >= batchsize - 1
 ```
 
 过载实例在排序时施加惩罚值，使其排序靠后。
@@ -187,7 +189,7 @@ WaitingQueue >= 2  或  RunningQueue >= batchsize - 1
 
 ## 算法选择与配置
 
-调度算法通过配置文件指定，每个请求类型（InstanceRole，如 `prefill`、`decode`）可独立配置调度算法。当主调度算法失败时，系统自动降级到 fallback 算法（round-robin）。
+调度算法通过配置文件指定，每个请求类型（InstanceRole，如 `prefill`、`decode`）可独立配置调度算法。当主调度算法失败时，系统自动降级到回退算法（round-robin）。
 
 ### 配置示例
 
@@ -206,7 +208,7 @@ schedulers:
       max_num_seqs: 16
       verbose: false
 
-  # 带缓存感知的 Prefill 调度
+  # Prefill scheduling with cache awareness
   - instance-role: prefill
     scheduler-name: apc
     params:
@@ -216,7 +218,7 @@ schedulers:
 
 ### SLO 分组
 
-对于 Prefill 侧，支持 SLO（Service Level Objective）分组调度。启用后，不同 SLO 等级的请求由独立的算法实例管理，确保高优先级请求获得更优的调度资源。每个 SLO 分组均有独立的 fallback 算法。
+对于 Prefill 侧，支持 SLO（Service Level Objective）分组调度。启用后，不同 SLO 等级的请求由独立的算法实例管理，确保高优先级请求获得更优的调度资源。每个 SLO 分组均有独立的回退算法。
 
 ### 多调度器协同
 
@@ -235,4 +237,4 @@ schedulers:
 | 过载保护 | 无 | 软惩罚（公式系数） | 软惩罚（公式系数） | 硬判定 + 惩罚值 |
 | 记忆修正 | 无 | 有 | 有 | 有 |
 | 复杂度 | O(1) | O(n log n) | O(n log n) + 缓存查找 | O(n log n) |
-| fallback | - | round-robin | round-robin | round-robin |
+| 回退 | - | round-robin | round-robin | round-robin |

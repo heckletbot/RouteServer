@@ -1,5 +1,7 @@
 # Inference Instance Health
 
+[English](infer-instance-health.md) | [简体中文](infer-instance-health.zh-CN.md)
+
 RouteServer provides multi-granularity fault detection, isolation, and automatic recovery for inference engine (vLLM) instances. The health check system is orchestrated by `LeaderHealthChecker` and spans both leader and worker nodes.
 
 ---

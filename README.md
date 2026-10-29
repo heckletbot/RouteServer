@@ -1,5 +1,7 @@
 # RouteServer
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 # About
 
 RouteServer is a distributed OpenAI inference orchestration frontend, designed for Large Language Model (LLM) service scenarios. It supports inference workflows across various vLLM deployment patterns. Aims to provide distributed high-availability inference request execution workflows, it achieves efficient, scalable, and reliable inference load-balancing services through centralized request scheduling, inference engine fault awareness and isolation, and cluster state coordination.

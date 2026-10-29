@@ -1,5 +1,7 @@
 # Observability
 
+[English](observability.md) | [简体中文](observability.zh-CN.md)
+
 Observability is a cross-cutting concern that spans all layers of RouteServer with three pillars: metrics, tracing, and awareness.
 
 ---
