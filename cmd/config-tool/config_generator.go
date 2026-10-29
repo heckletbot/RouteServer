@@ -874,7 +874,7 @@ func modifyClusterConfig(cfg *config.Config) (success bool) {
 }
 
 func parseArgs() {
-	flag.StringVar(&TemplatePath, "template", "/opt/route_server/mo-deploy/route-server-template.yaml",
+	flag.StringVar(&TemplatePath, "template", "/opt/route_server/rs-deploy/route-server-template.yaml",
 		"path to template file")
 	flag.StringVar(&DeployTargetPath, "target", "/opt/route_server/",
 		"path to route_server deploy dir")

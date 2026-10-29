@@ -94,7 +94,7 @@ type EngineError struct {
 
 type MaError struct {
 	Status    int    // http status code
-	Code      string // model orch internal error code
+	Code      string // route server internal error code
 	MsgEn     string
 	MsgCn     string
 	Args      []interface{}

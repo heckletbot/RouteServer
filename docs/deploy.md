@@ -158,8 +158,8 @@ The `deploy.sh` script supports the following optional parameters:
 - **Description**: Whether this RouteServer is deployed in candidate mode
 - **Values**: `true`/`false`
 - **Usage**:
-  - Management plane MO process: set to `true`
-  - Request-handling MO worker: set to `false`
+  - Management plane RS process: set to `true`
+  - Request-handling RS worker: set to `false`
 - **Note**: Used in distributed deployment mode
 
 #### `--etcd-endpoints`
@@ -280,7 +280,7 @@ tail -f $RS_INSTALL_DIR/singleton_${HOST}_${PORT}/DistributedScheduler/log/route
 
 Cluster deployment depends on Etcd cluster. Etcd is provided by the user. This section provides only an example deployment.
 
-**Constraint**: ETCD clusters cannot be shared across multiple MO clusters, otherwise the two MO clusters will merge into one, causing P/D cross-cluster access issues.
+**Constraint**: ETCD clusters cannot be shared across multiple RS clusters, otherwise the two RS clusters will merge into one, causing P/D cross-cluster access issues.
 
 ### Prerequisites
 
@@ -296,47 +296,47 @@ Create the `start_etcd.sh` script on each node with the following content:
 #!/bin/bash
 set -euo pipefail
 
-: "${MO_ETCD_NAME:?Please set MO_ETCD_NAME (e.g.: etcd-1)}"
-: "${MO_ETCD_PEERS:?Please set MO_ETCD_PEERS (e.g.: etcd-1=x.x.x.x:32379,etcd-2=y.y.y.y:32379,etcd-3=z.z.z.z:32379)}"
+: "${RS_ETCD_NAME:?Please set RS_ETCD_NAME (e.g.: etcd-1)}"
+: "${RS_ETCD_PEERS:?Please set RS_ETCD_PEERS (e.g.: etcd-1=x.x.x.x:32379,etcd-2=y.y.y.y:32379,etcd-3=z.z.z.z:32379)}"
 
-MO_ETCD_TOKEN="${MO_ETCD_TOKEN:-etcd-cluster}"
-MO_ETCD_DATA_DIR="${MO_ETCD_DATA_DIR:-/var/lib/etcd}/${MO_ETCD_NAME}"
-MO_ETCD_LOG="${MO_ETCD_LOG:-/var/log/etcd/${MO_ETCD_NAME}.log}"
+RS_ETCD_TOKEN="${RS_ETCD_TOKEN:-etcd-cluster}"
+RS_ETCD_DATA_DIR="${RS_ETCD_DATA_DIR:-/var/lib/etcd}/${RS_ETCD_NAME}"
+RS_ETCD_LOG="${RS_ETCD_LOG:-/var/log/etcd/${RS_ETCD_NAME}.log}"
 
 ETCD_IP=$(hostname -I | awk '{print $1}')
-mkdir -p "${MO_ETCD_DATA_DIR}" "$(dirname "${MO_ETCD_LOG}")"
-chmod 700 "${MO_ETCD_DATA_DIR}" "$(dirname "${MO_ETCD_LOG}")"
+mkdir -p "${RS_ETCD_DATA_DIR}" "$(dirname "${RS_ETCD_LOG}")"
+chmod 700 "${RS_ETCD_DATA_DIR}" "$(dirname "${RS_ETCD_LOG}")"
 
 CLUSTER=""
 MY_CLIENT_PORT=""
 MY_PEER_PORT=""
-for peer in $(echo "${MO_ETCD_PEERS}" | tr ',' ' '); do
+for peer in $(echo "${RS_ETCD_PEERS}" | tr ',' ' '); do
     name="${peer%%=*}"
     addr="${peer##*=}"
     ip="${addr%%:*}"
     port="${addr##*:}"
     CLUSTER+="${name}=http://${ip}:$((port + 1)),"
-    if [[ "${name}" == "${MO_ETCD_NAME}" ]]; then
+    if [[ "${name}" == "${RS_ETCD_NAME}" ]]; then
         MY_CLIENT_PORT="${port}"
         MY_PEER_PORT=$((port + 1))
     fi
 done
 CLUSTER="${CLUSTER%,}"
 
-: "${MY_CLIENT_PORT:?node name not found in peers. check MO_ETCD_PEERS and MO_ETCD_NAME}"
+: "${MY_CLIENT_PORT:?node name not found in peers. check RS_ETCD_PEERS and RS_ETCD_NAME}"
 
-echo "Starting etcd: name=${MO_ETCD_NAME}, ip=${ETCD_IP}, client_port=${MY_CLIENT_PORT}, peer_port=${MY_PEER_PORT}"
+echo "Starting etcd: name=${RS_ETCD_NAME}, ip=${ETCD_IP}, client_port=${MY_CLIENT_PORT}, peer_port=${MY_PEER_PORT}"
 
-etcd --name "${MO_ETCD_NAME}" \
+etcd --name "${RS_ETCD_NAME}" \
     --initial-advertise-peer-urls "http://${ETCD_IP}:${MY_PEER_PORT}" \
     --listen-peer-urls "http://${ETCD_IP}:${MY_PEER_PORT}" \
     --listen-client-urls "http://${ETCD_IP}:${MY_CLIENT_PORT},http://127.0.0.1:${MY_CLIENT_PORT}" \
     --advertise-client-urls "http://${ETCD_IP}:${MY_CLIENT_PORT}" \
-    --initial-cluster-token "${MO_ETCD_TOKEN}" \
+    --initial-cluster-token "${RS_ETCD_TOKEN}" \
     --initial-cluster "${CLUSTER}" \
-    --data-dir "${MO_ETCD_DATA_DIR}" \
+    --data-dir "${RS_ETCD_DATA_DIR}" \
     --initial-cluster-state new \
-    --log-outputs="${MO_ETCD_LOG}" \
+    --log-outputs="${RS_ETCD_LOG}" \
     --logger=zap > /dev/null 2>&1
 ```
 
@@ -347,8 +347,8 @@ It is recommended to deploy 3 etcd cluster instances with anti-affinity. On each
 **Node 1** :
 ```bash
 # Node 1 x.x.x.x, etcd client port 32379, peer port is client port + 1 = 32380
-export MO_ETCD_NAME=etcd-1
-export MO_ETCD_PEERS="etcd-1=x.x.x.x:32379,etcd-2=y.y.y.y:32379,etcd-3=z.z.z.z:32379"
+export RS_ETCD_NAME=etcd-1
+export RS_ETCD_PEERS="etcd-1=x.x.x.x:32379,etcd-2=y.y.y.y:32379,etcd-3=z.z.z.z:32379"
 nohup ./start_etcd.sh &
 tail -f nohup.out # View script output
 ```
@@ -356,8 +356,8 @@ tail -f nohup.out # View script output
 **Node 2** :
 ```bash
 # Node 2, y.y.y.y, etcd client port 32379, peer port is client port + 1 = 32380
-export MO_ETCD_NAME=etcd-2
-export MO_ETCD_PEERS="etcd-1=x.x.x.x:32379,etcd-2=y.y.y.y:32379,etcd-3=z.z.z.z:32379"
+export RS_ETCD_NAME=etcd-2
+export RS_ETCD_PEERS="etcd-1=x.x.x.x:32379,etcd-2=y.y.y.y:32379,etcd-3=z.z.z.z:32379"
 nohup ./start_etcd.sh &
 tail -f nohup.out # View script output
 ```
@@ -365,8 +365,8 @@ tail -f nohup.out # View script output
 **Node 3** :
 ```bash
 # Node 3, z.z.z.z, etcd client port 32379, peer port is client port + 1 = 32380
-export MO_ETCD_NAME=etcd-3
-export MO_ETCD_PEERS="etcd-1=x.x.x.x:32379,etcd-2=y.y.y.y:32379,etcd-3=z.z.z.z:32379"
+export RS_ETCD_NAME=etcd-3
+export RS_ETCD_PEERS="etcd-1=x.x.x.x:32379,etcd-2=y.y.y.y:32379,etcd-3=z.z.z.z:32379"
 nohup ./start_etcd.sh &
 tail -f nohup.out # View script output
 ```
@@ -381,10 +381,10 @@ etcdctl endpoint status --endpoints=x.x.x.x:32379,y.y.y.y:32379,z.z.z.z:32379 --
 
 #### 4. Log Rotation for etcd 3.4.x
 
-For etcd 3.4.x, implement log rotation using the system's logrotate. Create a configuration file named `etcd` in the `/etc/logrotate.d/` directory (note: replace `${MO_ETCD_NAME}` with the actual name):
+For etcd 3.4.x, implement log rotation using the system's logrotate. Create a configuration file named `etcd` in the `/etc/logrotate.d/` directory (note: replace `${RS_ETCD_NAME}` with the actual name):
 
 ```
-/var/log/${MO_ETCD_NAME}.log {
+/var/log/${RS_ETCD_NAME}.log {
     rotate 7        # Keep the last 7 backup files
     size 100M       # logrotate checks daily; rotate if file reaches 100MB
     compress        # Compress old logs to save space

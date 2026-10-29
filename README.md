@@ -34,7 +34,7 @@ see our [architecture docs](docs/architecture.md) and [code-base structure](docs
 make clean && make package
 ```
 
-This will produce a zip package at `output/ModelOrch-<version>-<timestamp>.zip`.
+This will produce a zip package at `output/RouteServer-<version>-<timestamp>.zip`.
 
 For detailed build instructions and available Makefile targets, see the [Build Guide](docs/build.md).
 
@@ -42,7 +42,7 @@ For detailed build instructions and available Makefile targets, see the [Build G
 
 1. Navigate to the package directory:
 ```bash
-cd output/RouteServer
+cd output
 ```
 
 2. Set environment variables for your inference framework instances (OpenAI format compatible):
