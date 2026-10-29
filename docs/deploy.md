@@ -4,7 +4,7 @@ This guide describes deployment options. All deployment examples in this guide h
 
 For secure deployment in production environments, refer to [security reference](./security.md)
 
-> **Before you start**: If you are building from source, see the [Build Guide](./build.md) first to compile the project. If you have a pre-built release package (`.zip`), you can skip straight to [Installation Process](#installation-process).
+> **Before you start**: If you are building from source, see the [Build Guide](./build.md) first to compile the project. If you have a pre-built release package (`.zip` from `make package` or `.tar.gz` from the CodeArts build), you can skip straight to [Installation Process](#installation-process).
 
 ## Environment Configuration
 
@@ -31,15 +31,31 @@ Configure the inference instance interface through environment variables:
 
 ## Installation Process
 
+Both release artifacts use the same inner layout: deployment assets (`deploy.sh`, `*.yaml`,
+`config_generator`, `scale/`, `pipelines/`) at the archive root and the runnable package under
+`DistributedScheduler/`.
+
 1. **Extract the package**
    ```bash
-   unzip DistributedScheduler-*.zip
+   # zip produced by `make package`
+   unzip DistributedScheduler-*.zip -d route-server
+   # tar.gz produced by the CodeArts build task
+   tar -xzf route-server-*-linux-*.tar.gz -C route-server
    ```
 
-2. **Run the deployment script**
+2. **Run the deployment script with explicit options**
    ```bash
-   sh deploy.sh
+   cd route-server
+   bash deploy.sh --mode singleton --infer-mode PD --port 9800 --host <YOUR_IP> ...
    ```
+
+   A bare `bash deploy.sh` is **not** enough: HTTPS and mTLS default to `true` on all four
+   planes, so the script exits unless you pass certificates or explicitly disable the planes you
+   do not want to secure (see [HTTPS and mTLS](#https-and-mtls)). The complete commands for each
+   topology are in [Example Usage](#example-usage).
+
+> Use `bash`, not `sh`: the script relies on Bash constructs such as `[[ ]]` and fails under
+> `dash`, which is `/bin/sh` on most Linux distributions.
 
 ---
 
@@ -103,10 +119,13 @@ The `deploy.sh` script supports the following optional parameters:
 ### Logging and Monitoring
 
 #### `--daemon`
-- **Description**: Whether the script should run in daemon mode
-- **Values**: `true`/`false`
-- **Behavior**: When `true`, the script waits for the RouteServer process to exit before returning
-- **Default**: `false`
+- **Description**: Whether the script should stay attached after the startup check
+- **Values**: `true`/`false` (any other value is rejected)
+- **Behavior**:
+  - `true`: the script waits for the RouteServer process to exit and returns its exit code — use this when the script runs as a container entrypoint or under a supervisor
+  - `false` or omitted: the script returns `0` as soon as the startup check passes
+  - The RouteServer process itself is always started in the background by the script
+- **Default**: Not set (returns immediately)
 
 #### `--log-file-path`
 - **Description**: Specify the full path to the RouteServer log file
@@ -188,12 +207,39 @@ The `deploy.sh` script supports the following optional parameters:
 - **Options**:
   - `v0`: Basic linear scheduling
   - `pipeline`: Support for configurable scheduling
-- **Default**: `v0`
+- **Default**: `pipeline`
 
 #### `--reuse-prefilled-tokens`
 - **Description**: Enable reuse of prefilled tokens for layerwise mode
-- **Values**: `true`/`false`
-- **Default**: `false`
+- **Type**: Bare switch — takes **no value**. Presence enables it; `--reuse-prefilled-tokens true` is rejected as an unknown option
+- **Effect**: Rewrites the `prefill_*` functions in the `Layerwise-CDCP` / `Layerwise-CPCD` pipeline configs to their streaming variants
+- **Default**: Disabled (omit the flag)
+
+### HTTPS and mTLS
+
+All TLS switches default to `true`. Either provide the certificates for every plane you keep
+enabled, or explicitly disable the planes you terminate elsewhere. This is why a bare
+`bash deploy.sh` fails: the script requires a certificate pair before it generates any config.
+
+| Plane | Switches (default) | Certificate flags |
+|-------|--------------------|-------------------|
+| Main HTTP port | `--enable-https` (`true`), `--enable-mtls` (`true`) | `--tls-cert-file`, `--tls-key-file`, `--tls-ca-cert-file` |
+| Ops port | `--ops-enable-https` (`true`), `--ops-enable-mtls` (`true`) | `--ops-tls-cert-file`, `--ops-tls-key-file`, `--ops-tls-ca-cert-file` |
+| Downstream vLLM instance client | `--client-https-enable` (`true`), `--client-mtls-enable` (`true`) | `--client-cert-file`, `--client-key-file`, `--client-ca-cert-file` |
+| etcd client | `--etcd-tls-enable` (`true`), `--etcd-mtls-enable` (`true`) | `--etcd-cert-file`, `--etcd-key-file`, `--etcd-ca-cert-file` |
+
+Rules enforced by `deploy.sh`:
+
+- `<plane> https = true` requires that plane's certificate **and** key; otherwise the script exits
+  with `Error: ... required when --enable-https=true`.
+- `https = true` **and** `mtls = true` additionally require that plane's CA certificate.
+- `--tls-skip-verify` (`true`/`false`, default `false`) disables verification of the main server's
+  certificate. It is a diagnostic escape hatch only — do not use it in production.
+- Disabling HTTPS is enough to skip the certificate requirement; mTLS inherits the plane's HTTPS
+  switch and needs no separate disable for the check to pass.
+
+See the [security reference](./security.md) for encrypted private-key passphrases, mTLS examples,
+and a full hardened cluster deployment.
 
 ---
 # Example Usage
@@ -285,7 +331,7 @@ Cluster deployment depends on Etcd cluster. Etcd is provided by the user. This s
 ### Prerequisites
 
 Before deployment, ensure the following:
-- Create and enter the container (refer to section 4.1 - Prerequisites)
+- You have created and entered the container where RouteServer and etcd will run
 - Etcd binaries are available in the container
 
 #### 1. Create start_etcd.sh Script
@@ -488,7 +534,7 @@ bash deploy.sh \
 When you see fields similar to the following, the RouteServer deployment is successful.
 
 ```shell
-RouteServer process is running (PID: 18942), --daemon is not set, exit with 0
+RouteServer process is running (PID: 18942), --daemon is not true, exit with 0
 ```
 
 **Note**: In production deployment, please configure a stable ClusterIP type Service for the etcd cluster on K8S, and configure ETCD_ENDPOINTS with the etcd cluster's ClusterIP type Service domain:port
@@ -588,7 +634,7 @@ bash deploy.sh \
 When you see fields similar to the following, the RouteServer deployment is successful.
 
 ```shell
-RouteServer process is running (PID: 18942), --daemon is not set, exit with 0
+RouteServer process is running (PID: 18942), --daemon is not true, exit with 0
 ```
 
 **Note**: In production deployment, please configure a stable ClusterIP type Service for the etcd cluster on K8S, and configure ETCD_ENDPOINTS with the etcd cluster's ClusterIP type Service domain:port

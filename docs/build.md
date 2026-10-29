@@ -37,7 +37,7 @@ This single command performs the following steps:
 2. **Builds** the main server binary (`route-server`) from `cmd/route_server/`
 3. **Builds** the config generation tool (`config_generator`) from `cmd/config-tool/`
 4. **Copies** deployment scripts, YAML templates, auto-scaling scripts, and pipeline configurations into the package directory
-5. **Packages** everything into `output/route-server-<version>-<timestamp>.zip`, ready for deployment
+5. **Packages** everything into `output/DistributedScheduler-<version>-<timestamp>.zip`, ready for deployment
 
 After the build completes, you can find the deployable zip at:
 
@@ -138,8 +138,7 @@ Build Time: <timestamp>
 Package contents:
 
 ```
-<zip-root>/
-├── Dockerfile
+<package-root>/
 ├── config_generator
 ├── deploy.sh
 ├── *.yaml                              # All YAML templates from deploy/
@@ -149,6 +148,17 @@ Package contents:
     ├── bin/route-server                # Server binary
     └── version.info                    # Build metadata
 ```
+
+`deploy.sh` expects exactly this layout: it looks for the runnable package under
+`<package-root>/DistributedScheduler/` and for `config_generator`, `*.yaml`, `scale/`, and
+`pipelines/` next to itself.
+
+### CodeArts build
+
+The Huawei Cloud CodeArts build task runs [`.codearts/build.sh`](../.codearts/build.sh) and publishes
+`route-server-<version>-<timestamp>-linux-<arch>.tar.gz`. Its inner layout is identical to the
+`make package` output above (assets at the archive root, runnable package under
+`DistributedScheduler/`), so the same `deploy.sh` workflow applies after `tar -xzf`.
 
 ---
 
