@@ -84,22 +84,27 @@ visit our [Config reference](docs/config-spec.md) for developers
 
 ## Contributing
 
-We welcome contributions! Please follow these steps:
+We welcome contributions! The full guide is in [CONTRIBUTING.md](CONTRIBUTING.md) —
+中文版见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)（含分支模型、提交规范与评审流程）。
+
+The short version:
 
 1. **Fork** the repository
-2. **Create a feature branch** (`git checkout -b feature/my-feature`)
+2. **Create a topic branch** from `main` (`git checkout -b feat/my-feature`)
 3. **Make your changes** and ensure code quality:
    ```bash
-   # Format and lint your code
-   make fmt
-   make vet
-   # Run tests
-   make test
+   make lint   # go fmt + go vet
+   make test   # go test ./...
    ```
-4. **Commit your changes** with a clear commit message
-5. **Submit a Pull Request** against the main branch
+4. **Commit** with a Conventional Commits message and sign off (`git commit -s`)
+5. **Submit a Pull Request** against `main`
 
-For major changes, please open an issue first to discuss what you would like to change.
+For major changes, please open an issue first to discuss what you would like to change. Do not open pull
+requests against `intranet-sync` — it is written by a machine and changes there are overwritten.
+
+- Branch model: [docs/branching.md](docs/branching.md) · [中文](docs/branching.zh-CN.md)
+- Roles and decision making: [GOVERNANCE.md](GOVERNANCE.md) · [中文](GOVERNANCE.zh-CN.md)
+- Security reports: [SECURITY.md](SECURITY.md) · [中文](SECURITY.zh-CN.md)
 
 ## License
 
