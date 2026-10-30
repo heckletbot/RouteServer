@@ -248,6 +248,12 @@ func (cs *ConfigMapClusterService) Start() error {
 		if cs.cmCfg.InferGroupName == "" {
 			return fmt.Errorf("fallback-pod-discovery-enabled is true but infer-group-name is empty")
 		}
+		if cs.cmCfg.InferGroupLabelKey == "" {
+			return fmt.Errorf("fallback-pod-discovery-enabled is true but infer-group-label-key is empty")
+		}
+		if cs.cmCfg.InferGroupRoleTypeLabelKey == "" {
+			return fmt.Errorf("fallback-pod-discovery-enabled is true but infer-group-role-type-label-key is empty")
+		}
 		cs.reconciler = newPodListReconciler(cs, cs.kubeClient, cs.namespace, cs.cmCfg.InferGroupName,
 			cs.cmCfg.FallbackPodListIntervalSec, cs.cmCfg.InferGroupLabelKey, cs.cmCfg.InferGroupRoleTypeLabelKey)
 	}
@@ -472,10 +478,12 @@ func (cs *ConfigMapClusterService) applyTopology(topo *Topology, reason string) 
 	cs.currentTopology.Store(topo)
 
 	localHttpPort := 0
+	localOpsPort := 0
 	if cs.localNode != nil {
 		localHttpPort = cs.localNode.Addr.HttpPort
+		localOpsPort = cs.localNode.Addr.OpsPort
 	}
-	newPeers, newInstances := BuildPeersAndInstances(topo, cs.cmCfg, localHttpPort)
+	newPeers, newInstances := BuildPeersAndInstances(topo, cs.cmCfg, localHttpPort, localOpsPort)
 
 	oldPeers, oldInstances := cs.peekOldPeersAndInstances()
 	addedPeers, removedPeers := DiffPeers(oldPeers, newPeers)
@@ -823,9 +831,15 @@ func (cs *ConfigMapClusterService) resolveLeaderPeer(identity string) *utils.Pee
 	}
 	// Not in topology yet — construct a temporary peer from the identity. When
 	// the ConfigMap later catches up, the diff sees no change for this peer.
+	// OpsPort must be filled too: ops-port URIs (request_event, schedule) would
+	// otherwise resolve to port 0 and fail to connect.
+	opsPort := 0
+	if cs.localNode != nil {
+		opsPort = cs.localNode.Addr.OpsPort
+	}
 	return &utils.Peer{
 		Name: host,
-		Addr: utils.PeerAddr{Host: host, HttpPort: port},
+		Addr: utils.PeerAddr{Host: host, HttpPort: port, OpsPort: opsPort},
 	}
 }
 

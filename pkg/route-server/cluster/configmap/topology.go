@@ -58,18 +58,13 @@ type Device struct {
 }
 
 // Defaults for configurable fields. Used when the corresponding ConfigMapConfig
-// field is empty. See design §5.3 / §6.6.4.
+// field is empty.
 const (
 	// defaultRouterGroupType is the topology group_type value that identifies
 	// RouteServer (Router) peers. Servers in this group become Peers, not
-	// Instances. "master" matches the rank_table.json convention.
+	// Instances. Override with router-group-type if your topology uses a
+	// different value.
 	defaultRouterGroupType = "master"
-	// defaultInferGroupRoleTypeLabelKey is the Pod label key holding the
-	// group_type (e.g. master/prefill/decode) for Pod List reconciliation.
-	defaultInferGroupRoleTypeLabelKey = "apps.red.io/podgroup-role-type"
-	// defaultInferGroupLabelKey is the Pod label key holding the infer-group
-	// name — the instance-isolation boundary for Pod List reconciliation.
-	defaultInferGroupLabelKey = "apps.red.io/podgroup-name"
 )
 
 // effectiveRouterGroupType returns the configured RouterGroupType or the
@@ -82,22 +77,24 @@ func effectiveRouterGroupType(cfg *config.ConfigMapConfig) string {
 	return defaultRouterGroupType
 }
 
-// effectiveInferGroupRoleTypeLabelKey returns the configured label key or the
-// default when empty. Used only by the Pod List reconciliation path.
+// effectiveInferGroupRoleTypeLabelKey returns the configured label key, or an
+// empty string when unset. There is no built-in default: Pod List reconciliation
+// requires the operator to name the label their Pods carry.
 func effectiveInferGroupRoleTypeLabelKey(cfg *config.ConfigMapConfig) string {
-	if cfg != nil && cfg.InferGroupRoleTypeLabelKey != "" {
+	if cfg != nil {
 		return cfg.InferGroupRoleTypeLabelKey
 	}
-	return defaultInferGroupRoleTypeLabelKey
+	return ""
 }
 
-// effectiveInferGroupLabelKey returns the configured label key or the
-// default when empty. Used only by the Pod List reconciliation path.
+// effectiveInferGroupLabelKey returns the configured label key, or an empty
+// string when unset. There is no built-in default: Pod List reconciliation
+// requires the operator to name the label their Pods carry.
 func effectiveInferGroupLabelKey(cfg *config.ConfigMapConfig) string {
-	if cfg != nil && cfg.InferGroupLabelKey != "" {
+	if cfg != nil {
 		return cfg.InferGroupLabelKey
 	}
-	return defaultInferGroupLabelKey
+	return ""
 }
 
 // ParseTopology decodes the topology JSON payload stored in the ConfigMap
@@ -195,10 +192,12 @@ func BuildTopologyFromPods(pods []*corev1.Pod, roleTypeLabelKey string) *Topolog
 //     generates EndpointCount routes starting from StartingPort. Groups whose
 //     type is not configured in instance-groups are ignored.
 //
-// localHttpPort is the RouteServer's own http port, used as the Peer port for
-// router group servers (peers are other RouteServers, which share the same
-// http port within a deployment).
-func BuildPeersAndInstances(topo *Topology, cfg *config.ConfigMapConfig, localHttpPort int) (map[string]*utils.Peer, map[string]*config.Route) {
+// localHttpPort and localOpsPort are the RouteServer's own ports, used as the
+// Peer ports for router group servers (peers are other RouteServers, which share
+// the same ports within a deployment). localOpsPort is required for ops-port
+// URIs such as request_event and schedule.
+func BuildPeersAndInstances(topo *Topology, cfg *config.ConfigMapConfig,
+	localHttpPort, localOpsPort int) (map[string]*utils.Peer, map[string]*config.Route) {
 	peers := make(map[string]*utils.Peer)
 	instances := make(map[string]*config.Route)
 	if topo == nil {
@@ -223,6 +222,7 @@ func BuildPeersAndInstances(topo *Topology, cfg *config.ConfigMapConfig, localHt
 					Addr: utils.PeerAddr{
 						Host:     server.ServerIP,
 						HttpPort: localHttpPort,
+						OpsPort:  localOpsPort,
 					},
 					IsCandidate: true,
 				}

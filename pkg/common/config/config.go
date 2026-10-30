@@ -388,21 +388,21 @@ type ConfigMapConfig struct {
 	// the ticker fires every interval, and if the last ConfigMap topology update
 	// is older than this, a Pod List is performed.
 	FallbackPodListIntervalSec int `yaml:"fallback-pod-list-interval-sec"`
-	// InferGroupName is the inference group name used to filter the
-	// apps.red.io/podgroup-name Pod label value. It is an instance isolation
-	// boundary (not a Namespace): multiple instances may coexist in the same
-	// Namespace, each with a different InferGroupName. Required when
-	// reconciliation is enabled.
+	// InferGroupName is the inference group name used to filter the Pod label
+	// named by InferGroupLabelKey. It is an instance isolation boundary (not a
+	// Namespace): multiple instances may coexist in the same Namespace, each
+	// with a different InferGroupName. Required when reconciliation is enabled.
 	InferGroupName string `yaml:"infer-group-name"`
 	// InferGroupRoleTypeLabelKey is the Pod label key marking the group_type
 	// (e.g. master/prefill/decode). Used only by the Pod List reconciliation
 	// path (the ConfigMap watch path does not need it since the JSON already
-	// carries group_type). Defaults to "apps.red.io/podgroup-role-type".
+	// carries group_type). Required when reconciliation is enabled; there is no
+	// built-in default.
 	InferGroupRoleTypeLabelKey string `yaml:"infer-group-role-type-label-key"`
 	// InferGroupLabelKey is the Pod label key marking the inference group name
 	// (instance isolation boundary). Together with InferGroupName it builds the
 	// labelSelector when listing Pods. Used only by the reconciliation path.
-	// Defaults to "apps.red.io/podgroup-name".
+	// Required when reconciliation is enabled; there is no built-in default.
 	InferGroupLabelKey string `yaml:"infer-group-label-key"`
 }
 
@@ -421,9 +421,9 @@ type InstanceGroupConfig struct {
 // with ownerReferences pointing to the configured resource. The uid is resolved
 // at runtime via API Server Get, so it does not need to be configured.
 type OwnerReferenceConfig struct {
-	// APIVersion is the API version of the owner resource (e.g. "apps.red.io/v1alpha1").
+	// APIVersion is the API version of the owner resource (e.g. "apps/v1").
 	APIVersion string `yaml:"api-version"`
-	// Kind is the kind of the owner resource (e.g. "PodGroup").
+	// Kind is the kind of the owner resource (e.g. "Deployment").
 	Kind string `yaml:"kind"`
 	// Name is the name of the owner resource.
 	Name string `yaml:"name"`

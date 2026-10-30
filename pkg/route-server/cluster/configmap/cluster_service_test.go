@@ -365,6 +365,21 @@ func TestConfigMapClusterService_ResolveLeaderPeer_SynthesizedWhenNotInTopology(
 	assert.Equal(t, 9090, peer.Addr.HttpPort)
 }
 
+func TestConfigMapClusterService_ResolveLeaderPeer_SynthesizedCarriesOpsPort(t *testing.T) {
+	cs := &ConfigMapClusterService{
+		localNode: &utils.Peer{
+			Name: "local",
+			Addr: utils.PeerAddr{Host: "10.0.2.1", HttpPort: 8080, OpsPort: 8090},
+		},
+	}
+	cs.atomicState.Store(&cluster.ClusterState{
+		Peers: map[string]*utils.Peer{"other": {Name: "other"}},
+	})
+	peer := cs.resolveLeaderPeer("10.0.2.2:9090")
+	assert.NotNil(t, peer)
+	assert.Equal(t, 8090, peer.Addr.OpsPort)
+}
+
 func TestConfigMapClusterService_ResolveLeaderPeer_InvalidIdentity(t *testing.T) {
 	cs := &ConfigMapClusterService{}
 	peer := cs.resolveLeaderPeer("invalid")
