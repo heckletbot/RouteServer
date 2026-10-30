@@ -254,6 +254,70 @@
 }
 ```
 
+### POST /v1/messages
+
+**监听端口**：Service Port
+
+**功能**：兼容 Anthropic Messages API 的推理端点，供 Claude 兼容客户端调用。
+
+**处理者**：RouteServer 的流水线推理处理器。该路由由流水线配置注册（`handler: messages_infer`），因此仅在 pipeline 推理模式下可用（`--infer-module-version pipeline`）；旧版 v0 模式返回 `501`。
+
+**调用方**：Anthropic SDK 及其他 Claude 兼容客户端
+
+**约束/条件**：
+- RouteServer 运行在 pipeline 推理模式
+- 必须存在可用的推理实例
+- 网络连接正常
+
+**参数**：
+```json
+{
+    "model": "claude-3-sonnet",
+    "max_tokens": 1024,
+    "system": "You are a helpful assistant",
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Hello"
+                }
+            ]
+        }
+    ]
+}
+```
+
+**响应示例**：
+```json
+{
+    "id": "msg_xxxxx",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+        {
+            "type": "text",
+            "text": "Hello! How can I help you today?"
+        }
+    ],
+    "model": "claude-3-sonnet",
+    "stop_reason": "end_turn",
+    "usage": {
+        "input_tokens": 10,
+        "output_tokens": 9
+    }
+}
+```
+
+**流式**：在请求体中设置 `"stream": true`，返回 Anthropic 格式的 SSE 事件（`message_start`、`content_block_delta`、`message_stop`）。
+
+**错误码**：
+| 状态码 | 含义 |
+| --- | --- |
+| 501 | RouteServer 运行在旧版 v0 模式，端点不可用 |
+| 502 | 无可用推理实例 |
+
 ### POST /v1/metaserver
 
 **监听端口**：Service Port
