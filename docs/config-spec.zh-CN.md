@@ -83,7 +83,7 @@ server:
 | `server.name` | string | 在集群内唯一标识该 RouteServer 节点的名称 | 必须在集群内唯一；重名会覆盖既有状态，并可能导致数据不一致 |
 | `server.addr` | string | RouteServer 监听 IP 地址 | 必须是合法的 IP 地址 |
 | `server.http-port` | int | RouteServer 监听 HTTP 端口 | 必须是合法且可用的端口 |
-| `server.infer-mode` | string | 影响请求处理流程的推理部署模式 | 默认值：`PD`。取值必须为以下之一：`PD`、`PD-Stream`、`EPD`、`EPD-Stream`、`PD-AM`、`Hybrid`、`E-Hybrid`、`Layerwise-CDCP`、`Layerwise-CPCD`、`MetaServer-CDCP`、`MetaServer-CPCD`<br />详见部署文档。 |
+| `server.infer-mode` | string | 影响请求处理流程的推理部署模式 | 默认值：`PD`。取值必须为以下之一：`PD`、`EPD`、`PD-AM`、`Hybrid`、`E-Hybrid`、`Layerwise-CDCP`、`Layerwise-CPCD`、`MetaServer-CDCP`、`MetaServer-CPCD`<br />详见部署文档。 |
 | `server.inference-module-type` | string | 流水线调度模式：`v0` 为基本线性调度，`pipeline` 为可配置的流水线调度 | 默认值：`v0`。必须为 `v0` 或 `pipeline` |
 | `server.v1-stream-writing-enabled` | bool | 启用 v1 流式写入模式 | 模板默认值：`true` |
 | `server.client-write-timeout-ms` | int | 客户端写超时，单位毫秒（0 = 不超时） | 模板默认值：`0` |
@@ -97,8 +97,8 @@ server:
 | `server.response-header-blacklist[].header` | string | 从转发给客户端的响应中剥离的响应头名称 | 模板默认值：`Date`、`Server`、`X-Pad`、`X-Accel-` |
 | `server.response-header-blacklist[].prefix-matching` | bool | 是否按前缀匹配响应头名称 | 模板默认值：精确匹配的响应头为 `false`，`X-Accel-` 为 `true` |
 | `server.rate-limit.max-concurrent-requests` | int | RouteServer 可处理的最大并发活跃请求数 | 默认值：`5000`；模板默认值：`10000` |
-| `server.rate-limit.non-reference-apis.enabled` | bool | 对非参考 API 端点启用按客户端限流 | 模板默认值：`true` |
-| `server.rate-limit.non-reference-apis.requests-per-minute` | int | 非参考 API 每客户端每分钟的最大请求数 | 模板默认值：`60` |
+| `server.rate-limit.non-reference-apis.enabled` | bool | 对非参考 API 端点启用限流；令牌桶按 API 路径共享 | 模板默认值：`true` |
+| `server.rate-limit.non-reference-apis.requests-per-minute` | int | 非参考 API 每个 API 路径每分钟的最大请求数 | 模板默认值：`60` |
 | `server.rate-limit.non-reference-apis.exempt-paths` | List | 免于限流的 API 路径 | 模板默认值：`/v1/chat/completions`、`/v1/completions`、`/v1/metaserver` |
 | `server.rate-limit.non-reference-apis.cleanup-interval-minutes` | int | 清理过期限流记录的间隔 | 模板默认值：`5` |
 | `server.tls.enable-https` | bool | 为主服务端口启用 HTTPS | 模板默认值：`true` |

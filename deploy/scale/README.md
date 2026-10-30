@@ -1,5 +1,7 @@
 # Scaling Scripts
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 ## Instance Registration Script
 rs_instance_join.py is used to add new P (prefill) or D (decode) instances to router server.
 

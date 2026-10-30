@@ -254,6 +254,70 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 }
 ```
 
+### POST /v1/messages
+
+**Listen Port**: Service Port
+
+**Functionality**: Anthropic Messages API compatible inference endpoint for Claude-compatible clients.
+
+**Handler**: RouteServer's pipeline inference handler. The route is registered by the pipeline configuration (`handler: messages_infer`), so it is only available in pipeline inference mode (`--infer-module-version pipeline`); the legacy v0 mode returns `501`.
+
+**Caller**: Anthropic SDK and other Claude-compatible clients
+
+**Constraints/Conditions**:
+- RouteServer runs in pipeline inference mode
+- Must have available inference instances
+- Network connection is normal
+
+**Parameters**:
+```json
+{
+    "model": "claude-3-sonnet",
+    "max_tokens": 1024,
+    "system": "You are a helpful assistant",
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Hello"
+                }
+            ]
+        }
+    ]
+}
+```
+
+**Response Example**:
+```json
+{
+    "id": "msg_xxxxx",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+        {
+            "type": "text",
+            "text": "Hello! How can I help you today?"
+        }
+    ],
+    "model": "claude-3-sonnet",
+    "stop_reason": "end_turn",
+    "usage": {
+        "input_tokens": 10,
+        "output_tokens": 9
+    }
+}
+```
+
+**Streaming**: Add `"stream": true` to receive Anthropic SSE events (`message_start`, `content_block_delta`, `message_stop`).
+
+**Error Codes**:
+| Code | Meaning |
+| --- | --- |
+| 501 | RouteServer runs in legacy v0 mode, so the endpoint is unavailable |
+| 502 | No available inference instances |
+
 ### POST /v1/metaserver
 
 **Listen Port**: Service Port
