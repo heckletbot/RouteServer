@@ -38,8 +38,15 @@ import (
 
 // ===================== BuildTopologyFromPods =====================
 
+// Pod label keys used by the tests below. The production code has no built-in
+// default, so tests name them explicitly.
+const (
+	testRoleTypeLabelKey   = "example.com/group-type"
+	testInferGroupLabelKey = "example.com/infer-group"
+)
+
 func TestBuildTopologyFromPods_Empty(t *testing.T) {
-	topo := BuildTopologyFromPods(nil, defaultInferGroupRoleTypeLabelKey)
+	topo := BuildTopologyFromPods(nil, testRoleTypeLabelKey)
 	assert.NotNil(t, topo)
 	assert.Empty(t, topo.ServerGroupList)
 	assert.Equal(t, "0", topo.ServerGroupCount)
@@ -50,26 +57,26 @@ func TestBuildTopologyFromPods_GroupsByRoleType(t *testing.T) {
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "master-0",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "master"},
+				Labels: map[string]string{testRoleTypeLabelKey: "master"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.1"},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "prefill-0",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill"},
+				Labels: map[string]string{testRoleTypeLabelKey: "prefill"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.2"},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "decode-0",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "decode"},
+				Labels: map[string]string{testRoleTypeLabelKey: "decode"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.3"},
 		},
 	}
-	topo := BuildTopologyFromPods(pods, defaultInferGroupRoleTypeLabelKey)
+	topo := BuildTopologyFromPods(pods, testRoleTypeLabelKey)
 	assert.Equal(t, "3", topo.ServerGroupCount)
 	assert.Len(t, topo.ServerGroupList, 3)
 	// Deterministic ordering: decode, master, prefill (alphabetical by group_type)
@@ -86,26 +93,26 @@ func TestBuildTopologyFromPods_FiltersNonRunning(t *testing.T) {
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "running-pod",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill"},
+				Labels: map[string]string{testRoleTypeLabelKey: "prefill"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.1"},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "pending-pod",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill"},
+				Labels: map[string]string{testRoleTypeLabelKey: "prefill"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodPending, PodIP: "10.0.0.2"},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "failed-pod",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill"},
+				Labels: map[string]string{testRoleTypeLabelKey: "prefill"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodFailed, PodIP: "10.0.0.3"},
 		},
 	}
-	topo := BuildTopologyFromPods(pods, defaultInferGroupRoleTypeLabelKey)
+	topo := BuildTopologyFromPods(pods, testRoleTypeLabelKey)
 	assert.Len(t, topo.ServerGroupList, 1)
 	assert.Len(t, topo.ServerGroupList[0].ServerList, 1)
 	assert.Equal(t, "running-pod", topo.ServerGroupList[0].ServerList[0].PodName)
@@ -116,19 +123,19 @@ func TestBuildTopologyFromPods_FiltersEmptyPodIP(t *testing.T) {
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "no-ip-pod",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill"},
+				Labels: map[string]string{testRoleTypeLabelKey: "prefill"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: ""},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "with-ip-pod",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill"},
+				Labels: map[string]string{testRoleTypeLabelKey: "prefill"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.1"},
 		},
 	}
-	topo := BuildTopologyFromPods(pods, defaultInferGroupRoleTypeLabelKey)
+	topo := BuildTopologyFromPods(pods, testRoleTypeLabelKey)
 	assert.Len(t, topo.ServerGroupList, 1)
 	assert.Len(t, topo.ServerGroupList[0].ServerList, 1)
 	assert.Equal(t, "with-ip-pod", topo.ServerGroupList[0].ServerList[0].PodName)
@@ -146,19 +153,19 @@ func TestBuildTopologyFromPods_FiltersMissingRoleTypeLabel(t *testing.T) {
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "empty-label-pod",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": ""},
+				Labels: map[string]string{testRoleTypeLabelKey: ""},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.2"},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "labeled-pod",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "decode"},
+				Labels: map[string]string{testRoleTypeLabelKey: "decode"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.3"},
 		},
 	}
-	topo := BuildTopologyFromPods(pods, defaultInferGroupRoleTypeLabelKey)
+	topo := BuildTopologyFromPods(pods, testRoleTypeLabelKey)
 	assert.Len(t, topo.ServerGroupList, 1)
 	assert.Equal(t, "decode", topo.ServerGroupList[0].GroupType)
 }
@@ -166,17 +173,17 @@ func TestBuildTopologyFromPods_FiltersMissingRoleTypeLabel(t *testing.T) {
 func TestBuildTopologyFromPods_DeterministicOrdering(t *testing.T) {
 	// Same Pod set in different input order should produce identical Topology.
 	podsA := []*corev1.Pod{
-		{ObjectMeta: metav1.ObjectMeta{Name: "b", Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.2"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "a", Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.1"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "z", Labels: map[string]string{"apps.red.io/podgroup-role-type": "master"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.3"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "b", Labels: map[string]string{testRoleTypeLabelKey: "prefill"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.2"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "a", Labels: map[string]string{testRoleTypeLabelKey: "prefill"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.1"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "z", Labels: map[string]string{testRoleTypeLabelKey: "master"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.3"}},
 	}
 	podsB := []*corev1.Pod{
-		{ObjectMeta: metav1.ObjectMeta{Name: "z", Labels: map[string]string{"apps.red.io/podgroup-role-type": "master"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.3"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "a", Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.1"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "b", Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.2"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "z", Labels: map[string]string{testRoleTypeLabelKey: "master"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.3"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "a", Labels: map[string]string{testRoleTypeLabelKey: "prefill"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.1"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "b", Labels: map[string]string{testRoleTypeLabelKey: "prefill"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.2"}},
 	}
-	topoA := BuildTopologyFromPods(podsA, defaultInferGroupRoleTypeLabelKey)
-	topoB := BuildTopologyFromPods(podsB, defaultInferGroupRoleTypeLabelKey)
+	topoA := BuildTopologyFromPods(podsA, testRoleTypeLabelKey)
+	topoB := BuildTopologyFromPods(podsB, testRoleTypeLabelKey)
 	assert.Equal(t, topoA, topoB)
 	// Servers within prefill group are sorted by PodName: a, b
 	// "master" < "prefill" alphabetically, so index 0 is master, index 1 is prefill
@@ -202,10 +209,9 @@ func newReconcilerWithFakeClient(t *testing.T, cs *ConfigMapClusterService, pods
 		objects = append(objects, p)
 	}
 	client := fake.NewSimpleClientset(objects...)
-	// Pass empty label keys so newPodListReconciler falls back to defaults
-	// (defaultInferGroupLabelKey / defaultInferGroupRoleTypeLabelKey), which
-	// match the labels set on the test Pods below.
-	r := newPodListReconciler(cs, client, "test-ns", "test-group", intervalSec, "", "")
+	// Label keys have no built-in default, so pass the ones the test Pods carry.
+	r := newPodListReconciler(cs, client, "test-ns", "test-group", intervalSec,
+		testInferGroupLabelKey, testRoleTypeLabelKey)
 	return r
 }
 
@@ -256,7 +262,7 @@ func TestPodListReconciler_ReconcileTick_SkipsWhenConfigMapRecentlyUpdated(t *te
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "prefill-0",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill", "apps.red.io/podgroup-name": "test-group"},
+				Labels: map[string]string{testRoleTypeLabelKey: "prefill", testInferGroupLabelKey: "test-group"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.2"},
 		},
@@ -281,7 +287,7 @@ func TestPodListReconciler_ReconcileTick_ListsWhenStale(t *testing.T) {
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "prefill-0",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill", "apps.red.io/podgroup-name": "test-group"},
+				Labels: map[string]string{testRoleTypeLabelKey: "prefill", testInferGroupLabelKey: "test-group"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.2"},
 		},
@@ -308,7 +314,7 @@ func TestPodListReconciler_ReconcileTick_IdempotentRepeat(t *testing.T) {
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "prefill-0",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill", "apps.red.io/podgroup-name": "test-group"},
+				Labels: map[string]string{testRoleTypeLabelKey: "prefill", testInferGroupLabelKey: "test-group"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.2"},
 		},
@@ -345,7 +351,7 @@ func TestPodListReconciler_ReconcileTick_DetectsTopologyChange(t *testing.T) {
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "prefill-0",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill", "apps.red.io/podgroup-name": "test-group"},
+				Labels: map[string]string{testRoleTypeLabelKey: "prefill", testInferGroupLabelKey: "test-group"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.2"},
 		},
@@ -363,7 +369,7 @@ func TestPodListReconciler_ReconcileTick_DetectsTopologyChange(t *testing.T) {
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "prefill-1",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill", "apps.red.io/podgroup-name": "test-group"},
+				Labels: map[string]string{testRoleTypeLabelKey: "prefill", testInferGroupLabelKey: "test-group"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.3"},
 		},
@@ -461,14 +467,14 @@ func TestPodListReconciler_ReconcileTick_BuildsMasterPeer(t *testing.T) {
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "rs-master-0",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "master", "apps.red.io/podgroup-name": "test-group"},
+				Labels: map[string]string{testRoleTypeLabelKey: "master", testInferGroupLabelKey: "test-group"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.10"},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   "prefill-0",
-				Labels: map[string]string{"apps.red.io/podgroup-role-type": "prefill", "apps.red.io/podgroup-name": "test-group"},
+				Labels: map[string]string{testRoleTypeLabelKey: "prefill", testInferGroupLabelKey: "test-group"},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.20"},
 		},

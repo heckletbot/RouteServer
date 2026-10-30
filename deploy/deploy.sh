@@ -75,7 +75,7 @@ wait until route-server process exists"
   echo "  --collect-metrics-unique-ip whether collecting metrics from unique instance per ip. eg. true. \
 if it not set, then collecting metrics from all instances."
   echo "  --log-file-path path to route server log file, if not set, then it will use \
-RS_INSTALL_DIR/<rs_name>/DistributedScheduler/log/route-server.log, must give full real path"
+RS_INSTALL_DIR/<rs_name>/${PACKAGE_DIR}/log/route-server.log, must give full real path"
   echo "  --domain      domain of leader IP , eg. localhost (default: "")"
   echo "  --use_domain_for_leader    whether to use domain to find leader (true/false) (default:false)"
   echo "  --candidate switch to config this route-server instance to candidate, accept true or false, (default: true)"
@@ -852,6 +852,16 @@ if [[ "${MODE}" == "k8s-configmap" ]]; then
   else
     echo "Warning: MODE is k8s-configmap but k8s-configmap.yaml not found in deploy dir, \
 route-server will fail to start unless the file is provided manually"
+  fi
+  # The service account needs RBAC to create/update the rs-status ConfigMap and
+  # the leader-election Lease. Apply it before starting RouteServer, otherwise
+  # ConfigMap operations fail with Forbidden.
+  if [ -f "${DEPLOY_ROOT_PATH}/k8s-configmap/rbac.yaml" ]; then
+    echo "Note: apply the RBAC manifest before starting route-server:"
+    echo "  kubectl apply -f ${DEPLOY_ROOT_PATH}/k8s-configmap/rbac.yaml"
+  else
+    echo "Warning: k8s-configmap/rbac.yaml not found in deploy dir, make sure the \
+service account has configmaps get/list/watch/create/update and leases get/create/update/watch permissions"
   fi
 fi
 

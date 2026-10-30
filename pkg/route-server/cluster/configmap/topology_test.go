@@ -128,19 +128,21 @@ func sampleTopology() *Topology {
 }
 
 func TestBuildPeersAndInstances_MasterGroupGeneratesPeers(t *testing.T) {
-	peers, instances := BuildPeersAndInstances(sampleTopology(), sampleConfigMapConfig(), 9800)
+	peers, instances := BuildPeersAndInstances(sampleTopology(), sampleConfigMapConfig(), 9800, 9810)
 	assert.Len(t, peers, 2)
 	assert.Contains(t, peers, "master_127_0_0_1_9800")
 	assert.Contains(t, peers, "master_10_94_96_191_9800")
 	assert.Equal(t, "127.0.0.1", peers["master_127_0_0_1_9800"].Addr.Host)
 	assert.Equal(t, 9800, peers["master_127_0_0_1_9800"].Addr.HttpPort)
+	assert.Equal(t, 9810, peers["master_127_0_0_1_9800"].Addr.OpsPort)
+	assert.Equal(t, 9810, peers["master_10_94_96_191_9800"].Addr.OpsPort)
 	for _, inst := range instances {
 		assert.NotEqual(t, "master", inst.Role)
 	}
 }
 
 func TestBuildPeersAndInstances_InstanceGroupsGenerateRoutes(t *testing.T) {
-	peers, instances := BuildPeersAndInstances(sampleTopology(), sampleConfigMapConfig(), 9800)
+	peers, instances := BuildPeersAndInstances(sampleTopology(), sampleConfigMapConfig(), 9800, 9810)
 	_ = peers
 	// prefill: 1 server * 2 endpoints = 2 routes, ports 8000,8001
 	assert.Contains(t, instances, "prefill_10_94_122_191_8000")
@@ -182,7 +184,7 @@ func TestBuildPeersAndInstances_SkipsEmptyIP(t *testing.T) {
 			},
 		},
 	}
-	peers, instances := BuildPeersAndInstances(topo, sampleConfigMapConfig(), 9800)
+	peers, instances := BuildPeersAndInstances(topo, sampleConfigMapConfig(), 9800, 9810)
 	assert.Len(t, peers, 2)
 	assert.Contains(t, peers, "master_10_94_96_191_9800")
 	assert.Contains(t, peers, "master_10_94_96_192_9800")
@@ -191,7 +193,7 @@ func TestBuildPeersAndInstances_SkipsEmptyIP(t *testing.T) {
 }
 
 func TestBuildPeersAndInstances_NilTopology(t *testing.T) {
-	peers, instances := BuildPeersAndInstances(nil, sampleConfigMapConfig(), 9800)
+	peers, instances := BuildPeersAndInstances(nil, sampleConfigMapConfig(), 9800, 9810)
 	assert.Empty(t, peers)
 	assert.Empty(t, instances)
 }
@@ -201,7 +203,7 @@ func TestBuildPeersAndInstances_NoInstanceGroupsConfigured(t *testing.T) {
 		ConfigMapName: "cluster-topology",
 		TopologyKey:   "rank_table.json",
 	}
-	peers, instances := BuildPeersAndInstances(sampleTopology(), cfg, 9800)
+	peers, instances := BuildPeersAndInstances(sampleTopology(), cfg, 9800, 9810)
 	// master peers still generated; non-master groups produce no instances
 	assert.Len(t, peers, 2)
 	assert.Empty(t, instances)
@@ -210,7 +212,7 @@ func TestBuildPeersAndInstances_NoInstanceGroupsConfigured(t *testing.T) {
 func TestBuildPeersAndInstances_EndpointCountZero(t *testing.T) {
 	cfg := sampleConfigMapConfig()
 	cfg.InstanceGroups[0].EndpointCount = 0
-	peers, instances := BuildPeersAndInstances(sampleTopology(), cfg, 9800)
+	peers, instances := BuildPeersAndInstances(sampleTopology(), cfg, 9800, 9810)
 	_ = peers
 	// prefill has EndpointCount=0 -> no routes; decode still has 4
 	assert.NotContains(t, instances, "prefill_10_94_122_191_8000")

@@ -20,17 +20,24 @@ namespace: <namespace>
 # failures JSON. Must be created before RouteServer starts.
 configmap-name: <configmap-name>
 
-# topology-key: ConfigMap data key holding the rank_table.json content.
-topology-key: "podgroup-topology"
+# topology-key: ConfigMap data key holding the topology JSON content.
+# See docs/deploy.md "ConfigMap Cluster Mode" for the expected JSON format.
+topology-key: "topology"
 
 # failures-key: ConfigMap data key holding the serialized failure snapshot.
 # Leave empty to disable failure persistence (not recommended for production).
 failures-key: "failures"
 
+# owner-reference: the owner resource of the rs-status ConfigMap that RouteServer
+# creates to persist failure snapshots. Fill in with any owner resource in your
+# cluster (a CRD, a Deployment, a StatefulSet, ...). When all three fields are
+# set, RouteServer creates <name>-rs-status and sets ownerReferences so that
+# Kubernetes garbage-collects it together with the owner.
+# Leave all three empty to disable failure persistence.
 owner-reference:
-  api-version: "apps.red.io/v1alpha1"
-  kind: "PodGroup"
-  name: <name>
+  api-version: <owner-api-version>   # e.g. apps/v1
+  kind: <owner-kind>                 # e.g. Deployment
+  name: <owner-name>
 
 # instance-groups: maps topology server groups to RouteServer instance routes.
 # For each server in a group, EndpointCount routes are generated with ports
@@ -79,15 +86,16 @@ min-failure-persist-interval-sec: 3
 fallback-pod-discovery-enabled: false
 fallback-pod-list-interval-sec: 60          # reconciliation interval (seconds); also the "no update" threshold that triggers the List
 # infer-group-name: instance isolation boundary (not a Namespace). Filters the
-# value of the apps.red.io/podgroup-name Pod label. Multiple inference instances
-# can be deployed in the same Namespace, each with a different infer-group-name.
+# value of the infer-group-label-key Pod label. Multiple inference instances can
+# be deployed in the same Namespace, each with a different infer-group-name.
 # Required when reconciliation is enabled. The Pod Namespace reuses `namespace` above.
 infer-group-name: <infer-group-name>
-# Pod label key configuration (optional when reconciliation is enabled; empty means defaults).
-# infer-group-label-key: Pod label key marking the inference group name (instance isolation boundary).
-#   Used together with infer-group-name to build the labelSelector when listing Pods.
-#   Default "apps.red.io/podgroup-name".
-# infer-group-role-type-label-key: Pod label key marking the group_type (e.g. master/prefill/decode).
-#   Default "apps.red.io/podgroup-role-type".
-infer-group-label-key: "apps.red.io/podgroup-name"
-infer-group-role-type-label-key: "apps.red.io/podgroup-role-type"
+# Pod label keys used by Pod List reconciliation. Set these to match the labels
+# your inference Pods carry; both are required when reconciliation is enabled.
+# infer-group-label-key: Pod label key marking the inference group name
+#   (instance isolation boundary). Used together with infer-group-name to build
+#   the labelSelector when listing Pods.
+# infer-group-role-type-label-key: Pod label key marking the group_type
+#   (e.g. master/prefill/decode).
+infer-group-label-key: <infer-group-label-key>                # e.g. route-server/infer-group
+infer-group-role-type-label-key: <infer-group-role-type-label-key>  # e.g. route-server/group-type

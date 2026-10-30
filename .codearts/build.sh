@@ -51,6 +51,7 @@ go build -trimpath -o output/route-server/config_generator ./cmd/config-tool
 # Assemble the deployment package
 cp deploy/deploy.sh output/route-server/
 cp deploy/*.yaml output/route-server/
+cp -r deploy/k8s-configmap output/route-server/
 cp -r deploy/scale output/route-server/
 cp -r deploy/pipelines output/route-server/
 

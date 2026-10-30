@@ -69,12 +69,10 @@ type podListReconciler struct {
 	inferGroupName string
 
 	// inferGroupLabelKey is the Pod label key holding the infer-group name.
-	// Used to build the List labelSelector. Defaults to
-	// defaultInferGroupLabelKey when empty.
+	// Used to build the List labelSelector.
 	inferGroupLabelKey string
 	// inferGroupRoleTypeLabelKey is the Pod label key holding the group_type
-	// (e.g. master/prefill/decode). Passed to BuildTopologyFromPods. Defaults to
-	// defaultInferGroupRoleTypeLabelKey when empty.
+	// (e.g. master/prefill/decode). Passed to BuildTopologyFromPods.
 	inferGroupRoleTypeLabelKey string
 
 	stopChan chan struct{}
@@ -82,19 +80,14 @@ type podListReconciler struct {
 }
 
 // newPodListReconciler builds a reconciler. intervalSec defaults to
-// defaultFallbackPodListIntervalSec when <= 0. The label-key arguments default
-// to the package-level defaults when empty. The reconciler is not started;
-// call start() from onStartedLeading.
+// defaultFallbackPodListIntervalSec when <= 0. The label-key arguments are
+// required and have no built-in default; the caller must supply them (config
+// validation rejects an empty value when reconciliation is enabled). The
+// reconciler is not started; call start() from onStartedLeading.
 func newPodListReconciler(cs *ConfigMapClusterService, kubeClient kubernetes.Interface, namespace, inferGroupName string, intervalSec int, inferGroupLabelKey, inferGroupRoleTypeLabelKey string) *podListReconciler {
 	interval := time.Duration(intervalSec) * time.Second
 	if interval <= 0 {
 		interval = time.Duration(defaultFallbackPodListIntervalSec) * time.Second
-	}
-	if inferGroupLabelKey == "" {
-		inferGroupLabelKey = defaultInferGroupLabelKey
-	}
-	if inferGroupRoleTypeLabelKey == "" {
-		inferGroupRoleTypeLabelKey = defaultInferGroupRoleTypeLabelKey
 	}
 	return &podListReconciler{
 		cs:                         cs,

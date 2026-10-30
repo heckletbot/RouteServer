@@ -8,7 +8,7 @@ SRC_DIR := cmd/route_server
 CONFIG_TOOL_DIR := cmd/config-tool
 BUILD_DIR := build
 OUTPUT_DIR := output
-PKG_NAME := DistributedScheduler
+PKG_NAME := route-server
 DEPLOY_DIR := deploy
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "unknown")
@@ -43,6 +43,7 @@ copy-deploy:
 	@mkdir -p $(OUTPUT_DIR)
 	@cp $(DEPLOY_DIR)/deploy.sh $(OUTPUT_DIR)/
 	@cp $(DEPLOY_DIR)/*.yaml $(OUTPUT_DIR)/ 2>/dev/null || true
+	@cp -r $(DEPLOY_DIR)/k8s-configmap $(OUTPUT_DIR)/ 2>/dev/null || true
 	@cp -r $(DEPLOY_DIR)/scale $(OUTPUT_DIR)/ 2>/dev/null || true
 	@cp -r $(DEPLOY_DIR)/pipelines $(OUTPUT_DIR)/ 2>/dev/null || true
 	@cp Dockerfile $(OUTPUT_DIR)/ 2>/dev/null || true
