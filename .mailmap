@@ -1,0 +1,26 @@
+# .mailmap — 提交身份显示映射 / commit identity display mapping
+#
+# 作用：只改变 `git log`、`git shortlog`、`git blame` 里显示的姓名与邮箱，**不改历史、不改任何 SHA**。
+# Effect: changes only what git displays. History and SHAs are untouched, so no fork or open pull
+# request is invalidated.
+#
+# 格式 / format:
+#   Proper Name <proper@email> <commit@email>   # 姓名与邮箱都替换
+#   Proper Name <commit@email>                  # 仅替换姓名
+#
+# 维护 / maintenance:
+#   * 新提交请一律使用 GitCode noreply 邮箱：<gitcode-username>@noreply.gitcode.com
+#     git config user.email "<gitcode-username>@noreply.gitcode.com"
+#   * 本文件只用于修正历史。新增条目请在导出前提交，否则下次同步会覆盖。
+#
+# 注意 / NOTE: 下面 `@noreply.gitcode.com` 前的用户名是按现有提交推断的，请与本人确认后修正。
+# The usernames below were inferred from the existing identities — confirm with each author.
+
+# --- 内网邮箱 → GitCode noreply / internal addresses hidden ---------------------------------
+leiyu99        <leiyu99@noreply.gitcode.com>        <leiyu99@huawei.com>
+lanbingliang   <lanbingliang@noreply.gitcode.com>   <lanbingliang@huawei.com>
+ostmssso       <ostmssso@noreply.gitcode.com>       <p_ostmssso_nobody@codehub.huawei.com>
+
+# --- 同一人的不同姓名归一 / normalise the display name of one person -------------------------
+# 同一邮箱出现过 ktvbcx 与 liangjingmin 两个姓名，统一显示为后者。
+liangjingmin   <644196384@qq.com>

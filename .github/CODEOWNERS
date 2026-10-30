@@ -1,0 +1,58 @@
+# CODEOWNERS — who must review what
+#
+# Rules are evaluated bottom-up: the LAST matching pattern wins, so put the most specific paths last.
+# These owners are required IN ADDITION to the two approvals in GOVERNANCE.md §5; they never replace
+# a normal review.
+#
+# PLACEHOLDERS: `@InferTurbo/<team>` names below must exist as teams in the InferTurbo organisation.
+# An owner that does not resolve is silently ignored by the platform, which means the review is NOT
+# enforced. Before relying on this file, replace every team name with a real one (or with individual
+# handles), and keep it in sync with MAINTAINERS.md.
+#
+# If the hosting platform (GitCode) does not read CODEOWNERS, encode the same mapping in the branch
+# protection rule "required reviewers / required approvals by area" so the intent survives the tool.
+
+# --- default ---------------------------------------------------------------------------------
+*                                   @InferTurbo/maintainers
+
+# --- project process and policy ---------------------------------------------------------------
+/CONTRIBUTING.md                    @InferTurbo/maintainers
+/CONTRIBUTING.zh-CN.md              @InferTurbo/maintainers
+/GOVERNANCE.md                      @InferTurbo/maintainers
+/GOVERNANCE.zh-CN.md                @InferTurbo/maintainers
+/MAINTAINERS.md                     @InferTurbo/maintainers
+/CODE_OF_CONDUCT.md                 @InferTurbo/maintainers
+/CODE_OF_CONDUCT.zh-CN.md           @InferTurbo/maintainers
+/SECURITY.md                        @InferTurbo/security
+/SECURITY.zh-CN.md                  @InferTurbo/security
+/docs/branching.md                  @InferTurbo/maintainers
+/docs/branching.zh-CN.md            @InferTurbo/maintainers
+
+# --- user-facing documentation ----------------------------------------------------------------
+/docs/                              @InferTurbo/maintainers
+
+# --- scheduling and load balancing (request-routing correctness) -------------------------------
+/pkg/common/scheduler/              @InferTurbo/scheduler
+/pkg/route-server/scheduler/        @InferTurbo/scheduler
+
+# --- cluster coordination, leader election, instance registry ----------------------------------
+/pkg/common/cluster/                @InferTurbo/cluster
+/pkg/route-server/cluster/          @InferTurbo/cluster
+/pkg/route-server/instances/        @InferTurbo/cluster
+
+# --- HTTP surface, middleware and TLS: security sensitive --------------------------------------
+/pkg/common/http/                   @InferTurbo/security
+/pkg/route-server/middleware/       @InferTurbo/security
+/pkg/route-server/handler/          @InferTurbo/security
+
+# --- build, packaging and deployment assets ----------------------------------------------------
+/Makefile                           @InferTurbo/release
+/deploy/                            @InferTurbo/release
+/.codearts/                         @InferTurbo/release
+
+# --- dependency surface: every new dependency is a governance decision (GOVERNANCE.md §8) ------
+/go.mod                             @InferTurbo/maintainers
+/go.sum                             @InferTurbo/maintainers
+
+# --- end-to-end suites that spawn real processes and touch iptables ----------------------------
+/e2etest/                           @InferTurbo/scheduler @InferTurbo/cluster
