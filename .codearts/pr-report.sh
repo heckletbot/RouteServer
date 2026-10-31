@@ -32,7 +32,8 @@ if [ -z "${GITCODE_TOKEN:-}" ]; then
 fi
 
 # --- discover the source branch of this run --------------------------------
-BRANCH="${CI_SOURCE_BRANCH:-}"
+# GIT_LOCAL_BRANCH is exported by CodeArts build tasks (verified in task env)
+BRANCH="${GIT_LOCAL_BRANCH:-${CI_SOURCE_BRANCH:-}}"
 if [ -z "$BRANCH" ] && command -v git >/dev/null 2>&1; then
     BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
 fi
