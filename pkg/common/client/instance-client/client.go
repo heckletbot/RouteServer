@@ -26,14 +26,14 @@ import (
 	"strings"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/logger"
+	"route-server/pkg/common/logger"
 
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/errs"
-	http2 "infer-dp-scheduler/pkg/common/http"
-	"infer-dp-scheduler/pkg/common/openai"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/errs"
+	http2 "route-server/pkg/common/http"
+	"route-server/pkg/common/openai"
+	"route-server/pkg/common/utils"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/net/context"

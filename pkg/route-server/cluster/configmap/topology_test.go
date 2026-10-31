@@ -19,9 +19,9 @@ package configmap
 import (
 	"testing"
 
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/utils"
 
 	"github.com/stretchr/testify/assert"
 )

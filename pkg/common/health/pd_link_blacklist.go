@@ -22,13 +22,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/metrics"
 
-	"infer-dp-scheduler/pkg/common/client"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/logger"
+	"route-server/pkg/common/client"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/logger"
 )
 
 // pd link block detail data

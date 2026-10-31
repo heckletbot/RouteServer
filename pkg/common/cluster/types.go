@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"time"
 
-	peer_client "infer-dp-scheduler/pkg/common/client/peer-client"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/utils"
+	peer_client "route-server/pkg/common/client/peer-client"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/utils"
 )
 
 const (

@@ -27,12 +27,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	monitor_client "infer-dp-scheduler/pkg/common/client/monitor-client"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/instance-metrics"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/scheduler"
-	"infer-dp-scheduler/pkg/common/utils"
+	monitor_client "route-server/pkg/common/client/monitor-client"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/instance-metrics"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/scheduler"
+	"route-server/pkg/common/utils"
 )
 
 // mockGenerateRequest is a mock implementation of GenerateRequest for testing.

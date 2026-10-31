@@ -19,7 +19,7 @@ package errs
 import (
 	"net/http"
 
-	"infer-dp-scheduler/pkg/common/constant"
+	"route-server/pkg/common/constant"
 )
 
 var (

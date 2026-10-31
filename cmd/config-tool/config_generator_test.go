@@ -24,9 +24,9 @@ import (
 	"reflect"
 	"testing"
 
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/route-server/scheduler"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/route-server/scheduler"
 
 	"github.com/agiledragon/gomonkey/v2"
 	"github.com/goccy/go-yaml"

@@ -23,9 +23,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"infer-dp-scheduler/pkg/common/anthropic"
-	"infer-dp-scheduler/pkg/common/openai"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/anthropic"
+	"route-server/pkg/common/openai"
+	"route-server/pkg/common/utils"
 )
 
 type GenerateRequestImplV1 struct {

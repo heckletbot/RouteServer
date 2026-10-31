@@ -18,7 +18,7 @@ package http
 
 import (
 	"github.com/gin-gonic/gin"
-	"infer-dp-scheduler/pkg/common/constant"
+	"route-server/pkg/common/constant"
 )
 
 func GinError(errMsg string) gin.H {

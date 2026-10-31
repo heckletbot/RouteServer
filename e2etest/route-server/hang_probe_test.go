@@ -33,8 +33,8 @@ import (
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 
-	"infer-dp-scheduler/cmd/route_server/server/options"
-	"infer-dp-scheduler/pkg/common/constant"
+	"route-server/cmd/route_server/server/options"
+	"route-server/pkg/common/constant"
 )
 
 const (

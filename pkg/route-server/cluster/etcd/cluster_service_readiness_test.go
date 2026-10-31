@@ -22,12 +22,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/pkg/route-server/metrics"
 
-	peer_client "infer-dp-scheduler/pkg/common/client/peer-client"
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/utils"
+	peer_client "route-server/pkg/common/client/peer-client"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/utils"
 )
 
 // TestEtcdClusterServiceGetCfg tests the getCfg function

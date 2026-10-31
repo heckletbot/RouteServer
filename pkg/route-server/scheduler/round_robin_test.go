@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	stats2 "infer-dp-scheduler/pkg/common/instance-metrics"
+	stats2 "route-server/pkg/common/instance-metrics"
 )
 
 var seed = time.Now().UnixNano()

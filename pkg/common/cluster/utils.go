@@ -23,9 +23,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	commonCfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
+	commonCfg "route-server/pkg/common/config"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/goccy/go-yaml"

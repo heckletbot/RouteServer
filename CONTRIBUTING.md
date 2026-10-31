@@ -44,8 +44,11 @@ contributors, committers and maintainers alike.
 | Bash | 3.2 | `/bin/bash` is used by the Make test targets for `pipefail` |
 | Git | 2.23 | Needed for `--force-with-lease` and worktrees |
 
-The Go module path is `infer-dp-scheduler` (it is not a URL). Internal imports therefore look like
-`infer-dp-scheduler/pkg/common/scheduler`.
+The Go module path is `route-server` (it is not a URL). Internal imports therefore look like
+`route-server/pkg/common/scheduler`.
+
+For the source-breaking module-prefix change and downstream import guidance, see the
+[unreleased migration note](docs/versions/release-note-unreleased.md).
 
 ```bash
 # Fork InferTurbo/RouteServer on GitCode, then:

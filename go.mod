@@ -1,4 +1,4 @@
-module infer-dp-scheduler
+module route-server
 
 go 1.26.0
 

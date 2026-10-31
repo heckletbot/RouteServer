@@ -20,8 +20,8 @@ import (
 	"context"
 	"net/http"
 
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/openai"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/openai"
 )
 
 type noTracer struct {

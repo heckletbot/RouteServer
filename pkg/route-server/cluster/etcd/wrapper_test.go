@@ -21,7 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/api/v3/mvccpb"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/utils"
 )
 
 // TestParseAllInstanceFailuresFromKv_Success tests parsing valid KV data

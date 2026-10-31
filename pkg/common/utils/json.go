@@ -26,7 +26,7 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	"infer-dp-scheduler/pkg/common/constant"
+	"route-server/pkg/common/constant"
 )
 
 type JSONModifier struct {

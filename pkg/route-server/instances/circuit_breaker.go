@@ -21,9 +21,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/logger"
-	rsmetrics "infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/logger"
+	rsmetrics "route-server/pkg/route-server/metrics"
 )
 
 type CircuitBreakerState int32

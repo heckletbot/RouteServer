@@ -18,7 +18,7 @@ package trace
 
 import (
 	"github.com/stretchr/testify/assert"
-	"infer-dp-scheduler/pkg/common/openai"
+	"route-server/pkg/common/openai"
 
 	"testing"
 )

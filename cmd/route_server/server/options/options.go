@@ -24,8 +24,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/goccy/go-yaml"
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
 )
 
 const (

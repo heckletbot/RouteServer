@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	commoncfg "infer-dp-scheduler/pkg/common/config"
+	commoncfg "route-server/pkg/common/config"
 
 	"github.com/stretchr/testify/assert"
 )

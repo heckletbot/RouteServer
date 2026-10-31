@@ -19,8 +19,8 @@ package cluster
 import (
 	"fmt"
 
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/utils"
 )
 
 type LeaveRequest struct {

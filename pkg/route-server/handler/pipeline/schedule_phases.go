@@ -23,17 +23,17 @@ import (
 	"strings"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/errs"
-	common_infer "infer-dp-scheduler/pkg/common/infer"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/trace"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/apc"
-	"infer-dp-scheduler/pkg/route-server/handler"
-	"infer-dp-scheduler/pkg/route-server/handler/request"
-	"infer-dp-scheduler/pkg/route-server/metrics"
-	"infer-dp-scheduler/pkg/route-server/scheduler"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/errs"
+	common_infer "route-server/pkg/common/infer"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/trace"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/apc"
+	"route-server/pkg/route-server/handler"
+	"route-server/pkg/route-server/handler/request"
+	"route-server/pkg/route-server/metrics"
+	"route-server/pkg/route-server/scheduler"
 )
 
 const (

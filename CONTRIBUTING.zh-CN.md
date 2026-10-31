@@ -41,8 +41,10 @@
 | Bash | 3.2 | Make 测试目标使用 `/bin/bash` 的 `pipefail` |
 | Git | 2.23 | 需要 `--force-with-lease` 与 worktree |
 
-Go 模块路径是 `infer-dp-scheduler`（不是 URL），因此内部 import 形如
-`infer-dp-scheduler/pkg/common/scheduler`。
+Go 模块路径是 `route-server`（不是 URL），因此内部 import 形如
+`route-server/pkg/common/scheduler`。
+
+模块前缀的破坏性源码变更及下游 import 指引，见[未发布迁移说明](docs/versions/release-note-unreleased.zh-CN.md)。
 
 ```bash
 # 先在 GitCode 上 fork InferTurbo/RouteServer

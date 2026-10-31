@@ -22,8 +22,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/scheduler"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/scheduler"
 )
 
 const (

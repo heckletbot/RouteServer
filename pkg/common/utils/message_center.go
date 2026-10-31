@@ -21,7 +21,7 @@ import (
 	"reflect"
 	"sync"
 
-	"infer-dp-scheduler/pkg/common/logger"
+	"route-server/pkg/common/logger"
 )
 
 /*

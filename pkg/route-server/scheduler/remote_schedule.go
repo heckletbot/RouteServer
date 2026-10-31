@@ -25,14 +25,14 @@ import (
 	"strings"
 	"time"
 
-	peer_client "infer-dp-scheduler/pkg/common/client/peer-client"
+	peer_client "route-server/pkg/common/client/peer-client"
 
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	http2 "infer-dp-scheduler/pkg/common/http"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/trace"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	http2 "route-server/pkg/common/http"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/trace"
+	"route-server/pkg/common/utils"
 )
 
 const (

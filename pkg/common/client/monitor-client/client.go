@@ -28,12 +28,12 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	instance_metrics "infer-dp-scheduler/pkg/common/instance-metrics"
-	"infer-dp-scheduler/pkg/common/logger"
+	instance_metrics "route-server/pkg/common/instance-metrics"
+	"route-server/pkg/common/logger"
 
-	"infer-dp-scheduler/pkg/common/client"
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
+	"route-server/pkg/common/client"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
 
 	"github.com/goccy/go-yaml"
 )

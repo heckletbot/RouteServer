@@ -27,7 +27,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
-	"infer-dp-scheduler/pkg/common/config"
+	"route-server/pkg/common/config"
 )
 
 // Test_NewRateLimiter_NilConfig - Test behavior with nil config

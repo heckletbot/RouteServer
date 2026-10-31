@@ -25,13 +25,13 @@ import (
 	"sync"
 
 	"github.com/goccy/go-yaml"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/errs"
-	utils2 "infer-dp-scheduler/pkg/common/infer"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/trace"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/handler/request"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/errs"
+	utils2 "route-server/pkg/common/infer"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/trace"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/handler/request"
 )
 
 const PipelineConfigDir = "pipelines"

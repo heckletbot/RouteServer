@@ -21,7 +21,7 @@ import (
 	"strings"
 	"sync"
 
-	"infer-dp-scheduler/pkg/common/constant"
+	"route-server/pkg/common/constant"
 )
 
 const (

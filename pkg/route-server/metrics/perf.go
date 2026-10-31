@@ -23,9 +23,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils/list"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils/list"
 )
 
 var perfMetrics *PerfMetrics

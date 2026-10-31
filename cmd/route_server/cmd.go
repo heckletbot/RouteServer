@@ -22,8 +22,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"infer-dp-scheduler/cmd/route_server/server"
-	"infer-dp-scheduler/pkg/common/logger"
+	"route-server/cmd/route_server/server"
+	"route-server/pkg/common/logger"
 )
 
 var (

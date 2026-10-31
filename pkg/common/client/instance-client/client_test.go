@@ -28,8 +28,8 @@ import (
 
 	"github.com/agiledragon/gomonkey/v2"
 
-	"infer-dp-scheduler/pkg/common/config"
-	http2 "infer-dp-scheduler/pkg/common/http"
+	"route-server/pkg/common/config"
+	http2 "route-server/pkg/common/http"
 )
 
 func TestVllmClient_HealthCheck(t *testing.T) {

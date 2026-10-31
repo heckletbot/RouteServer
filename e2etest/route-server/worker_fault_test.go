@@ -20,9 +20,9 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
 
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	commonScheduler "infer-dp-scheduler/pkg/common/scheduler"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	commonScheduler "route-server/pkg/common/scheduler"
 )
 
 const (

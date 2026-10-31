@@ -35,7 +35,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
 
-	"infer-dp-scheduler/pkg/common/constant"
+	"route-server/pkg/common/constant"
 )
 
 const (

@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"infer-dp-scheduler/pkg/common/config"
+	"route-server/pkg/common/config"
 )
 
 // TestNewCircuitBreaker_Disabled test disabled circuit breaker

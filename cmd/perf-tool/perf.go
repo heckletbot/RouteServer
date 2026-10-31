@@ -34,7 +34,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/utils"
 )
 
 // Config parameters

@@ -17,8 +17,8 @@
 package client
 
 import (
-	"infer-dp-scheduler/pkg/common/client/instance-client"
-	"infer-dp-scheduler/pkg/common/instance-metrics"
+	"route-server/pkg/common/client/instance-client"
+	"route-server/pkg/common/instance-metrics"
 )
 
 type Instance struct {

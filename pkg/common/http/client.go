@@ -28,7 +28,7 @@ import (
 	"os"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/config"
+	"route-server/pkg/common/config"
 )
 
 // loadX509KeyPairWithPassword loads the TLS certificate and private key,

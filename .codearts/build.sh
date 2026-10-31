@@ -41,7 +41,7 @@ VERSION=$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
 COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)
 BUILD_TIME=$(date -u '+%Y-%m-%d_%H%M%S')
-LDFLAGS="-X 'infer-dp-scheduler/cmd/route_server/server.version=${VERSION}' -X 'infer-dp-scheduler/cmd/route_server/server.tagOrBranch=${BRANCH}' -X 'infer-dp-scheduler/cmd/route_server/server.commitId=${COMMIT}' -X 'infer-dp-scheduler/cmd/route_server/server.buildTime=${BUILD_TIME}'"
+LDFLAGS="-X 'route-server/cmd/route_server/server.version=${VERSION}' -X 'route-server/cmd/route_server/server.tagOrBranch=${BRANCH}' -X 'route-server/cmd/route_server/server.commitId=${COMMIT}' -X 'route-server/cmd/route_server/server.buildTime=${BUILD_TIME}'"
 
 echo "building route-server ${VERSION} (${BRANCH} ${COMMIT}) for linux/${TARGET_ARCH} ..."
 # Layout must match `make package`: deploy assets at the archive root, runnable

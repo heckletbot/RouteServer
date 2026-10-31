@@ -19,10 +19,10 @@ import (
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 
-	"infer-dp-scheduler/cmd/route_server/server/options"
-	"infer-dp-scheduler/pkg/common/anthropic"
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
+	"route-server/cmd/route_server/server/options"
+	"route-server/pkg/common/anthropic"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
 )
 
 // ============================================================

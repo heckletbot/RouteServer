@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"strings"
 
-	"infer-dp-scheduler/pkg/common/openai"
+	"route-server/pkg/common/openai"
 )
 
 const ObjectTypeError = "error"

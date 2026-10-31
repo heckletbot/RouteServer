@@ -19,7 +19,7 @@ package health
 import (
 	"sync"
 
-	"infer-dp-scheduler/pkg/common/constant"
+	"route-server/pkg/common/constant"
 )
 
 type InferMsg struct {
