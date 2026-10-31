@@ -52,8 +52,8 @@ Be concrete: the commands you ran and what you observed.
 ```
 
 <!--
-make test / make test-unit / make test-coverage 当前没有保留 go test 的失败退出码；请直接运行 go test 取得可靠结果。
-These Make targets currently lose the go test failure exit status; run go test directly for a reliable result.
+make test / make test-unit / make test-coverage 使用 Bash pipefail，go test 或 tee 失败都会使目标失败，需要 /bin/bash 3.2+。
+These Make targets use Bash pipefail so go test or tee failures fail the target; /bin/bash 3.2+ is required.
 make test-unit 的 -short 当前不会跳过 E2E 套件 / -short currently does not skip the E2E suite.
 -->
 

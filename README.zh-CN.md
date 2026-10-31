@@ -36,7 +36,7 @@ RouteServer 是一个面向大语言模型（LLM）服务场景的分布式 Open
 make clean && make package
 ```
 
-这将在 `output/DistributedScheduler-<version>-<timestamp>.zip` 生成一个 zip 包。
+这将在 `output/route-server-<version>-<timestamp>.zip` 生成一个 zip 包。
 
 详细的构建说明与可用的 Makefile 目标，参见 [构建指南](docs/build.zh-CN.md)。
 
@@ -96,7 +96,7 @@ curl -X GET http://<YOUR_IP>:9800/status
    make lint   # go fmt + go vet
    go test ./... -v -timeout 60m
    ```
-   请直接运行 `go test`：Make 测试目标当前会丢失测试失败的退出码，详见
+   Make 测试目标、Bash 要求及 E2E 覆盖范围，详见
    [测试说明](CONTRIBUTING.zh-CN.md#3-构建与测试)。
 4. 使用 Conventional Commits 规范的信息**提交**并签署（`git commit -s`）
 5. 针对 `main` **提交 Pull Request**

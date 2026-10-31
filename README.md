@@ -36,7 +36,7 @@ see our [architecture docs](docs/architecture.md) and [code-base structure](docs
 make clean && make package
 ```
 
-This will produce a zip package at `output/DistributedScheduler-<version>-<timestamp>.zip`.
+This will produce a zip package at `output/route-server-<version>-<timestamp>.zip`.
 
 For detailed build instructions and available Makefile targets, see the [Build Guide](docs/build.md).
 
@@ -96,7 +96,7 @@ The short version:
    make lint   # go fmt + go vet
    go test ./... -v -timeout 60m
    ```
-   Run `go test` directly: the Make test targets currently lose test failure exit codes. See
+   For Make test targets, the Bash requirement and E2E coverage, see
    [the testing notes](CONTRIBUTING.md#3-build-and-test).
 4. **Commit** with a Conventional Commits message and sign off (`git commit -s`)
 5. **Submit a Pull Request** against `main`

@@ -35,12 +35,12 @@ Configure the inference instance interface through environment variables:
 
 Both release artifacts use the same inner layout: deployment assets (`deploy.sh`, `*.yaml`,
 `config_generator`, `scale/`, `pipelines/`) at the archive root and the runnable package under
-`DistributedScheduler/`.
+`route-server/`.
 
 1. **Extract the package**
    ```bash
    # zip produced by `make package`
-   unzip DistributedScheduler-*.zip -d route-server
+   unzip route-server-*.zip -d route-server
    # tar.gz produced by the CodeArts build task
    tar -xzf route-server-*-linux-*.tar.gz -C route-server
    ```
@@ -131,7 +131,7 @@ The `deploy.sh` script supports the following optional parameters:
 
 #### `--log-file-path`
 - **Description**: Specify the full path to the RouteServer log file
-- **Default**: `$RS_INSTALL_DIR/$rs_name/DistributedScheduler/log/route-server.log`
+- **Default**: `$RS_INSTALL_DIR/$rs_name/route-server/log/route-server.log`
 
 #### `--show-std-output`
 - **Description**: Whether to print RouteServer process output directly to stdout
@@ -324,7 +324,7 @@ If it returns code 200, the RouteServer deployment is successful.
 
 To view RouteServer service logs:
 ```bash
-tail -f $RS_INSTALL_DIR/singleton_${HOST}_${PORT}/DistributedScheduler/log/route-server.log
+tail -f $RS_INSTALL_DIR/singleton_${HOST}_${PORT}/route-server/log/route-server.log
 ```
 
 ---
@@ -562,7 +562,7 @@ If it returns code 200, the current node's connection to RouteServer is normal.
 
 To view RouteServer service logs:
 ```bash
-tail -f $RS_INSTALL_DIR/worker_${HOST}_${PORT}/DistributedScheduler/log/route-server.log
+tail -f $RS_INSTALL_DIR/worker_${HOST}_${PORT}/route-server/log/route-server.log
 ```
 
 ### Candidate Deployment
@@ -664,7 +664,7 @@ Confirm that both Candidate and Worker RouteServer instances have the following 
 
 To view RouteServer service logs:
 ```bash
-tail -f $RS_INSTALL_DIR/candidate_${HOST}_${PORT}/DistributedScheduler/log/route-server.log
+tail -f $RS_INSTALL_DIR/candidate_${HOST}_${PORT}/route-server/log/route-server.log
 ```
 
 ---

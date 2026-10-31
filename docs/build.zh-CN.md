@@ -12,6 +12,7 @@
 |------|-----------------|----------------------------------|
 | Go   | 1.25.0          | 编译 Go 源码           |
 | Make | 3.82            | 构建编排              |
+| Bash | 3.2             | `/bin/bash` 为 Make 测试目标提供 `pipefail` |
 
 > [!NOTE]
 > 构建流程支持 Linux、macOS 和 Windows（WSL）。部署包（`deploy.sh`）面向 Linux 环境。
@@ -40,12 +41,12 @@ make clean && make package
 2. **构建**主服务二进制（`route-server`），源码位于 `cmd/route_server/`
 3. **构建**配置生成工具（`config_generator`），源码位于 `cmd/config-tool/`
 4. **复制**部署脚本、YAML 模板、自动扩缩容脚本和流水线配置到打包目录
-5. **打包**全部内容到 `output/DistributedScheduler-<version>-<timestamp>.zip`，可直接用于部署
+5. **打包**全部内容到 `output/route-server-<version>-<timestamp>.zip`，可直接用于部署
 
 构建完成后，可部署的 zip 位于：
 
 ```
-output/DistributedScheduler-<version>-<timestamp>.zip
+output/route-server-<version>-<timestamp>.zip
 ```
 
 部署方式参见[部署指南](./deploy.zh-CN.md)。
@@ -69,9 +70,14 @@ output/DistributedScheduler-<version>-<timestamp>.zip
 | `vet` | `go vet ./...` |
 | `lint` | `fmt` + `vet` |
 
-> `make test`、`make test-unit` 和 `make test-coverage` 当前通过 `tee` 输出测试日志，但没有保留
-> `go test` 的退出码。Make 成功退出不代表测试通过；请按下方示例直接运行 `go test` 取得可靠结果。
+> `make test`、`make test-unit` 和 `make test-coverage` 使用 Bash `pipefail`：`go test` 或 `tee` 任一失败
+> 都会使 Make 失败，测试输出仍同时发送到终端和日志文件。
 > E2E 套件没有检查 `testing.Short()`，所以 `-short` 当前不会排除该套件。
+
+管道回归验证：在仓库根目录使用 Python 3 执行 `python3 .codearts/test_makefile.py`。
+检查使用临时目录、受控的 Go/tee 失败，并在安装 Go 时于独立模块内运行真实的通过/失败测试；
+禁止下载依赖，不运行项目 E2E。
+同一命令还用构建替身检查 Make 与 CodeArts 的归档布局，不代表已验证 RouteServer 编译产物或真实部署。
 
 ### build
 
@@ -88,7 +94,7 @@ make build
 
 ```
 output/
-├── DistributedScheduler/
+├── route-server/
 │   └── bin/route-server                 # Server binary
 └── config_generator                     # Config tool
 ```
@@ -112,7 +118,7 @@ output/
 make build-binary
 ```
 
-输出：`output/DistributedScheduler/bin/route-server`
+输出：`output/route-server/bin/route-server`
 
 ### build-config-tool
 
@@ -132,9 +138,9 @@ make build-config-tool
 make package
 ```
 
-输出：`output/DistributedScheduler-<version>-<timestamp>.zip`
+输出：`output/route-server-<version>-<timestamp>.zip`
 
-`output/DistributedScheduler/` 下的 `version.info` 记录构建元数据（构建时从 git 读取）：
+`output/route-server/` 下的 `version.info` 记录构建元数据（构建时从 git 读取）：
 
 ```
 Build Tag/Branch: <branch>
@@ -151,16 +157,16 @@ Build Time: <timestamp>
 ├── *.yaml                              # All YAML templates from deploy/
 ├── scale/
 ├── pipelines/
-└── DistributedScheduler/
+└── route-server/
     ├── bin/route-server                # Server binary
     └── version.info                    # Build metadata
 ```
 
-`deploy.sh` 要求严格符合这一布局：它在 `<package-root>/DistributedScheduler/` 下查找可运行的包，并在自身同级查找 `config_generator`、`*.yaml`、`scale/` 和 `pipelines/`。
+`deploy.sh` 要求严格符合这一布局：它在 `<package-root>/route-server/` 下查找可运行的包，并在自身同级查找 `config_generator`、`*.yaml`、`scale/` 和 `pipelines/`。
 
 ### CodeArts 构建
 
-华为云 CodeArts 构建任务会执行 [`.codearts/build.sh`](../.codearts/build.sh)，并发布 `route-server-<version>-<timestamp>-linux-<arch>.tar.gz`。其内部布局与上文 `make package` 的输出一致（资源位于压缩包根目录，可运行的包位于 `DistributedScheduler/` 下），因此在 `tar -xzf` 解压后同样适用 `deploy.sh` 流程。
+华为云 CodeArts 构建任务会执行 [`.codearts/build.sh`](../.codearts/build.sh)，并发布 `route-server-<version>-<timestamp>-linux-<arch>.tar.gz`。其内部布局与上文 `make package` 的输出一致（资源位于压缩包根目录，可运行的包位于 `route-server/` 下），因此在 `tar -xzf` 解压后同样适用 `deploy.sh` 流程。
 
 ---
 
