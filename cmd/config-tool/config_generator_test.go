@@ -114,10 +114,14 @@ func Test_checkValid(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "given Host is invalid ")
 
-	Host = ""
-	err = checkValid(normalDir)
-	assert.Nil(t, err)
-	assert.NotEmpty(t, Host)
+	// An empty Host is resolved via getHostIp, which requires a non-loopback
+	// IPv4 interface; CI containers may not have one.
+	if hasUsableIPv4() {
+		Host = ""
+		err = checkValid(normalDir)
+		assert.Nil(t, err)
+		assert.NotEmpty(t, Host)
+	}
 
 	// Patch BuildHttpRequest
 	Host = ""
@@ -130,7 +134,39 @@ func Test_checkValid(t *testing.T) {
 	patches.Reset()
 }
 
+// hasUsableIPv4 reports whether the host has a non-loopback, non-link-local
+// IPv4 address, i.e. an environment where getHostIp can succeed.
+func hasUsableIPv4() bool {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			v, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip := v.IP
+			if !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && ip.To4() != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func Test_getHostIp(t *testing.T) {
+	if !hasUsableIPv4() {
+		t.Skip("no non-loopback IPv4 interface on this host; skip real-IP discovery assertions")
+	}
 	host, err := getHostIp()
 	assert.Nil(t, err)
 	assert.NotEmpty(t, host)
