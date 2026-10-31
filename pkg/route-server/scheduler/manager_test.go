@@ -24,17 +24,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"infer-dp-scheduler/pkg/common/health"
+	"route-server/pkg/common/health"
 
 	"github.com/agiledragon/gomonkey/v2"
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/scheduler"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/scheduler"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/metrics"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	stats2 "infer-dp-scheduler/pkg/common/instance-metrics"
+	"route-server/pkg/common/constant"
+	stats2 "route-server/pkg/common/instance-metrics"
 )
 
 // scheduler contains 3 roles [constant.Prefill, constant.Decode, "X"], algorithms may contain 3 roles [constant.Prefill, constant.Decode, "unknown"]

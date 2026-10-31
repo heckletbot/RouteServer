@@ -22,8 +22,8 @@ import (
 	"sort"
 	"strings"
 
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/utils"
 
 	corev1 "k8s.io/api/core/v1"
 )

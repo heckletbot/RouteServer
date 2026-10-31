@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	"infer-dp-scheduler/pkg/common/config"
+	"route-server/pkg/common/config"
 )
 
 type PersistenceProvider interface {

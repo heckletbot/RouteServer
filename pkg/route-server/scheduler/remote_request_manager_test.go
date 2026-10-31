@@ -24,13 +24,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"infer-dp-scheduler/cmd/route_server/server/options"
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/cmd/route_server/server/options"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/utils"
 
-	"infer-dp-scheduler/pkg/common/health"
-	"infer-dp-scheduler/pkg/common/scheduler"
+	"route-server/pkg/common/health"
+	"route-server/pkg/common/scheduler"
 )
 
 func PrepareTestScheduler(t *testing.T) (Manager, scheduler.ScheduleAlgorithm, scheduler.ScheduleAlgorithm) {

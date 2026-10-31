@@ -19,11 +19,11 @@ package server
 import (
 	"net/http"
 
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/route-server/instances"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/route-server/instances"
 
 	"github.com/gin-gonic/gin"
 )

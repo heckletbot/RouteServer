@@ -22,9 +22,9 @@ import (
 	"net/http"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/openai"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/openai"
 )
 
 type LogRequestTracer struct {

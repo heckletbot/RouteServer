@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/assert"
 
-	"infer-dp-scheduler/pkg/common/instance-metrics"
+	"route-server/pkg/common/instance-metrics"
 )
 
 var input = `vllm:num_requests_waiting{engine="31",model_name="deepseek"} 0.0

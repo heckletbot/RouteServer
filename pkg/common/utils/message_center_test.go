@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"infer-dp-scheduler/pkg/common/logger"
+	"route-server/pkg/common/logger"
 )
 
 const testTopic = "test-topic"

@@ -20,10 +20,10 @@ import (
 	"fmt"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/errs"
-	common_infer "infer-dp-scheduler/pkg/common/infer"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/errs"
+	common_infer "route-server/pkg/common/infer"
+	"route-server/pkg/common/utils"
 )
 
 type DummyPhase struct {

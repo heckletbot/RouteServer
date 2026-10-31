@@ -32,9 +32,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/metrics-collector/logger"
-	metrics2 "infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/metrics-collector/logger"
+	metrics2 "route-server/pkg/route-server/metrics"
 )
 
 var metricChan chan struct{}

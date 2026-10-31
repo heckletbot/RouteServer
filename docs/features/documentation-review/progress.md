@@ -160,13 +160,48 @@ validation, progress updates and component-naming audit must remain uncommitted 
 
 ## Latest status / 最新状态
 
-Documentation and the approved upstream merge are committed locally (`899deca`, `5f55114`) and not
-pushed. Makefile/package fixes and the naming audit are complete in the working tree and their scoped
-validation has passed. On the user's latest instruction, the verified Makefile/package changes and
-their regression tests, documentation and progress record are now authorized for a local signed-off
-commit, without pushing. The naming audit and module-migration proposal remain outside that commit;
-module renaming is not authorized. Project-wide tests, actual build/deployment and old-installation
-migration remain outside this completed milestone's verification.
-文档与获授权的上游 merge 已在本地提交，均未推送。Makefile/包目录修复及命名审查已在工作区完成并通过相应验证；
-按用户最新指令，已验证的 Makefile/包目录修复及其回归测试、文档和进度记录现获授权按规范本地提交，不推送。
-独立命名审查及模块迁移方案不纳入该提交，模块重命名尚未授权。项目全量测试、真实构建/部署及旧安装迁移未纳入本次验证。
+Documentation (`899deca`), upstream integration (`5f55114`) and the verified build/package fixes
+(`f7e8185`) are committed locally and not pushed. Module migration was subsequently implemented and
+authorized for a dedicated local commit, including the naming audit and module-migration documents.
+Its execution is recorded in [module migration progress](../module-path-migration/progress.md). Project-wide tests, actual
+build/deployment and old-installation migration remain outside the completed build-fix verification.
+文档、上游同步及已验证的构建/包目录修复均已在本地提交，未推送。后续模块迁移已实施并获准独立本地提交，
+包含命名审查及迁移文档，实际结果见独立进度。项目全量测试、真实构建/部署及旧安装迁移未纳入此前构建修复的验证。
+
+## 2026-10-31: Build-fix commit and migration proposal / 构建修复提交与迁移提案
+
+- Created `f7e8185`, `fix(build): propagate test failures and align package layout`, with the configured
+  author identity and DCO sign-off. Its explicit 16-file scope includes the fixes, regression script,
+  bilingual companion guides/template and progress record, excluding the independent audit, original
+  `.gitignore` change, AGENTS.md and internal analysis. No push was performed.
+  已按当前身份及 DCO 签署提交 `f7e8185`，明确限定 16 份修复、测试及配套文档/进度文件；排除独立审查、
+  既有 `.gitignore`、AGENTS.md 和内部分析，未推送。
+- Before commit, reran `python3 .codearts/test_makefile.py`: all seven tests passed in 10.556 seconds,
+  including isolated real Go pass/fail cases and fixture archive checks. Shell syntax and diff checks
+  passed. The refreshed documentation check covered 50 local Markdown files, 444 links/anchors and
+  23 bilingual pairs; that scope included the local audit outside the commit.
+  提交前重跑 7 项回归全部通过，耗时 10.556 秒；shell 语法与 diff 检查通过。文档复核覆盖 50 份本地 Markdown、
+  444 个链接/锚点和 23 组双语，其中包含不纳入提交的本地审查文件。
+- At that stage the next authorized activity was planning only: [English module migration plan](../module-path-migration/plan.md)
+  and [中文方案](../module-path-migration/plan.zh-CN.md) describe the requested `infer-dp-scheduler`
+  to `route-server` change, exact inventory, downstream gates, atomic scope and validation matrix.
+  No `go.mod`, import, dependency or linker rewrite was performed during that planning stage.
+  当时仅规划模块迁移，双语方案列出准确清单、下游门禁、原子范围及验证矩阵；规划阶段未修改模块、import、依赖或链接配置。
+
+## 2026-10-31: Module implementation authorized / 模块实施授权
+
+The user subsequently authorized the atomic module migration, preserving directories, Go package
+declarations and runtime protocols, with bilingual documentation and validation. At that stage no further
+commit or push was authorized. Results and baseline test limitations are maintained in the separate module
+migration progress linked above; the previous build-fix commit remains `f7e8185`.
+用户随后批准原子迁移模块名，保留目录、Go 包声明和运行协议，补充双语文档与验证，当时不授权后续提交或推送。
+结果及基线测试限制统一记录在上述独立模块进度中，原构建修复提交仍为 `f7e8185`。
+
+## 2026-10-31: Module commit authorized / 模块提交授权
+
+The user authorized committing the verified module migration and supporting records locally, without
+pushing. The dedicated commit uses `fix(module)!: align module path with route-server`, a migration
+footer and DCO sign-off. Unrelated local files remain outside its scope. Existing unit/vet/race failures
+and native Linux/downstream limits remain documented; a local commit does not imply release acceptance.
+用户已授权将验证后的模块迁移及配套记录本地提交，不推送。独立提交使用上述标题、破坏性迁移说明及 DCO 签署，
+不包含无关本地文件；既有单测/vet/竞态失败和 Linux 原生/下游限制继续保留，本地提交不代表发布验收通过。

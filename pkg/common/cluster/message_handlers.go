@@ -17,8 +17,8 @@
 package cluster
 
 import (
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/route-server/metrics"
 )
 
 type InstanceLeaveHandler struct {

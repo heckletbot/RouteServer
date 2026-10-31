@@ -28,15 +28,15 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/errs"
-	utils2 "infer-dp-scheduler/pkg/common/infer"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/handler/pipeline"
-	"infer-dp-scheduler/pkg/route-server/metrics"
-	"infer-dp-scheduler/pkg/route-server/middleware"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/errs"
+	utils2 "route-server/pkg/common/infer"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/handler/pipeline"
+	"route-server/pkg/route-server/metrics"
+	"route-server/pkg/route-server/middleware"
 )
 
 var server *http.Server

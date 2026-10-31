@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"infer-dp-scheduler/cmd/mock_server/server"
+	"route-server/cmd/mock_server/server"
 )
 
 var (

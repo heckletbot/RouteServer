@@ -21,14 +21,14 @@ import (
 	"strings"
 	"time"
 
-	"infer-dp-scheduler/cmd/route_server/server/options"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/errs"
-	"infer-dp-scheduler/pkg/common/openai"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/handler"
-	"infer-dp-scheduler/pkg/route-server/handler/request"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/cmd/route_server/server/options"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/errs"
+	"route-server/pkg/common/openai"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/handler"
+	"route-server/pkg/route-server/handler/request"
+	"route-server/pkg/route-server/metrics"
 )
 
 func PrepareDecodeRequestBody(context *PipelineContext, copiedBody *utils.JSONModifier) *utils.JSONModifier {

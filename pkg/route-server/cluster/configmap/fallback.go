@@ -22,10 +22,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/cluster"
-	rsmetrics "infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/pkg/common/cluster"
+	rsmetrics "route-server/pkg/route-server/metrics"
 
-	"infer-dp-scheduler/pkg/common/logger"
+	"route-server/pkg/common/logger"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

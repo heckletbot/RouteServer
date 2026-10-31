@@ -25,11 +25,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/metrics"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/openai"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/openai"
 )
 
 func TestNewImpl1(t *testing.T) {

@@ -17,7 +17,7 @@
 package utils
 
 import (
-	"infer-dp-scheduler/pkg/common/constant"
+	"route-server/pkg/common/constant"
 	"strings"
 	"testing"
 )

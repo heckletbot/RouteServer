@@ -17,8 +17,8 @@
 package metrics
 
 import (
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/utils/list"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/utils/list"
 	"sync"
 	"testing"
 	"time"

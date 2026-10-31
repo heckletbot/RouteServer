@@ -23,17 +23,17 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	peerClient "infer-dp-scheduler/pkg/common/client/peer-client"
-	"infer-dp-scheduler/pkg/common/cluster"
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	instanceMetrics "infer-dp-scheduler/pkg/common/instance-metrics"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/scheduler"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/apc"
-	"infer-dp-scheduler/pkg/route-server/cluster/singleton"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	peerClient "route-server/pkg/common/client/peer-client"
+	"route-server/pkg/common/cluster"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	instanceMetrics "route-server/pkg/common/instance-metrics"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/scheduler"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/apc"
+	"route-server/pkg/route-server/cluster/singleton"
+	"route-server/pkg/route-server/metrics"
 )
 
 // createTestManagerConfig creates manager config for testing

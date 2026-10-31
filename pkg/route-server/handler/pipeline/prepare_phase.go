@@ -19,10 +19,10 @@ package pipeline
 import (
 	"time"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/errs"
-	"infer-dp-scheduler/pkg/common/health"
-	"infer-dp-scheduler/pkg/route-server/handler"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/errs"
+	"route-server/pkg/common/health"
+	"route-server/pkg/route-server/handler"
 )
 
 type PreparePhase struct {

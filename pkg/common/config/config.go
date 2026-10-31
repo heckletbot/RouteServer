@@ -17,10 +17,10 @@
 package config
 
 import (
-	"infer-dp-scheduler/pkg/common/anthropic"
-	instance_metrics "infer-dp-scheduler/pkg/common/instance-metrics"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/anthropic"
+	instance_metrics "route-server/pkg/common/instance-metrics"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
 )
 
 const (

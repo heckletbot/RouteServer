@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/logger"
+	"route-server/pkg/common/logger"
 )
 
 type Task interface {

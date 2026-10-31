@@ -25,12 +25,12 @@ import (
 	"strings"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/openai"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/apc"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/openai"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/apc"
+	"route-server/pkg/route-server/metrics"
 )
 
 const (

@@ -79,6 +79,12 @@ Go tests in a separate module when Go is installed. They disable downloads and d
 The same command checks Make and CodeArts archive layouts with a build fixture; this does not validate
 the compiled RouteServer binaries or an actual deployment.
 
+After a module-path or linker-target change, run `python3 .codearts/test_module_metadata.py`.
+It builds real artifacts from temporary working-source snapshots and checks the module recorded by
+`go version -m` and all fields of the existing `GET /` response. It needs loopback-listen permission.
+On a non-Linux host, the CodeArts path is explicitly built for that native host for linker/runtime
+smoke coverage; Linux release artifacts still require their own native runner verification.
+
 ### build
 
 Compile both executables:

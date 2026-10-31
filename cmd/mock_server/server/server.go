@@ -30,11 +30,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"infer-dp-scheduler/pkg/common/anthropic"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/openai"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/anthropic"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/openai"
+	"route-server/pkg/common/utils"
 )
 
 const (

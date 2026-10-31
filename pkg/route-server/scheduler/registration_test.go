@@ -19,7 +19,7 @@ package scheduler
 import (
 	"testing"
 
-	"infer-dp-scheduler/pkg/common/scheduler"
+	"route-server/pkg/common/scheduler"
 )
 
 func TestRegister(t *testing.T) {

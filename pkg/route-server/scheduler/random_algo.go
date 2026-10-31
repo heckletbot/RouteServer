@@ -25,10 +25,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	instance_metrics "infer-dp-scheduler/pkg/common/instance-metrics"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/scheduler"
-	"infer-dp-scheduler/pkg/common/utils"
+	instance_metrics "route-server/pkg/common/instance-metrics"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/scheduler"
+	"route-server/pkg/common/utils"
 )
 
 const (

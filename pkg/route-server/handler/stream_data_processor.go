@@ -20,10 +20,10 @@ import (
 	"bytes"
 	"strings"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/openai"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/openai"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/metrics"
 )
 
 type StreamDataProcessor struct {

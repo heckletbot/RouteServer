@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/utils"
 )
 
 type Collector struct {

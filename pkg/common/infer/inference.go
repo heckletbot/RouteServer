@@ -21,8 +21,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"infer-dp-scheduler/pkg/common/client"
-	"infer-dp-scheduler/pkg/common/errs"
+	"route-server/pkg/common/client"
+	"route-server/pkg/common/errs"
 )
 
 const (

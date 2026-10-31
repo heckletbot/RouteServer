@@ -19,10 +19,10 @@ package scheduler
 import (
 	"testing"
 
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/instance-metrics"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/instance-metrics"
+	"route-server/pkg/common/utils"
 )
 
 func initSLOManagerNormal() (*SLOManager, error) {

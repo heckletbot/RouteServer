@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/config"
+	"route-server/pkg/common/config"
 )
 
 func TestNewRistrettoCache(t *testing.T) {

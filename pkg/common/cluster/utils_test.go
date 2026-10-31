@@ -19,7 +19,7 @@ package cluster
 import (
 	"testing"
 
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/utils"
 )
 
 func TestCheckPeerValid(t *testing.T) {

@@ -24,11 +24,11 @@ import (
 	"sync"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/instance-metrics"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/scheduler"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/instance-metrics"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/scheduler"
+	"route-server/pkg/common/utils"
 )
 
 type LeastRequests struct {

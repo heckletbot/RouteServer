@@ -22,8 +22,8 @@ import (
 	"unsafe"
 
 	"github.com/dgraph-io/ristretto/v2"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/logger"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/logger"
 )
 
 // RistrettoCache is the Ristretto cache implementation

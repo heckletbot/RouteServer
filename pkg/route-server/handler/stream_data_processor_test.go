@@ -20,10 +20,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/openai"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/openai"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/metrics"
 )
 
 func TestProcessDataCompleteDataPacket(t *testing.T) {

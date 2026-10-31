@@ -22,10 +22,10 @@ import (
 	"reflect"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
 )
 
 // LeaderCheckInternal is used to pause 100ms between two leader checker of leader_health loops

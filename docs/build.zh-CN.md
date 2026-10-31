@@ -79,6 +79,11 @@ output/route-server-<version>-<timestamp>.zip
 禁止下载依赖，不运行项目 E2E。
 同一命令还用构建替身检查 Make 与 CodeArts 的归档布局，不代表已验证 RouteServer 编译产物或真实部署。
 
+模块路径或链接目标变更后，执行 `python3 .codearts/test_module_metadata.py`。
+它从工作区源码的临时快照构建真实制品，检查 `go version -m` 的模块身份及已有 `GET /` 响应的全部字段，
+需要 loopback 监听权限。在非 Linux 主机上，CodeArts 路径显式构建本机目标以验证链接/运行元数据；
+Linux 发布制品仍需单独在原生 runner 验证。
+
 ### build
 
 编译两个可执行文件：

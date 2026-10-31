@@ -25,11 +25,11 @@ import (
 	"strings"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	http2 "infer-dp-scheduler/pkg/common/http"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	http2 "route-server/pkg/common/http"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
 )
 
 type PeerClient struct {

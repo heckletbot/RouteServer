@@ -17,9 +17,9 @@
 package events
 
 import (
-	"infer-dp-scheduler/pkg/common/health"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/health"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
 )
 
 type ServingEventsHandler struct {

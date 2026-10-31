@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/logger"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/logger"
 )
 
 type WorkerStats interface {

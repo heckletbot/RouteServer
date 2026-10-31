@@ -16,10 +16,10 @@ BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u '+%Y%m%d%H%M%S' 2>/dev/null || date -f "%Y%m%d%H%M%S" 2>/dev/null || echo "unknown")
 
-LDFLAGS := -X 'infer-dp-scheduler/cmd/route_server/server.version=$(VERSION)' \
-           -X 'infer-dp-scheduler/cmd/route_server/server.tagOrBranch=$(BRANCH)' \
-           -X 'infer-dp-scheduler/cmd/route_server/server.commitId=$(COMMIT)' \
-           -X 'infer-dp-scheduler/cmd/route_server/server.buildTime=$(BUILD_TIME)'
+LDFLAGS := -X 'route-server/cmd/route_server/server.version=$(VERSION)' \
+           -X 'route-server/cmd/route_server/server.tagOrBranch=$(BRANCH)' \
+           -X 'route-server/cmd/route_server/server.commitId=$(COMMIT)' \
+           -X 'route-server/cmd/route_server/server.buildTime=$(BUILD_TIME)'
 
 $(OUTPUT_DIR)/$(PKG_NAME)/bin:
 	@mkdir -p $@

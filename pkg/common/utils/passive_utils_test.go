@@ -22,8 +22,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"infer-dp-scheduler/pkg/common/anthropic"
-	"infer-dp-scheduler/pkg/common/constant"
+	"route-server/pkg/common/anthropic"
+	"route-server/pkg/common/constant"
 )
 
 func TestTryParseErrFromStreamResponse(t *testing.T) {

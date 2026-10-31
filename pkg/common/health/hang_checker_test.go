@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/client"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/client"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/utils"
 )
 
 // Test ProbeState value definitions

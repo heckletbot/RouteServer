@@ -22,8 +22,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
 )
 
 func TestCheckInstancesExistInState_EmptyInput(t *testing.T) {

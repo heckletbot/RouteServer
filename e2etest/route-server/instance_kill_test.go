@@ -17,7 +17,7 @@ import (
 	"github.com/onsi/gomega/gexec"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
-	commoncfg "infer-dp-scheduler/pkg/common/config"
+	commoncfg "route-server/pkg/common/config"
 )
 
 const instanceKillTestCtx = "instance-kill-test"

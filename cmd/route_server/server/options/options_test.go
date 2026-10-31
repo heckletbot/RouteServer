@@ -20,8 +20,8 @@ import (
 	"reflect"
 	"testing"
 
-	config2 "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/logger"
+	config2 "route-server/pkg/common/config"
+	"route-server/pkg/common/logger"
 )
 
 func Test_loadFromFile(t *testing.T) {

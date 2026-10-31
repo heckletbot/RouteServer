@@ -23,12 +23,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/metrics"
 )
 
 // Manager is the APC manager

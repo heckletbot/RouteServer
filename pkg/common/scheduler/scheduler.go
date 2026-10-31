@@ -17,8 +17,8 @@
 package scheduler
 
 import (
-	"infer-dp-scheduler/pkg/common/instance-metrics"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/instance-metrics"
+	"route-server/pkg/common/utils"
 )
 
 type ScheduleAlgorithm interface {
