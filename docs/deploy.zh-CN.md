@@ -36,12 +36,12 @@
 
 两种发布产物的内部布局相同：部署资源（`deploy.sh`、`*.yaml`、
 `config_generator`、`scale/`、`pipelines/`）位于压缩包根目录，可运行的程序包位于
-`DistributedScheduler/` 下。
+`route-server/` 下。
 
 1. **解压程序包**
    ```bash
    # zip produced by `make package`
-   unzip DistributedScheduler-*.zip -d route-server
+   unzip route-server-*.zip -d route-server
    # tar.gz produced by the CodeArts build task
    tar -xzf route-server-*-linux-*.tar.gz -C route-server
    ```
@@ -132,7 +132,7 @@
 
 #### `--log-file-path`
 - **描述**：指定 RouteServer 日志文件的完整路径
-- **默认值**：`$RS_INSTALL_DIR/$rs_name/DistributedScheduler/log/route-server.log`
+- **默认值**：`$RS_INSTALL_DIR/$rs_name/route-server/log/route-server.log`
 
 #### `--show-std-output`
 - **描述**：是否将 RouteServer 进程输出直接打印到 stdout
@@ -319,7 +319,7 @@ curl -iX GET "http://x.x.x.x:9800/status" -H "Content-Type:application/json"
 
 查看 RouteServer 服务日志：
 ```bash
-tail -f $RS_INSTALL_DIR/singleton_${HOST}_${PORT}/DistributedScheduler/log/route-server.log
+tail -f $RS_INSTALL_DIR/singleton_${HOST}_${PORT}/route-server/log/route-server.log
 ```
 
 ---
@@ -558,7 +558,7 @@ curl -iX GET "http://x.x.x.x:9800/status" -H "Content-Type:application/json"
 
 查看 RouteServer 服务日志：
 ```bash
-tail -f $RS_INSTALL_DIR/worker_${HOST}_${PORT}/DistributedScheduler/log/route-server.log
+tail -f $RS_INSTALL_DIR/worker_${HOST}_${PORT}/route-server/log/route-server.log
 ```
 
 ### Candidate 部署
@@ -660,5 +660,5 @@ curl -iX GET "http://x.x.x.x:9800/status" -H "Content-Type:application/json"
 
 查看 RouteServer 服务日志：
 ```bash
-tail -f $RS_INSTALL_DIR/candidate_${HOST}_${PORT}/DistributedScheduler/log/route-server.log
+tail -f $RS_INSTALL_DIR/candidate_${HOST}_${PORT}/route-server/log/route-server.log
 ```

@@ -12,6 +12,7 @@ Ensure the following tools are installed on your build machine:
 |------|-----------------|----------------------------------|
 | Go   | 1.25.0          | Compile Go source code           |
 | Make | 3.82            | Build orchestration              |
+| Bash | 3.2             | `/bin/bash` provides `pipefail` for Make test targets |
 
 > **Operating System**: The build process supports Linux, macOS, and Windows (WSL). The deployment package (`deploy.sh`) targets Linux environments.
 
@@ -39,12 +40,12 @@ This single command performs the following steps:
 2. **Builds** the main server binary (`route-server`) from `cmd/route_server/`
 3. **Builds** the config generation tool (`config_generator`) from `cmd/config-tool/`
 4. **Copies** deployment scripts, YAML templates, auto-scaling scripts, and pipeline configurations into the package directory
-5. **Packages** everything into `output/DistributedScheduler-<version>-<timestamp>.zip`, ready for deployment
+5. **Packages** everything into `output/route-server-<version>-<timestamp>.zip`, ready for deployment
 
 After the build completes, you can find the deployable zip at:
 
 ```
-output/DistributedScheduler-<version>-<timestamp>.zip
+output/route-server-<version>-<timestamp>.zip
 ```
 
 For deployment instructions, see the [Deployment Guide](./deploy.md).
@@ -68,10 +69,15 @@ For deployment instructions, see the [Deployment Guide](./deploy.md).
 | `vet` | `go vet ./...` |
 | `lint` | `fmt` + `vet` |
 
-> `make test`, `make test-unit` and `make test-coverage` currently pipe test output through `tee`
-> without preserving the `go test` exit status. A successful Make exit status does not prove that tests
-> passed. Use `go test` directly for a reliable result, as shown below. The E2E suite does not check
-> `testing.Short()`, so `-short` does not currently exclude it.
+> `make test`, `make test-unit` and `make test-coverage` use Bash `pipefail`: either a `go test` failure
+> or a `tee` failure makes Make fail, while test output is still sent to the console and the log file.
+> The E2E suite does not check `testing.Short()`, so `-short` does not currently exclude it.
+
+Pipeline regression checks: run `python3 .codearts/test_makefile.py` from the repository root with
+Python 3. The checks use temporary directories, controlled Go/tee failures, and real passing/failing
+Go tests in a separate module when Go is installed. They disable downloads and do not run project E2E.
+The same command checks Make and CodeArts archive layouts with a build fixture; this does not validate
+the compiled RouteServer binaries or an actual deployment.
 
 ### build
 
@@ -88,7 +94,7 @@ Output:
 
 ```
 output/
-├── DistributedScheduler/
+├── route-server/
 │   └── bin/route-server                 # Server binary
 └── config_generator                     # Config tool
 ```
@@ -112,7 +118,7 @@ Build only `route-server`. Useful for faster feedback during server development.
 make build-binary
 ```
 
-Output: `output/DistributedScheduler/bin/route-server`
+Output: `output/route-server/bin/route-server`
 
 ### build-config-tool
 
@@ -132,9 +138,9 @@ Build both binaries, copy deploy assets, generate `version.info`, and create a `
 make package
 ```
 
-Output: `output/DistributedScheduler-<version>-<timestamp>.zip`
+Output: `output/route-server-<version>-<timestamp>.zip`
 
-The `version.info` file under `output/DistributedScheduler/` records the build metadata (read from git at build time):
+The `version.info` file under `output/route-server/` records the build metadata (read from git at build time):
 
 ```
 Build Tag/Branch: <branch>
@@ -151,13 +157,13 @@ Package contents:
 ├── *.yaml                              # All YAML templates from deploy/
 ├── scale/
 ├── pipelines/
-└── DistributedScheduler/
+└── route-server/
     ├── bin/route-server                # Server binary
     └── version.info                    # Build metadata
 ```
 
 `deploy.sh` expects exactly this layout: it looks for the runnable package under
-`<package-root>/DistributedScheduler/` and for `config_generator`, `*.yaml`, `scale/`, and
+`<package-root>/route-server/` and for `config_generator`, `*.yaml`, `scale/`, and
 `pipelines/` next to itself.
 
 ### CodeArts build
@@ -165,7 +171,7 @@ Package contents:
 The Huawei Cloud CodeArts build task runs [`.codearts/build.sh`](../.codearts/build.sh) and publishes
 `route-server-<version>-<timestamp>-linux-<arch>.tar.gz`. Its inner layout is identical to the
 `make package` output above (assets at the archive root, runnable package under
-`DistributedScheduler/`), so the same `deploy.sh` workflow applies after `tar -xzf`.
+`route-server/`), so the same `deploy.sh` workflow applies after `tar -xzf`.
 
 ---
 

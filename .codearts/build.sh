@@ -45,8 +45,8 @@ LDFLAGS="-X 'infer-dp-scheduler/cmd/route_server/server.version=${VERSION}' -X '
 
 echo "building route-server ${VERSION} (${BRANCH} ${COMMIT}) for linux/${TARGET_ARCH} ..."
 # Layout must match `make package`: deploy assets at the archive root, runnable
-# package under DistributedScheduler/. deploy.sh locates the package by that name.
-PACKAGE_DIR=DistributedScheduler
+# package under route-server/. deploy.sh locates the package by that name.
+PACKAGE_DIR=route-server
 mkdir -p "output/${PACKAGE_DIR}/bin"
 go build -trimpath -ldflags "${LDFLAGS}" -o "output/${PACKAGE_DIR}/bin/route-server" ./cmd/route_server
 go build -trimpath -o output/config_generator ./cmd/config-tool

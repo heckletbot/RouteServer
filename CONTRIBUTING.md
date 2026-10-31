@@ -41,6 +41,7 @@ contributors, committers and maintainers alike.
 | --- | --- | --- |
 | Go | 1.25.0 | The module declares `go 1.25.0` |
 | Make | 3.82 | Drives build, test and packaging |
+| Bash | 3.2 | `/bin/bash` is used by the Make test targets for `pipefail` |
 | Git | 2.23 | Needed for `--force-with-lease` and worktrees |
 
 The Go module path is `infer-dp-scheduler` (it is not a URL). Internal imports therefore look like
@@ -69,13 +70,19 @@ Build artifacts (these names come from the `Makefile`, which is authoritative):
 
 | Target | Output |
 | --- | --- |
-| `make build` | `output/DistributedScheduler/bin/route-server`, `output/config_generator` |
-| `make package` | `output/DistributedScheduler-<version>-<timestamp>.zip` |
+| `make build` | `output/route-server/bin/route-server`, `output/config_generator` |
+| `make package` | `output/route-server-<version>-<timestamp>.zip` |
 
-> Test results: `make test`, `make test-unit` and `make test-coverage` currently pipe output through
-> `tee` without preserving the `go test` exit status. A zero Make exit status does not prove that tests
-> passed. Run `go test` directly for a reliable result. Also, `-short` only skips tests that explicitly
-> check it; the current E2E suite does not, so `make test-unit` is not a unit-only shortcut.
+> Test results: `make test`, `make test-unit` and `make test-coverage` use Bash `pipefail` so a failure
+> from either `go test` or `tee` makes the target fail while keeping console and file logging.
+> `-short` only skips tests that explicitly check it; the current E2E suite does not, so
+> `make test-unit` is not a unit-only shortcut.
+
+To verify the Make test pipelines without running the project E2E suite, run
+`python3 .codearts/test_makefile.py` (Python 3). It checks controlled command/logging failures and, when
+Go is available, real passing and failing tests in an isolated module with downloads disabled.
+It also checks Make/CodeArts archive layouts using a build fixture; that layout check does not compile
+the RouteServer binaries or perform a deployment.
 
 ### End-to-end tests
 

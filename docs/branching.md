@@ -82,9 +82,9 @@ validator; the PR template does not validate them.
 Verify that the platform can enforce the change-dependent approval counts and owner requirements
 before configuring those rules. An unsupported setting must not be treated as automatic enforcement.
 
-The current Make test targets do not preserve `go test` failure exit codes, and `make test-unit` still
-runs the E2E suite. A CI job must use the actual `go test` result rather than treating the Make exit
-status as proof of success; see [CONTRIBUTING.md §3](../CONTRIBUTING.md#3-build-and-test).
+The Make test targets use Bash `pipefail` so `go test` or log-writing failures make the target fail.
+`make test-unit` still runs the E2E suite; see
+[CONTRIBUTING.md §3](../CONTRIBUTING.md#3-build-and-test).
 
 Area-specific review requirements come from [.github/CODEOWNERS](../.github/CODEOWNERS), and the
 general requirements are in

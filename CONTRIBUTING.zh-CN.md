@@ -38,6 +38,7 @@
 | --- | --- | --- |
 | Go | 1.25.0 | 模块声明为 `go 1.25.0` |
 | Make | 3.82 | 驱动构建、测试与打包 |
+| Bash | 3.2 | Make 测试目标使用 `/bin/bash` 的 `pipefail` |
 | Git | 2.23 | 需要 `--force-with-lease` 与 worktree |
 
 Go 模块路径是 `infer-dp-scheduler`（不是 URL），因此内部 import 形如
@@ -66,12 +67,16 @@ make package       # 构建 + 部署件 + version.info + 打 zip
 
 | 目标 | 产物 |
 | --- | --- |
-| `make build` | `output/DistributedScheduler/bin/route-server`、`output/config_generator` |
-| `make package` | `output/DistributedScheduler-<version>-<timestamp>.zip` |
+| `make build` | `output/route-server/bin/route-server`、`output/config_generator` |
+| `make package` | `output/route-server-<version>-<timestamp>.zip` |
 
-> 测试结果：`make test`、`make test-unit` 和 `make test-coverage` 当前通过 `tee` 输出日志，但没有保留
-> `go test` 的退出码。Make 返回 0 不代表测试通过；需要可靠结果时请直接运行 `go test`。
-> 此外，`-short` 只会跳过显式检查该标志的测试；当前 E2E 套件没有检查，因此 `make test-unit` 并非只跑单测的快捷方式。
+> 测试结果：`make test`、`make test-unit` 和 `make test-coverage` 使用 Bash `pipefail`，
+> `go test` 或 `tee` 任一失败都会使目标失败，同时保留终端输出和日志文件。
+> `-short` 只会跳过显式检查该标志的测试；当前 E2E 套件没有检查，因此 `make test-unit` 并非只跑单测的快捷方式。
+
+验证 Make 测试管道而不运行项目 E2E 套件，可执行 `python3 .codearts/test_makefile.py`（需要 Python 3）。
+它检查受控的命令/日志失败，并在 Go 可用时使用禁止下载的独立模块运行真实的通过和失败测试。
+它还使用构建替身检查 Make/CodeArts 归档布局；该布局检查不会编译 RouteServer 二进制或执行部署。
 
 ### 端到端测试
 

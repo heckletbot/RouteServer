@@ -73,8 +73,8 @@ PR 标题与 commit 信息格式也需要人工评审或单独配置校验器；
 
 配置前需核实平台能否按改动类型强制执行审批人数与 owner 要求；不支持的设置不能被描述为已自动执行。
 
-当前 Make 测试目标没有保留 `go test` 失败退出码，且 `make test-unit` 仍会运行 E2E 套件。
-CI 任务必须依据实际 `go test` 结果判断，不能将 Make 退出码视为测试通过的证据；见
+Make 测试目标使用 Bash `pipefail`，`go test` 或日志写入失败都会使目标失败。
+`make test-unit` 仍会运行 E2E 套件，见
 [CONTRIBUTING.zh-CN.md §3](../CONTRIBUTING.zh-CN.md#3-构建与测试)。
 
 领域相关的评审要求由 [.github/CODEOWNERS](../.github/CODEOWNERS) 给出，通用要求见

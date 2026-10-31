@@ -57,21 +57,25 @@ package: build copy-deploy version-info
 	@cd $(OUTPUT_DIR) && zip -q -r $(PKG_NAME)-$(VERSION)-$(BUILD_TIME).zip ./
 	@echo "Package created: $(OUTPUT_DIR)/$(PKG_NAME)-$(VERSION)-$(BUILD_TIME).zip"
 
+# Test pipelines need Bash pipefail so neither go test nor tee failures are hidden.
+# Keep the shell change local to these targets.
+test test-coverage test-unit: SHELL := /bin/bash
+
 test:
 	@mkdir -p $(BUILD_DIR)
 	@echo "Running tests at $$(date)" | tee $(BUILD_DIR)/test.log
-	@$(GO) test ./... -v -failfast=false 2>&1 | tee -a $(BUILD_DIR)/test.log
+	@set -o pipefail; $(GO) test ./... -v -failfast=false 2>&1 | tee -a $(BUILD_DIR)/test.log
 
 test-coverage:
 	@mkdir -p $(BUILD_DIR)
 	@echo "Running tests with coverage at $$(date)" | tee $(BUILD_DIR)/coverage.log
-	@$(GO) test ./... -v -failfast=false -coverprofile=$(BUILD_DIR)/coverage.out 2>&1 | tee -a $(BUILD_DIR)/coverage.log
+	@set -o pipefail; $(GO) test ./... -v -failfast=false -coverprofile=$(BUILD_DIR)/coverage.out 2>&1 | tee -a $(BUILD_DIR)/coverage.log
 	@echo "Coverage report generated: $(BUILD_DIR)/coverage.out"
 
 test-unit:
 	@mkdir -p $(BUILD_DIR)
 	@echo "Running unit tests at $$(date)" | tee $(BUILD_DIR)/unit-test.log
-	@$(GO) test ./... -v -failfast=false -short 2>&1 | tee -a $(BUILD_DIR)/unit-test.log
+	@set -o pipefail; $(GO) test ./... -v -failfast=false -short 2>&1 | tee -a $(BUILD_DIR)/unit-test.log
 
 clean:
 	@echo "Cleaning..."
