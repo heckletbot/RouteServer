@@ -5,6 +5,9 @@ English version: [SECURITY.md](SECURITY.md)
 ## 支持的版本
 
 RouteServer 尚未发布 1.0。只有最新版本与 `main` 会收到安全修复。
+所有版本（含安全热修复）只从 `main` 切出，当前不使用维护发版分支。同时支持多个版本需先明确批准，
+同步调整本政策、[GOVERNANCE.zh-CN.md](GOVERNANCE.zh-CN.md) 与
+[docs/branching.zh-CN.md](docs/branching.zh-CN.md)，再创建维护分支。
 
 | 版本 | 是否支持 |
 | --- | --- |
@@ -17,12 +20,12 @@ RouteServer 尚未发布 1.0。只有最新版本与 `main` 会收到安全修�
 
 **不要为安全问题开公开 issue、discussion 或 PR。**
 
-请使用以下私有渠道之一：
+> 配置状态：尚未核实托管平台的私密报告功能是否可用，[MAINTAINERS.md](MAINTAINERS.md) 中的安全响应人
+> 也仍为占位符。公开发布前必须验证并记录可用的私密上报渠道；下列选项仅在条件满足时适用，不表示渠道已经可用。
 
-1. **首选**——GitCode 的私密安全报告：在仓库页面选择 *Security* → *Report a vulnerability*，会创建仅
-   maintainer 可见的私密公告。
-2. **直接联系**——若该流程不可用，向 [MAINTAINERS.md](MAINTAINERS.md) 中列出的安全响应人
-   发私信。**不要**在公开渠道透露技术细节。
+1. **平台上报（若可用）**——确认报告为私密后，使用仓库的私密漏洞报告功能；不要用公开 issue 替代。
+2. **直接联系（完成登记后）**——向 [MAINTAINERS.md](MAINTAINERS.md) 中列出的真实安全响应人发私信。
+   占位 handle 不可用于联系。**不要**在公开渠道透露技术细节。
 
 如果你不确定某事是否算漏洞，也请私下报过来。我们宁可多 triage 一次，也不愿漏掉一个真实问题。
 
@@ -59,7 +62,7 @@ RouteServer 尚未发布 1.0。只有最新版本与 `main` 会收到安全修�
 
 - 由本仓库构建的 `route-server` 二进制与 `config_generator` 工具。
 - `pkg/` 下的请求处理、调度、健康/故障检测逻辑，以及 etcd 协同路径。
-- TLS/mTLS 配置处理，包括 [docs/security.md](security.md) 中描述的私钥口令处理。
+- TLS/mTLS 配置处理，包括 [docs/security.zh-CN.md](docs/security.zh-CN.md) 中描述的私钥口令处理。
 - `deploy/` 中默认配置即构成现实攻击面的部署件。
 
 **不在范围内**
@@ -73,11 +76,13 @@ RouteServer 尚未发布 1.0。只有最新版本与 `main` 会收到安全修�
 ## 部署前的加固
 
 RouteServer 分离了业务端口（默认 `9800`）与 ops 端口，并在两侧都支持 mTLS。在任何超出可信网络的部署
-之前，请阅读 [docs/security.md](security.md)；特别是：绑定到明确网卡、不要把 ops 端口暴露到公网、
+之前，请阅读 [docs/security.zh-CN.md](docs/security.zh-CN.md)；特别是：绑定到明确网卡、不要把 ops 端口暴露到公网、
 对下游 vLLM 与 etcd 连接启用 mTLS。
 
 ## 与安全相关的贡献
 
 如果你的 PR 涉及 `pkg/route-server/middleware/`、`pkg/common/http/`、`pkg/route-server/handler/` 或
-`deploy/` 中的 TLS 处理，除常规的 2 个评审外，还需要该领域 owner 的 approve。见
-[GOVERNANCE.zh-CN.md §5](GOVERNANCE.zh-CN.md#5-评审与合入要求)。
+`deploy/` 中的 TLS 处理，代码改动需 2 名非作者审批，必需的领域 owner 审批包含在这 2 名中。
+仅文档、仅测试、政策变更与混合改动按 [GOVERNANCE.zh-CN.md §5](GOVERNANCE.zh-CN.md#5-评审与合入要求)
+分类执行；安全修复还需满足其中的 maintainer 与安全评审人要求。
+committer 或 maintainer 仅可在必需审批与检查满足后合入，热修复也不得绕过门禁。

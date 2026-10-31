@@ -61,12 +61,17 @@ For deployment instructions, see the [Deployment Guide](./deploy.md).
 | `package` | Build + copy deploy assets + generate `version.info` + create `.zip` archive |
 | `test` | Run all tests, log to `build/test.log` |
 | `test-coverage` | Run all tests with coverage, report to `build/coverage.out` |
-| `test-unit` | Run unit tests only (`-short`), log to `build/unit-test.log` |
+| `test-unit` | Run all packages with `-short` (currently includes E2E), log to `build/unit-test.log` |
 | `clean` | Remove `build/`, `output/`, and loose `.zip` files |
 | `all` | `clean` + `build` |
 | `fmt` | `go fmt ./...` |
 | `vet` | `go vet ./...` |
 | `lint` | `fmt` + `vet` |
+
+> `make test`, `make test-unit` and `make test-coverage` currently pipe test output through `tee`
+> without preserving the `go test` exit status. A successful Make exit status does not prove that tests
+> passed. Use `go test` directly for a reliable result, as shown below. The E2E suite does not check
+> `testing.Short()`, so `-short` does not currently exclude it.
 
 ### build
 
@@ -172,11 +177,11 @@ The recommended workflow for developing and releasing RouteServer:
 # 1. Format and check code quality
 make lint
 
-# 2. Run unit tests for quick feedback
-make test-unit
+# 2. Test a specific package for quick feedback (example)
+go test ./pkg/common/scheduler/... -v
 
 # 3. Run full test suite before committing
-make test
+go test ./... -v -timeout 60m
 
 # 4. Build and package for deployment
 make clean && make package

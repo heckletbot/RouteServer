@@ -94,8 +94,10 @@ The short version:
 3. **Make your changes** and ensure code quality:
    ```bash
    make lint   # go fmt + go vet
-   make test   # go test ./...
+   go test ./... -v -timeout 60m
    ```
+   Run `go test` directly: the Make test targets currently lose test failure exit codes. See
+   [the testing notes](CONTRIBUTING.md#3-build-and-test).
 4. **Commit** with a Conventional Commits message and sign off (`git commit -s`)
 5. **Submit a Pull Request** against `main`
 

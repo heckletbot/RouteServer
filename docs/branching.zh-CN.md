@@ -9,7 +9,7 @@
 
 ## 1. 模型
 
-RouteServer 采用**单干线、受保护的 trunk-based 开发**。`main` 是唯一长期存在的分支，也是唯一发版源。
+RouteServer 采用**单干线、受保护的 trunk-based 开发**。`main` 是唯一长期开发分支，也是唯一发版源。
 topic 分支短生命周期，合入即删除。
 
 ```
@@ -22,10 +22,9 @@ topic 分支短生命周期，合入即删除。
 
 | 分支 | 谁写 | 能否合入 `main` | 生命周期 | 说明 |
 | --- | --- | --- | --- | --- |
-| `main` | maintainer，且必须通过 PR | — | 永久 | 受保护。唯一发版源。 |
+| `main` | committer 或 maintainer，且必须通过 PR | — | 永久 | 受保护。唯一发版源。 |
 | `intranet-sync` | 只有发布流水线 | 能，通过可评审的导入 PR | 永久 | **只读。** 机器写入并被 force-push，见 §5。 |
 | `feat/*`、`fix/*`、`docs/*`、`refactor/*`、`chore/*` | 单个贡献者 | 能，squash 合并 | < 1 周 | 合入即删除。可位于 fork 中。 |
-| `release/vX.Y` | release manager | 不能——它只接收 cherry-pick | 到该 minor 版本 EOL | 仅在需要同时维护两个 minor 版本时创建。 |
 | tag `vX.Y.Z` | maintainer | — | 永久 | 附注 tag。只在 `main` 上创建。 |
 
 ## 3. 合并规则
@@ -34,8 +33,7 @@ topic 分支短生命周期，合入即删除。
 | --- | --- | --- |
 | 贡献者 PR | **squash merge** | 一个逻辑变更一个提交，保持 `main` 线性。 |
 | 导入 PR（`intranet-sync` → `main`） | **merge commit**（`--no-ff`） | 保住导入历史，并标出内网历史的边界。 |
-| 热修复 | squash 合并，再 `cherry-pick -x` 到 `release/vX.Y` | 保证两处修复完全一致。 |
-| 发版分支 → `main` | 永不 | 发版是反方向的：`main` → tag。 |
+| 热修复 | squash 合入 `main`，再从 `main` 打发版 tag | 与其他改动使用相同的发版源与门禁。 |
 
 硬规则：
 
@@ -47,13 +45,16 @@ topic 分支短生命周期，合入即删除。
 
 ## 4. 评审与 CI 门禁
 
-在 GitCode 保护分支设置中配置（[文档](https://docs.atomgit.com/en/docs/help/home/org_project/project_manage/branch_management/set_protected_branch/)）：
+以下要求需在 GitCode 保护分支设置中配置（[文档](https://docs.atomgit.com/en/docs/help/home/org_project/project_manage/branch_management/set_protected_branch/)）：
 
 - 禁止直接 push——包括管理员。
-- 必须通过 PR，**至少 2 个 approve**，且作者本人不计入。
+- 必须通过 PR，审批按 [GOVERNANCE.zh-CN.md §5](../GOVERNANCE.zh-CN.md#5-评审与合入要求) 执行：
+  普通的仅文档或仅测试改动需 1 人，代码、敏感改动及政策变更需 2 人。必需的 owner 或 maintainer 审批计入该总人数，
+  作者不计入。混合改动取更严格要求，治理政策变更还需执行第 10 节的投票。
 - 所有评审对话 resolved 后才允许合并。
 - 流水线必须通过。
-- 合并权限限制为 `maintainer` 角色。
+- committer 与 maintainer 均可在必需审批与检查满足后合入；两种角色（含管理员）均不得绕过门禁。
+  仓库设置、角色管理和发版仍由 maintainer 负责。
 - 关闭 force-push 与分支删除。
 
 必需的检查项，按贡献者遇到的顺序：
@@ -65,6 +66,16 @@ topic 分支短生命周期，合入即删除。
 | `unit-test` | `make test-unit` |
 | `e2e` | `go test ./e2etest/route-server/ -timeout 60m`（runner 较慢时可改为每日跑） |
 | `dco` | 每个提交都带 `Signed-off-by` |
+
+配置状态：本仓库包含 `.codearts/build.sh`，但没有上述完整检查集的配置。平台侧 CI、必需检查、分支保护和
+CODEOWNERS 团队权限均尚未核实。此清单描述预期门禁，不是已经自动强制执行的证据。
+PR 标题与 commit 信息格式也需要人工评审或单独配置校验器；PR 模板本身不会校验这些格式。
+
+配置前需核实平台能否按改动类型强制执行审批人数与 owner 要求；不支持的设置不能被描述为已自动执行。
+
+当前 Make 测试目标没有保留 `go test` 失败退出码，且 `make test-unit` 仍会运行 E2E 套件。
+CI 任务必须依据实际 `go test` 结果判断，不能将 Make 退出码视为测试通过的证据；见
+[CONTRIBUTING.zh-CN.md §3](../CONTRIBUTING.zh-CN.md#3-构建与测试)。
 
 领域相关的评审要求由 [.github/CODEOWNERS](../.github/CODEOWNERS) 给出，通用要求见
 [GOVERNANCE.zh-CN.md §5](../GOVERNANCE.zh-CN.md#5-评审与合入要求)。
@@ -97,19 +108,15 @@ git push origin v0.2.0
 
 ## 7. 发版分支与热修复
 
-仅当旧 minor 版本需要在 `main` 继续前进时仍接收修复，才创建 `release/vX.Y`：
-
-```bash
-git switch -c release/v0.1 v0.1.3
-# 修复：从 main cherry-pick -x <sha>，绝不把 main 合进来
-```
+当前 pre-1.0 阶段，不创建 `release/vX.Y` 等维护发版分支。只有最新版本与 `main` 接收修复，见
+[SECURITY.zh-CN.md](../SECURITY.zh-CN.md)。若后续需要同时支持多个版本，必须先明确批准，并同步修改本文、
+[GOVERNANCE.zh-CN.md](../GOVERNANCE.zh-CN.md) 与安全支持政策，再创建维护分支；分支存在本身不构成支持承诺。
 
 热修复：
 
-1. 从 `main` 拉 `fix/<slug>`（不是从发版分支拉）。
-2. 正常评审、正常合入。
-3. 从 `main` 打补丁版本 tag。
-4. 若受影响的 `release/vX.Y` 仍在维护，则 `git cherry-pick -x <merge-sha>` 后在那里也打 tag。
+1. 从最新的 `main` 拉 `fix/<slug>`。
+2. 满足 [GOVERNANCE.zh-CN.md §5](../GOVERNANCE.zh-CN.md#5-评审与合入要求) 的常规评审与 CI 门禁，
+   由 committer 或 maintainer 将 PR squash 合入 `main`。
+3. 打 tag 前先合入发版说明，由 maintainer 在 `main` 的绿灯提交上打补丁版本 tag 并发布。
 
-紧急通道：事故处理期间，单个 maintainer 可在只有 1 个 approve 时合入，前提是 PR 打上 `hotfix` 标签，
-并在 24 小时内补齐第二次评审。这个标签的作用就是让这类情况可审计。
+事故处理期间给 PR 打上 `hotfix` 标签，以便优先评审和审计；该标签不减少审批人数，也不绕过 CI，领域 owner 要求仍适用。

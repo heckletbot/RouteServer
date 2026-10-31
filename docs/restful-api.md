@@ -260,7 +260,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 
 **Functionality**: Anthropic Messages API compatible inference endpoint for Claude-compatible clients.
 
-**Handler**: RouteServer's pipeline inference handler. The route is registered by the pipeline configuration (`handler: messages_infer`), so it is only available in pipeline inference mode (`--infer-module-version pipeline`); the legacy v0 mode returns `501`.
+**Handler**: RouteServer's pipeline inference handler. The route must be registered by the pipeline configuration (`handler: messages_infer`) in pipeline inference mode (`--infer-module-version pipeline`). Legacy v0 mode does not register this route; a request that reaches the default router receives `404`.
 
 **Caller**: Anthropic SDK and other Claude-compatible clients
 
@@ -315,7 +315,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 **Error Codes**:
 | Code | Meaning |
 | --- | --- |
-| 501 | RouteServer runs in legacy v0 mode, so the endpoint is unavailable |
+| 404 | The route is not registered, including in legacy v0 mode (default router response) |
 | 502 | No available inference instances |
 
 ### POST /v1/metaserver
