@@ -74,7 +74,7 @@ For more deployment options and configurations, see our [deploying script refere
 
 ## Security
 
-We strongly advise enable https and mTLS in production, see our [security guide](docs/security.md)
+We strongly advise enable https and mTLS in production, see our [security guide](docs/security.md). HTTPS/TLS is disabled by default (`--enable-https`, `--ops-enable-https`, `--client-https-enable` and `--etcd-tls-enable` all default to `false`), so the example above needs no certificates; enable them explicitly for production.
 
 ## API reference
 

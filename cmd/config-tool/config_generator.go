@@ -84,6 +84,7 @@ var (
 	EtcdKeyFile                string
 	EtcdCaCertFile             string
 	EnableOpsAPIsOnServicePort string
+	ClusterNamespace           string
 )
 
 func main() {
@@ -840,6 +841,37 @@ func modifyClusterConfig(cfg *config.Config) (success bool) {
 				MaxWorkerDownTimeSec:   300,
 			}
 		}
+	} else if Mode == cluster.TypeK8sConfigMap {
+		// ConfigMap mode: topology is sourced from a ConfigMap rather than CRDs.
+		// The k8s-configmap.yaml file is copied alongside route-server.yaml by
+		// deploy.sh and loaded by InitClusterConfig at startup.
+		cfg.ClusterCfg.ClusterServiceType = cluster.TypeK8sConfigMap
+		cfg.ClusterCfg.ConfigMapConfigFile = "k8s-configmap.yaml"
+		cfg.InstanceManagerCfg.HealthCheckConfig.EventThresholdIntervalMs = constant.ClusterHealthEventIntervalMs
+		// Namespace is propagated into the ConfigMap config at load time via
+		// POD_NAMESPACE env / in-cluster serviceaccount when left empty here.
+		// If the operator passed --cluster-namespace, record it so the config
+		// file's namespace field wins only when set.
+		if ClusterNamespace != "" {
+			if cfg.ClusterCfg.ConfigMapCfg == nil {
+				cfg.ClusterCfg.ConfigMapCfg = &config.ConfigMapConfig{}
+			}
+			cfg.ClusterCfg.ConfigMapCfg.Namespace = ClusterNamespace
+		}
+		remoteScheduleCfg := cfg.SchedulersCfg.RemoteSchedule
+		if remoteScheduleCfg == nil {
+			remoteScheduleCfg = &config.RemoteSchedulerCfg{
+				Enabled:        true,
+				RemoteType:     scheduler.ClusterLeaderType,
+				RemoteEndpoint: "",
+				NeedContent:    false,
+				TimeoutMs:      1000,
+			}
+		}
+		remoteScheduleCfg.RemoteType = scheduler.ClusterLeaderType
+		cfg.SchedulersCfg.RemoteSchedule = remoteScheduleCfg
+		cfg.MetaCleanupCfg = nil
+		return true
 	} else {
 		if cfg.MetaCleanupCfg == nil {
 			cfg.MetaCleanupCfg = &config.MetaCleanupConfig{}
@@ -874,7 +906,7 @@ func modifyClusterConfig(cfg *config.Config) (success bool) {
 }
 
 func parseArgs() {
-	flag.StringVar(&TemplatePath, "template", "/opt/route_server/mo-deploy/route-server-template.yaml",
+	flag.StringVar(&TemplatePath, "template", "/opt/route_server/rs-deploy/route-server-template.yaml",
 		"path to template file")
 	flag.StringVar(&DeployTargetPath, "target", "/opt/route_server/",
 		"path to route_server deploy dir")
@@ -921,6 +953,7 @@ func parseArgs() {
 	flag.StringVar(&InferMode, "infer-mode", "PD", "infer deploy mode")
 	flag.StringVar(&InferModuleVersion, "infer-module-version", "pipeline", "infer orchestration module version")
 	flag.StringVar(&ReadinessCfg, "readiness-cfg", "", "readiness config, role least instance num, eg: prefill:1#decode:2#moe:3")
+	flag.StringVar(&ClusterNamespace, "cluster-namespace", "", "namespace for cluster mode, defaults to POD_NAMESPACE env if empty")
 	flag.UintVar(&OpsPort, "ops-port", 0, "port of the ops server for admin operations (default: http-port + 10)")
 	flag.StringVar(&OpsHTTPSEnable, "ops-enable-https", "", "enable HTTPS for ops server. true/false (default: true)")
 	flag.StringVar(&OpsMTLSEnable, "ops-enable-mtls", "", "enable mTLS for ops server (requires ops-tls-ca-cert-file). true/false (default: true)")

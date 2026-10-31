@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"infer-dp-scheduler/pkg/route-server/metrics"
 
 	peer_client "infer-dp-scheduler/pkg/common/client/peer-client"
 	"infer-dp-scheduler/pkg/common/cluster"
@@ -253,6 +254,8 @@ func TestEtcdClusterServiceInit(t *testing.T) {
 	}
 
 	peerClient := &peer_client.PeerClient{}
+
+	metrics.InitMetrics(nil)
 
 	ecs := &EtcdClusterService{}
 	ecs.Init(cfg, initRoute, localPeer, peerClient)

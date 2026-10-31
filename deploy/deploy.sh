@@ -24,7 +24,7 @@ REMOTE_SCHEDULER_TYPE="disable"
 REMOTE_SCHEDULER_ENDPOINT=""
 DAEMON=""
 LOG_FILE_FULL_PATH=""
-PACKAGE_DIR=DistributedScheduler
+PACKAGE_DIR=route-server
 CANDIDATE_SWITCH="true"
 ETCD_ENDPOINTS=${ETCD_ENDPOINTS}
 SHOW_STD_OUTPUT="false"
@@ -34,7 +34,9 @@ MODE="singleton"
 READINESS_CFG=""
 REUSE_PREFILLED_TOKENS="false"
 OPS_PORT=""
-OPS_ENABLE_HTTPS="true"
+ETCD_AUTO_SYNC_SECOND="10"
+CLUSTER_NAMESPACE=""
+OPS_ENABLE_HTTPS="false"
 OPS_ENABLE_MTLS="true"
 OPS_TLS_CERT_FILE=""
 OPS_TLS_KEY_FILE=""
@@ -43,16 +45,16 @@ TLS_CERT_FILE=""
 TLS_KEY_FILE=""
 TLS_CA_CERT_FILE=""
 TLS_SKIP_VERIFY="false"
-ENABLE_HTTPS="true"
+ENABLE_HTTPS="false"
 ENABLE_MTLS="true"
 # InstanceClient (vLLM) TLS
-CLIENT_HTTPS_ENABLE="true"
+CLIENT_HTTPS_ENABLE="false"
 CLIENT_MTLS_ENABLE="true"
 CLIENT_CERT_FILE=""
 CLIENT_KEY_FILE=""
 CLIENT_CA_CERT_FILE=""
 # etcd TLS
-ETCD_TLS_ENABLE="true"
+ETCD_TLS_ENABLE="false"
 ETCD_MTLS_ENABLE="true"
 ETCD_CERT_FILE=""
 ETCD_KEY_FILE=""
@@ -74,19 +76,20 @@ if true, this script will wait until the route-server process exits"
   echo "  --collect-metrics-unique-ip whether collecting metrics from unique instance per ip. eg. true. \
 if it not set, then collecting metrics from all instances."
   echo "  --log-file-path path to route server log file, if not set, then it will use \
-RS_INSTALL_DIR/<rs_name>/DistributedScheduler/log/route-server.log, must give full real path"
+RS_INSTALL_DIR/<rs_name>/${PACKAGE_DIR}/log/route-server.log, must give full real path"
   echo "  --domain      domain of leader IP , eg. localhost (default: "")"
   echo "  --use_domain_for_leader    whether to use domain to find leader (true/false) (default:false)"
   echo "  --candidate switch to config this route-server instance to candidate, accept true or false, (default: true)"
   echo "  --etcd-endpoints endpoints for etcd, separate with comma, (e.g. localhost:2379,localhost:2480 )"
   echo "  --show-std-output show route-server process stdout and stderr, takes true if shows (default: false)"
-  echo "  --mode set the cluster mode of the route server (singleton/etcd) (default: singleton)"
+  echo "  --mode set the cluster mode of the route server (singleton/etcd/k8s-configmap) (default: singleton)"
+  echo "  --cluster-namespace namespace for cluster mode, defaults to POD_NAMESPACE env in k8s-configmap mode (default: "")"
   echo "  --infer-mode infer deploy mode (PD/PD-AM/EPD/Hybrid/Layerwise-CDCP/Layerwise-CPCD/VA-PD) (default: PD)"
   echo "  --infer-module-version infer module version(v0/pipeline) (default: pipeline)"
   echo "  --readiness-cfg readiness config, set the least number of instances for each role, separate with # (default: prefill:1#decode:1)"
   echo "  --reuse-prefilled-tokens enable this flag to reuse prefilled tokens for layerwise mode (default: false)"
   echo "  --ops-port    port of the ops server for admin operations (default: http-port + 10)"
-  echo "  --ops-enable-https enable HTTPS for ops server. true/false (default: true)"
+  echo "  --ops-enable-https enable HTTPS for ops server. true/false (default: false)"
   echo "  --ops-enable-mtls enable mTLS for ops server (requires --ops-tls-ca-cert-file). true/false (default: true)"
   echo "  --ops-tls-cert-file path to ops TLS certificate file (required when --ops-enable-https=true, independent from --tls-cert-file)"
   echo "  --ops-tls-key-file path to ops TLS private key file (required when --ops-enable-https=true, independent from --tls-key-file)"
@@ -94,15 +97,15 @@ RS_INSTALL_DIR/<rs_name>/DistributedScheduler/log/route-server.log, must give fu
   echo "  --tls-cert-file path to TLS certificate file (e.g. /etc/certs/server.crt) [required when enable-https=true]"
   echo "  --tls-key-file path to TLS private key file (e.g. /etc/certs/server.key) [required when enable-https=true]"
   echo "  --tls-ca-cert-file path to CA certificate file for mTLS client verification (e.g. /etc/certs/ca.crt) [required when enable-mtls=true]"
-  echo "  --enable-https enable HTTPS for the main server port. true/false (default: true)"
+  echo "  --enable-https enable HTTPS for the main server port. true/false (default: false)"
   echo "  --enable-mtls enable mutual TLS (requires --tls-ca-cert-file). true/false (default: true)"
   echo "  --tls-skip-verify skip TLS certificate verification. true/false (default: false)"
-  echo "  --client-https-enable enable HTTPS for vLLM instance client. true/false (default: true)"
+  echo "  --client-https-enable enable HTTPS for vLLM instance client. true/false (default: false)"
   echo "  --client-mtls-enable enable mTLS for vLLM instance client. true/false (default: true)"
   echo "  --client-cert-file path to vLLM client TLS certificate file (e.g. /etc/certs/client.crt)"
   echo "  --client-key-file path to vLLM client TLS private key file (e.g. /etc/certs/client.key)"
   echo "  --client-ca-cert-file path to vLLM client CA certificate file (e.g. /etc/certs/ca.crt)"
-  echo "  --etcd-tls-enable enable TLS for etcd connection. true/false (default: true)"
+  echo "  --etcd-tls-enable enable TLS for etcd connection. true/false (default: false)"
   echo "  --etcd-mtls-enable enable mTLS for etcd connection. true/false (default: true)"
   echo "  --etcd-cert-file path to etcd client TLS certificate file (e.g. /etc/certs/etcd-client.crt)"
   echo "  --etcd-key-file path to etcd client TLS private key file (e.g. /etc/certs/etcd-client.key)"
@@ -290,12 +293,21 @@ while [[ $# -gt 0 ]]; do
       if [ -n "$2" ] && [[ "$2" != --* ]]; then
           MODE="$2"
           shift 2
-          if [[ "$MODE" != "singleton" && "$MODE" != "etcd" ]]; then
-              echo "Error: --mode must be either 'singleton' or 'etcd', got '$MODE'"
+          if [[ "$MODE" != "singleton" && "$MODE" != "etcd" && "$MODE" != "k8s-configmap" ]]; then
+              echo "Error: --mode must be either 'singleton', 'etcd' or 'k8s-configmap', got '$MODE'"
               exit 1
           fi
       else
           echo "Error: --mode requires a mode arg"
+          exit 1
+      fi
+      ;;
+  --cluster-namespace)
+      if [ -n "$2" ] && [[ "$2" != --* ]]; then
+          CLUSTER_NAMESPACE="$2"
+          shift 2
+      else
+          echo "Error: --cluster-namespace requires a namespace arg"
           exit 1
       fi
       ;;
@@ -810,6 +822,8 @@ chmod +x "${DEPLOY_ROOT_PATH}"/config_generator
   --infer-mode "${INFER_MODE}" \
   --infer-module-version "${INFER_MODULE_VERSION}" \
   --readiness-cfg "${READINESS_CFG}" \
+  --etcd-auto-sync-second "${ETCD_AUTO_SYNC_SECOND}" \
+  ${CLUSTER_NAMESPACE:+--cluster-namespace "${CLUSTER_NAMESPACE}"} \
   ${OPS_PORT:+--ops-port "${OPS_PORT}"} \
   --ops-enable-https "${OPS_ENABLE_HTTPS}" \
   --ops-enable-mtls "${OPS_ENABLE_MTLS}" \
@@ -834,6 +848,27 @@ chmod +x "${DEPLOY_ROOT_PATH}"/config_generator
   --etcd-ca-cert-file "${ETCD_CA_CERT_FILE}"
 
 cp "${DEPLOY_ROOT_PATH}/prometheus-template.yaml" "${RS_PATH}/${PACKAGE_DIR}/config"
+
+# In k8s-configmap mode, copy the configmap config template alongside
+# route-server.yaml so the route-server can load it via configmap-config-file.
+if [[ "${MODE}" == "k8s-configmap" ]]; then
+  if [ -f "${DEPLOY_ROOT_PATH}/k8s-configmap.yaml" ]; then
+    cp "${DEPLOY_ROOT_PATH}/k8s-configmap.yaml" "${RS_PATH}/${PACKAGE_DIR}/config"
+    echo "copied k8s-configmap.yaml to ${RS_PATH}/${PACKAGE_DIR}/config"
+  else
+    echo "Warning: MODE is k8s-configmap but k8s-configmap.yaml not found in deploy dir, \
+route-server will fail to start unless the file is provided manually"
+  fi
+# The service account needs RBAC to create/update the rs-status ConfigMap and
+# the leader-election Lease.
+  if [ -f "${DEPLOY_ROOT_PATH}/k8s-configmap/rbac.yaml" ]; then
+    echo "Note: apply the RBAC manifest before starting route-server:"
+    echo "  kubectl apply -f ${DEPLOY_ROOT_PATH}/k8s-configmap/rbac.yaml"
+  else
+    echo "Warning: k8s-configmap/rbac.yaml not found in deploy dir, make sure the \
+service account has configmaps get/list/watch/create/update and leases get/create/update/watch permissions"
+  fi
+fi
 
 export ENV_ROUTE_SERVER_CONFIG_PATH="${RS_PATH}/${PACKAGE_DIR}/config"
 

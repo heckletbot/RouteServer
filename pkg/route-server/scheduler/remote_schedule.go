@@ -210,11 +210,18 @@ type ClusterLeaderProvider struct {
 }
 
 func (c *ClusterLeaderProvider) ShouldDispatchLocally() (bool, error) {
-	_, id := c.clusterService.GetLeader()
+	leader, id := c.clusterService.GetLeader()
 	if id == "" {
 		return true, fmt.Errorf("no leader is available")
 	}
-	return c.clusterService.LocalNode().Name == id, nil
+	localNode := c.clusterService.LocalNode()
+	if leader != nil && localNode != nil {
+		return leader.Addr.Host == localNode.Addr.Host && leader.Addr.HttpPort == localNode.Addr.HttpPort, nil
+	}
+	if localNode != nil {
+		return localNode.Name == id, nil
+	}
+	return false, fmt.Errorf("local node is nil")
 }
 
 func (c *ClusterLeaderProvider) ProcessLeaderReq(ctx context.Context, body []byte, timeOutMs int, tracer trace.RequestTracer, request utils.GenerateRequest) ([]byte, error) {

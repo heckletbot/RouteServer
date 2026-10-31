@@ -149,8 +149,8 @@ func (m *InstanceManager) GetInstanceStatus(ctx *gin.Context) {
 	m.routeMapMutex.RLock()
 	defer func() {
 		m.routeMapMutex.RUnlock()
-		if rsp.Status == constant.FailedStatus {
-			logger.Log().Errorf("[GET /status] Cluster status is %s, detail info recorded in status response", constant.FailedStatus)
+		if rsp.Status == constant.FaultStatus {
+			logger.Log().Warnf("[GET /status] Cluster status is %s, detail info recorded in status response", constant.FaultStatus)
 		} else {
 			logger.Log().Infof("[GET /status] %s", rsp.Status)
 		}

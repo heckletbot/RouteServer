@@ -59,11 +59,8 @@ const (
 )
 
 const (
-	StateUpdateReasonRestore        = "restore"
-	StateUpdateReasonPeerChange     = "peer_change"
-	StateUpdateReasonInstanceChange = "instance_change"
-	ProcessPeerInfoStageRegister    = "peer_auto_register"
-	ProcessPeerInfoStageStateSync   = "sync_peer_from_state"
+	ProcessPeerInfoStageRegister  = "peer_auto_register"
+	ProcessPeerInfoStageStateSync = "sync_peer_from_state"
 )
 
 const (
@@ -78,6 +75,11 @@ const (
 	StatusConnected    EtcdStatus = "connected"
 	StatusDisconnected EtcdStatus = "disconnected"
 )
+
+func (ew *EtcdWrapper) setStatus(s EtcdStatus) {
+	ew.status.Store(s)
+	metrics.SetClusterServiceConnStatus(s == StatusConnected)
+}
 
 type EtcdWrapper struct {
 	status    atomic.Value
@@ -148,7 +150,7 @@ func (ew *EtcdWrapper) Init(localNode *utils.Peer, config *config.ClusterConfig,
 	ew.stateUpdateFunc = stateUpdateFunc
 	ew.latestStateFunc = latestStateFunc
 	ew.failureChangedFunc = failureChangedFunc
-	ew.status.Store(StatusDisconnected)
+	ew.setStatus(StatusDisconnected)
 	ew.lastFailureSnapshotRound = initSeenFailureSnapshotRound
 	ew.closeChan = make(chan struct{})
 
@@ -167,14 +169,14 @@ func (ew *EtcdWrapper) Init(localNode *utils.Peer, config *config.ClusterConfig,
 	}
 	logInfoWithId(ew.logId, "etcd session created")
 	ew.sessionWithLease = session
-	ew.status.Store(StatusConnected)
+	ew.setStatus(StatusConnected)
 	go ew.leaseKeeper()
 
 	retry := etcdCfg.RetryTime
 	retryInterval := time.Duration(etcdCfg.RetryInterval) * time.Second
 	if err := ew.runWithRetry(retry, retryInterval, "restore state from Etcd",
 		ew.restoreStateFromEtcd); err != nil {
-		ew.status.Store(StatusDisconnected)
+		ew.setStatus(StatusDisconnected)
 		return err
 	}
 
@@ -184,7 +186,7 @@ func (ew *EtcdWrapper) Init(localNode *utils.Peer, config *config.ClusterConfig,
 	go ew.watchStateInstances()
 	if err := ew.runWithRetry(retry, retryInterval, "register self peer to etcd",
 		ew.registerToEtcd); err != nil {
-		ew.status.Store(StatusDisconnected)
+		ew.setStatus(StatusDisconnected)
 		return err
 	}
 
@@ -209,7 +211,7 @@ func (ew *EtcdWrapper) Close() {
 		if ew.closeChan != nil {
 			close(ew.closeChan)
 		}
-		ew.status.Store(StatusDisconnected)
+		ew.setStatus(StatusDisconnected)
 		if ew.leaderKeyWatchCancel != nil {
 			ew.leaderKeyWatchCancel()
 		}
@@ -288,7 +290,7 @@ func (ew *EtcdWrapper) restoreStateFromEtcd() error {
 		return err
 	}
 	restoredState.Version = time.Now().Unix()
-	ew.stateUpdateFunc(restoredState, StateUpdateReasonRestore)
+	ew.stateUpdateFunc(restoredState, cluster.StateUpdateReasonRestore)
 	return nil
 }
 
@@ -892,7 +894,7 @@ func (ew *EtcdWrapper) handlePeerStateChanges(events []*clientv3.Event, iter int
 	for _, peerId := range removePeerIds {
 		delete(newState.Peers, peerId)
 	}
-	ew.stateUpdateFunc(newState, StateUpdateReasonPeerChange)
+	ew.stateUpdateFunc(newState, cluster.StateUpdateReasonPeerChange)
 	for _, addPeer := range addPeers {
 		for _, listener := range *ew.stateChangeListeners {
 			listener.OnAddPeer(addPeer)
@@ -924,7 +926,7 @@ func (ew *EtcdWrapper) handleInstanceStateChange(events []*clientv3.Event, iter 
 	for _, removeId := range removeInstances {
 		delete(newState.InstanceRoutes, removeId)
 	}
-	ew.stateUpdateFunc(newState, StateUpdateReasonInstanceChange)
+	ew.stateUpdateFunc(newState, cluster.StateUpdateReasonInstanceChange)
 	if len(addInstances) > 0 {
 		for _, listener := range *ew.stateChangeListeners {
 			listener.OnAddInstance(addInstances, constant.InstanceChangeReasonSynced)
@@ -1381,7 +1383,7 @@ func (ew *EtcdWrapper) leaseKeeper() {
 		select {
 		case <-ew.closeChan:
 			logInfoWithId(ew.logId, "stop to keep lease")
-			ew.status.Store(StatusDisconnected)
+			ew.setStatus(StatusDisconnected)
 			return
 		case <-ticker.C:
 			if ew.status.Load() != StatusConnected {
@@ -1397,7 +1399,7 @@ func (ew *EtcdWrapper) leaseKeeper() {
 				if consecutiveFailures >= LeaseKeepAliveMaxRetry {
 					logErrorWithId(ew.logId, "etcd keep alive failed after %v retry, entering disconnected mode: %v",
 						consecutiveFailures, err)
-					ew.status.Store(StatusDisconnected)
+					ew.setStatus(StatusDisconnected)
 				} else {
 					logWarnWithId(ew.logId, "etcd keep alive failed: %v, retry %v", err, consecutiveFailures)
 					metrics.RecordETCDConnectionsRetries()
@@ -1410,7 +1412,7 @@ func (ew *EtcdWrapper) leaseKeeper() {
 				return
 			}
 			logErrorWithId(ew.logId, "etcd session with lease is Done, entering disconnected mode")
-			ew.status.Store(StatusDisconnected)
+			ew.setStatus(StatusDisconnected)
 			return
 		}
 	}

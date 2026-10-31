@@ -103,7 +103,7 @@ func (ecs *EtcdClusterService) Init(config config.ClusterConfig, initRoute *conf
 	etcdWrapper := &EtcdWrapper{
 		logId: 0,
 	}
-	etcdWrapper.status.Store(StatusDisconnected)
+	etcdWrapper.setStatus(StatusDisconnected)
 	etcdWrapper.localNode = localPeer
 	etcdWrapper.leaderId.Store("")
 	ecs.etcdWrapper.Store(etcdWrapper)
@@ -406,7 +406,7 @@ func (ecs *EtcdClusterService) HandleLeaveInstance(req *cluster.InstanceLeaveReq
 func (ecs *EtcdClusterService) updateLocalState(state *cluster.ClusterState, reason string) {
 	state.Version = time.Now().UnixMilli()
 	ecs.atomicState.Store(state)
-	if reason == StateUpdateReasonRestore {
+	if reason == cluster.StateUpdateReasonRestore {
 		for _, listener := range ecs.stateChangeListeners {
 			listener.OnStateRestored(state)
 		}

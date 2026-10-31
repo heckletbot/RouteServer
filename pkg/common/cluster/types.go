@@ -17,6 +17,7 @@
 package cluster
 
 import (
+	"fmt"
 	"time"
 
 	peer_client "infer-dp-scheduler/pkg/common/client/peer-client"
@@ -25,9 +26,19 @@ import (
 )
 
 const (
-	TypeSingleton = "singleton"
-	TypeEtcd      = "etcd"
+	StateUpdateReasonRestore          = "restore"
+	StateUpdateReasonPeerChange       = "peer_change"
+	StateUpdateReasonInstanceChange   = "instance_change"
+	StateUpdateReasonPodListReconcile = "pod_list_reconcile"
 )
+
+const (
+	TypeSingleton    = "singleton"
+	TypeEtcd         = "etcd"
+	TypeK8sConfigMap = "k8s-configmap"
+)
+
+var ErrPeerManagementNotSupported = fmt.Errorf("operation not supported in k8s cluster mode")
 
 type ClusterState struct {
 	Initialized    bool                     `json:"initialized"`
