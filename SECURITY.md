@@ -5,6 +5,10 @@
 ## Supported versions
 
 RouteServer is pre-1.0. Only the latest release and `main` receive security fixes.
+All releases, including security hotfixes, are cut from `main`; maintenance release branches are not
+currently used. Supporting multiple versions requires explicit approval and coordinated updates to
+this policy, [GOVERNANCE.md](GOVERNANCE.md) and [docs/branching.md](docs/branching.md) before a
+maintenance branch is created.
 
 | Version | Supported |
 | --- | --- |
@@ -17,13 +21,16 @@ RouteServer is pre-1.0. Only the latest release and `main` receive security fixe
 
 **Do not open a public issue, discussion or pull request for a security problem.**
 
-Use one of the following private channels:
+> Setup status: the availability of the hosting platform's private reporting feature has not been
+> verified, and the security responders in [MAINTAINERS.md](MAINTAINERS.md) are still placeholders.
+> A working private reporting channel must be verified and documented before public release; the
+> options below are conditional, not confirmation that a channel is already available.
 
-1. **Preferred** — GitCode's private security report for this repository: on the repository page choose
-   *Security* → *Report a vulnerability*. This creates a private advisory visible only to maintainers.
-2. **Direct contact** — if the advisory flow is unavailable, send a direct private message to one of the
-   security responders listed in [MAINTAINERS.md](MAINTAINERS.md). Do not include the technical details
-   in a public channel.
+1. **Platform report, if available** — use the repository's private vulnerability reporting feature
+   only after confirming that the report is private; do not substitute a public issue.
+2. **Direct contact, once registered** — send a direct private message to a real security responder
+   listed in [MAINTAINERS.md](MAINTAINERS.md). Placeholder handles are not contacts. Do not include
+   technical details in a public channel.
 
 If you are unsure whether something is a vulnerability, report it privately anyway. We would rather
 triage a non-issue than miss a real one.
@@ -88,5 +95,8 @@ downstream vLLM and etcd connections.
 ## Security-relevant contributions
 
 If your pull request touches `pkg/route-server/middleware/`, `pkg/common/http/`, `pkg/route-server/handler/`
-or the TLS handling in `deploy/`, it needs an area-owner approval in addition to the normal two reviews.
-See [GOVERNANCE.md §5](GOVERNANCE.md#5-review-and-merge-requirements).
+or the TLS handling in `deploy/`, code changes need two non-author approvals, with the required
+area-owner approval included in those two. Documentation-only, test-only, policy changes and mixed
+changes follow [GOVERNANCE.md §5](GOVERNANCE.md#5-review-and-merge-requirements), including its
+maintainer and security-reviewer requirements for security fixes. Committers or maintainers may merge
+only after the required approvals and checks pass; hotfixes do not bypass these gates.

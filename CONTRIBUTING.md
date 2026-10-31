@@ -60,7 +60,7 @@ git switch -c feat/my-change upstream/main
 ```bash
 make build         # build outputs, see the table below
 make test          # go test ./... -v, log written to build/test.log
-make test-unit     # go test ./... -short, skips slow integration paths
+make test-unit     # go test ./... -short; currently still includes the E2E suite
 make lint          # go fmt + go vet
 make package       # build + deploy assets + version.info + zip
 ```
@@ -72,8 +72,10 @@ Build artifacts (these names come from the `Makefile`, which is authoritative):
 | `make build` | `output/DistributedScheduler/bin/route-server`, `output/config_generator` |
 | `make package` | `output/DistributedScheduler-<version>-<timestamp>.zip` |
 
-> Note: `README.md` and `docs/build.md` still mention older package names (`ModelOrch-*`,
-> `route-server-*`). Trust the `Makefile` output above.
+> Test results: `make test`, `make test-unit` and `make test-coverage` currently pipe output through
+> `tee` without preserving the `go test` exit status. A zero Make exit status does not prove that tests
+> passed. Run `go test` directly for a reliable result. Also, `-short` only skips tests that explicitly
+> check it; the current E2E suite does not, so `make test-unit` is not a unit-only shortcut.
 
 ### End-to-end tests
 
@@ -97,7 +99,7 @@ pull request which of these suites you ran.
 ### Before you push
 
 ```bash
-make lint && make test
+make lint && go test ./... -v -timeout 60m
 ```
 
 Both must be clean. A pull request whose CI is red is not reviewed.
@@ -113,7 +115,8 @@ required checks are in [docs/branching.md](docs/branching.md).
 3. Keep one logical change per pull request. If you find an unrelated bug, send a second pull request.
 4. Push to **your fork** and open the pull request against `InferTurbo/RouteServer` `main`.
 5. Fill in the pull request template — including how you tested it.
-6. Wait for CI, then for review. Address comments by pushing new commits; maintainers squash on merge.
+6. Wait for CI, then for review. Address comments by pushing new commits; a committer or maintainer
+   squash-merges after the required approvals and checks pass.
 
 **Never target `intranet-sync`.** It is not a development branch: it is the machine-written mirror of
 our internal repository, and anything pushed or merged into it is overwritten on the next sync. Pull
@@ -121,6 +124,21 @@ requests against `intranet-sync` are closed without review, with a pointer to `m
 
 Committers with write access may push topic branches into the repository itself instead of a fork; the
 review and merge rules are identical.
+
+### Pull request titles and descriptions
+
+- Use the same format and limits as [commit subjects](#5-commit-messages):
+  `<type>(<scope>): <imperative summary>`, at most 72 characters, no trailing period. Scope is optional;
+  use the breaking-change marker when applicable. For example:
+  `docs(governance): clarify contribution and review rules`.
+- Describe the final scope of the pull request. Update the title and description if that scope changes
+  during review. Put issue references in the description, not in the title.
+- Fill in [the pull request template](.github/PULL_REQUEST_TEMPLATE.md): what changes, why, change type,
+  actual test commands and results, and any migration or dependency details. Mark checks that do not
+  apply as `N/A` with a reason; do not claim a test passed if it was not run.
+
+These are project conventions for GitCode and GitHub, not formatting requirements imposed by GitHub.
+The Markdown template supplies the description; it does not validate the title or enforce checks.
 
 ## 5. Commit messages
 
@@ -151,7 +169,32 @@ docs(deploy): correct default log file path
   `handler`, `metrics`, `deploy`).
 - Reference the issue in the body (`Refs #123`, `Fixes #123`), not in the subject.
 - A breaking change must be marked `feat!:` or `fix!:` **and** carry a `BREAKING CHANGE:` footer
-  explaining the migration. Breaking changes need an agreed issue first.
+  explaining the migration. With a scope, write `feat(api)!:` or `fix(api)!:`. Breaking changes need an
+  agreed issue first. Requiring both the marker and the footer is a project rule, stricter than
+  [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/).
+
+### Final squash commit
+
+For pull requests merged by squash, including single-commit pull requests:
+
+- Use the approved, final pull request title as the commit subject and check it against the subject
+  rules above. Keep issue and pull request references in the body; edit any platform-added subject
+  suffix before merging.
+- Write the body for someone reading the history without the review conversation: describe the problem,
+  resulting behaviour and relevant validation. A short explanation is enough for a small documentation
+  change. Remove temporary commit lists, `WIP`/`fixup` messages and unused template sections.
+- Preserve relevant issue references, migration instructions and any `BREAKING CHANGE:` footer.
+- Preserve the original contributors' `Signed-off-by` trailers for the changes included in the squash.
+  A missing sign-off must be supplied by that contributor. Do not generate a sign-off for someone else;
+  an integrator may add their own. Preserve any applicable `Co-authored-by` attribution, which does not
+  replace DCO sign-off.
+- Inspect the actual title, body and trailers in the merge preview before confirming. Platform defaults
+  are not proof that the final commit follows these rules; for example,
+  [GitHub squash defaults](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/configuring-commit-squashing-for-pull-requests)
+  vary with repository settings and the number of commits.
+
+This section describes the message for squash merges; merge methods remain defined in
+[docs/branching.md](docs/branching.md).
 
 ## 6. Developer Certificate of Origin
 
@@ -176,7 +219,10 @@ mailbox: it keeps internal naming out of a public repository. The project's [`.m
 normalizes the identities that reached the history before this rule existed. It changes display only —
 history and SHAs are never rewritten.
 
-A pull request with unsigned commits will fail the DCO check. To fix an existing branch:
+A commit without a `Signed-off-by` trailer does not meet the project's DCO requirement. An automated
+DCO check rejects it only if that check is installed and required in the hosting platform; this
+repository does not contain its configuration, and the platform settings have not been verified.
+To add your own missing sign-off on a branch containing only your commits:
 
 ```bash
 git rebase --signoff upstream/main
@@ -187,7 +233,9 @@ Signing commits with GPG/SSH is optional but recommended.
 
 ## 7. Coding guidelines
 
-- `gofmt` and `go vet` must be clean; CI enforces both via `make lint`.
+- `gofmt` and `go vet` must be clean. Run `make lint` and inspect any formatting changes it makes.
+  Automatic enforcement depends on the CI and branch protection configured in the hosting platform;
+  see [docs/branching.md §4](docs/branching.md#4-review-and-ci-gates).
 - Every new `.go` file starts with the project licence header (copy it from any existing file):
 
   ```go
@@ -256,13 +304,16 @@ These are closed without review, and repeated instances may lead to a block:
 - A maintainer or committer gives a first response within **7 calendar days**. If nobody has responded
   by then, comment on the pull request with `@InferTurbo/maintainers` — that is a process failure on our
   side, not yours.
-- Two approvals are required, from people other than the author. Changes under `pkg/route-server/scheduler/`,
-  `pkg/common/scheduler/`, `pkg/route-server/middleware/`, `pkg/common/http/` and `deploy/` additionally
-  require an owner of that area — see [.github/CODEOWNERS](.github/CODEOWNERS).
+- [GOVERNANCE.md §5](GOVERNANCE.md#5-review-and-merge-requirements) is authoritative: ordinary
+  documentation-only and test-only changes need one non-author approval; code, sensitive changes and
+  policy changes need two. Required area-owner or maintainer approvals count within that total, not
+  as extra reviews. Mixed changes take the stricter applicable requirements. Governance policy changes
+  also require the §10 vote. Area ownership is listed in [.github/CODEOWNERS](.github/CODEOWNERS).
 - Reviewers may ask for a design change. Push new commits rather than rewriting history during review;
   do not force-push a branch under active review unless you are asked to.
-- When approved and green, a maintainer squash-merges and deletes the branch. You do not need to merge
-  it yourself.
+- Once the required approvals are in place, review conversations are resolved and checks pass, a
+  committer or maintainer squash-merges an ordinary contribution pull request and deletes the branch.
+  Neither role bypasses the gates; contributors do not need to perform the merge themselves.
 - A pull request with no activity for 30 days, and no response to a ping, is closed as stale. It can be
   reopened.
 

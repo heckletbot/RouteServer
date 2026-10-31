@@ -68,22 +68,33 @@ move.
 
 | Change | Approvals | Additional requirement |
 | --- | --- | --- |
-| Documentation, comments, typo | 1 | — |
+| Documentation, comments, typo (no policy change) | 1 | — |
 | Tests only | 1 | CI green |
 | Ordinary code (`pkg/`, `cmd/`) | 2 | CI green |
 | Scheduler, middleware, HTTP/TLS handling | 2 | 1 approval must be from an area owner |
-| `deploy/`, `Makefile`, `.codearts/` | 2 | 1 approval from a release owner |
-| `main` protection rules, `GOVERNANCE.md`, `SECURITY.md` | 2 | at least 1 maintainer approval |
+| Build, deployment or CI rules/behaviour (`deploy/`, `Makefile`, `.codearts/`) | 2 | 1 approval from a release owner |
+| Project policy or branch protection changes, including `GOVERNANCE.md` and `SECURITY.md` and their translations | 2 | at least 1 maintainer approval |
 | Security fix | 1 maintainer + 1 security reviewer | Private branch until disclosure, see [SECURITY.md](SECURITY.md) |
 
-Rules that hold without exception:
+This table is the authoritative source for approval requirements; counts refer to distinct non-author
+reviewers. Classify a change by its effect: documentation-only and test-only changes need one approval
+unless they change project policy, build,
+deployment or CI rules. Mixed changes must satisfy the stricter applicable count and all applicable
+owner or maintainer requirements. Required area-owner and maintainer approvals count **within** the
+total, not as extra reviews. Changes to governance policy also require the vote in §10; purely
+editorial fixes do not change policy.
+
+Committers and maintainers may merge once the required approvals, resolved review conversations and
+passing checks are in place. Repository settings, role management and releases remain maintainer
+responsibilities. Neither role may bypass the gates.
+
+Rules that hold without exception, including for hotfixes:
 
 - **The author never counts as an approver of their own change**, including maintainers.
 - **Nobody pushes directly to `main`.** Every change, including a maintainer's, arrives as a pull
-  request. The only exception is the automated import from the internal repository, which is itself
-  reviewed as a pull request (see [docs/branching.md](docs/branching.md)).
-- **A red pipeline is never merged**, and a failing required check is not bypassed by an administrator
-  on a routine basis.
+  request. Automated imports from the internal repository also require a reviewed pull request
+  (see [docs/branching.md](docs/branching.md)).
+- **A red pipeline is never merged.** Administrators do not bypass required approvals or checks.
 
 ## 6. Decisions
 
@@ -106,9 +117,13 @@ review assignments are a process bug, not a reason to lower the review bar.
 
 ## 7. Releases
 
-- Releases are cut from `main` by a **release manager**, a role that rotates per release and is
-  volunteered in the release tracking issue.
-- Only maintainers create tags, and only `vX.Y.Z` (with an optional `-rc.N` / `-alpha.N` pre-release
+- At the current pre-1.0 stage, all releases, including hotfix releases, are cut from `main` only.
+  Maintenance release branches are not used. Supporting multiple versions requires an explicitly
+  approved policy change covering both [docs/branching.md](docs/branching.md) and
+  [SECURITY.md](SECURITY.md) before a maintenance branch is created.
+- A **release manager** coordinates each release, with the role volunteered in the release tracking
+  issue. Maintainers remain responsible for creating release tags and publishing releases.
+- Only maintainers create tags, and only `vX.Y.Z` (with an optional `-rc.N` / `-alpha.N` / `-beta.N` pre-release
   suffix) — see [docs/branching.md](docs/branching.md) for the tagging rules.
 - Every release has a note in `docs/versions/release-note-<version>.md` listing user-visible changes,
   breaking changes and known issues. The note is part of the release, not an afterthought.

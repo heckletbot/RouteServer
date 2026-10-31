@@ -62,12 +62,16 @@ output/DistributedScheduler-<version>-<timestamp>.zip
 | `package` | 构建 + 复制部署资源 + 生成 `version.info` + 创建 `.zip` 压缩包 |
 | `test` | 运行全部测试，日志写入 `build/test.log` |
 | `test-coverage` | 运行全部测试并统计覆盖率，报告写入 `build/coverage.out` |
-| `test-unit` | 仅运行单元测试（`-short`），日志写入 `build/unit-test.log` |
+| `test-unit` | 以 `-short` 运行所有包（当前仍包含 E2E），日志写入 `build/unit-test.log` |
 | `clean` | 删除 `build/`、`output/` 以及散落的 `.zip` 文件 |
 | `all` | `clean` + `build` |
 | `fmt` | `go fmt ./...` |
 | `vet` | `go vet ./...` |
 | `lint` | `fmt` + `vet` |
+
+> `make test`、`make test-unit` 和 `make test-coverage` 当前通过 `tee` 输出测试日志，但没有保留
+> `go test` 的退出码。Make 成功退出不代表测试通过；请按下方示例直接运行 `go test` 取得可靠结果。
+> E2E 套件没有检查 `testing.Short()`，所以 `-short` 当前不会排除该套件。
 
 ### build
 
@@ -168,11 +172,11 @@ RouteServer 开发与发布的推荐流程：
 # 1. Format and check code quality
 make lint
 
-# 2. Run unit tests for quick feedback
-make test-unit
+# 2. Test a specific package for quick feedback (example)
+go test ./pkg/common/scheduler/... -v
 
 # 3. Run full test suite before committing
-make test
+go test ./... -v -timeout 60m
 
 # 4. Build and package for deployment
 make clean && make package

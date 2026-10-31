@@ -1,16 +1,22 @@
 # CODEOWNERS — who must review what
 #
 # Rules are evaluated bottom-up: the LAST matching pattern wins, so put the most specific paths last.
-# These owners are required IN ADDITION to the two approvals in GOVERNANCE.md §5; they never replace
-# a normal review.
+# Approval counts and mandatory owner requirements are defined by GOVERNANCE.md §5.
+# Ordinary documentation-only and test-only changes need 1 approval; code, sensitive and policy changes
+# need 2. Required area-owner or maintainer approvals count WITHIN the total, not as extra reviews.
+# Mixed changes take the stricter applicable requirements. The author never counts as an approver.
+# 审批人数与必需 owner 要求以 GOVERNANCE.zh-CN.md 第 5 节为准：普通仅文档、仅测试改动需 1 人，
+# 代码、敏感改动及政策变更需 2 人；必需的领域 owner 或 maintainer 审批计入总人数，不额外增加评审人。
+# 混合改动取适用的更严格要求，作者不计入审批人数。
 #
 # PLACEHOLDERS: `@InferTurbo/<team>` names below must exist as teams in the InferTurbo organisation.
 # An owner that does not resolve is silently ignored by the platform, which means the review is NOT
 # enforced. Before relying on this file, replace every team name with a real one (or with individual
 # handles), and keep it in sync with MAINTAINERS.md.
 #
-# If the hosting platform (GitCode) does not read CODEOWNERS, encode the same mapping in the branch
-# protection rule "required reviewers / required approvals by area" so the intent survives the tool.
+# Verify hosting-platform support for CODEOWNERS and change-dependent approval counts before
+# configuring enforcement. A mapping in this file does not prove that a matching gate is active.
+# 配置自动执行前需核实平台对 CODEOWNERS 与按改动类型设置审批人数的支持；此映射不代表门禁已生效。
 
 # --- default ---------------------------------------------------------------------------------
 *                                   @InferTurbo/maintainers

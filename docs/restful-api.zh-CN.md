@@ -260,7 +260,7 @@
 
 **功能**：兼容 Anthropic Messages API 的推理端点，供 Claude 兼容客户端调用。
 
-**处理者**：RouteServer 的流水线推理处理器。该路由由流水线配置注册（`handler: messages_infer`），因此仅在 pipeline 推理模式下可用（`--infer-module-version pipeline`）；旧版 v0 模式返回 `501`。
+**处理者**：RouteServer 的流水线推理处理器。该路由需要在 pipeline 推理模式下（`--infer-module-version pipeline`）通过流水线配置注册（`handler: messages_infer`）。旧版 v0 模式不注册该路由；请求到达默认路由器时返回 `404`。
 
 **调用方**：Anthropic SDK 及其他 Claude 兼容客户端
 
@@ -315,7 +315,7 @@
 **错误码**：
 | 状态码 | 含义 |
 | --- | --- |
-| 501 | RouteServer 运行在旧版 v0 模式，端点不可用 |
+| 404 | 路由未注册，包括旧版 v0 模式（默认路由器响应） |
 | 502 | 无可用推理实例 |
 
 ### POST /v1/metaserver

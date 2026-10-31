@@ -12,7 +12,8 @@ Related: [CONTRIBUTING.md](../CONTRIBUTING.md) · [GOVERNANCE.md](../GOVERNANCE.
 ## 1. Model
 
 RouteServer uses **trunk-based development with a single protected trunk**. `main` is the only
-long-lived branch and the only release source. Topic branches are short-lived and deleted on merge.
+long-lived development branch and the only release source. Topic branches are short-lived and deleted
+on merge.
 
 ```
  topic branch (fork or in-repo) ──pull request──▶ main (protected trunk, release source)
@@ -24,10 +25,9 @@ long-lived branch and the only release source. Topic branches are short-lived an
 
 | Branch | Written by | Merges into `main`? | Lifetime | Notes |
 | --- | --- | --- | --- | --- |
-| `main` | maintainers, only via pull request | — | permanent | Protected. The only release source. |
+| `main` | committers or maintainers, only via pull request | — | permanent | Protected. The only release source. |
 | `intranet-sync` | the release pipeline, only | yes, via a reviewable import pull request | permanent | **Read-only.** Machine-written and force-pushed; see §5. |
 | `feat/*`, `fix/*`, `docs/*`, `refactor/*`, `chore/*` | one contributor | yes, squash merge | < 1 week | Deleted on merge. May live in a fork. |
-| `release/vX.Y` | release manager | no — it receives cherry-picks | until that minor version reaches EOL | Only created when two minor versions must be maintained at once. |
 | tags `vX.Y.Z` | maintainers | — | permanent | Annotated. Created on `main` only. |
 
 ## 3. Merge rules
@@ -36,8 +36,7 @@ long-lived branch and the only release source. Topic branches are short-lived an
 | --- | --- | --- |
 | Contributor pull request | **Squash merge** | One commit per logical change keeps `main` linear. |
 | Import pull request (`intranet-sync` → `main`) | **Merge commit** (`--no-ff`) | Keeps the imported history intact and marks where internal history ends. |
-| Hotfix | Squash merge, then `cherry-pick -x` to `release/vX.Y` | Keeps the fix identical in both places. |
-| Release branch → `main` | never | Releases flow the other way: `main` → tag. |
+| Hotfix | Squash merge into `main`, then tag a release from `main` | Uses the same release source and gates as other changes. |
 
 Hard rules:
 
@@ -49,14 +48,19 @@ Hard rules:
 
 ## 4. Review and CI gates
 
-Configured in the GitCode branch protection settings
+The following requirements are to be configured in the GitCode branch protection settings
 ([docs](https://docs.atomgit.com/en/docs/help/home/org_project/project_manage/branch_management/set_protected_branch/)):
 
 - Prohibit direct pushes — including for administrators.
-- Require a pull request with **at least 2 approvals**, and never count the author.
+- Require a pull request with approvals per [GOVERNANCE.md §5](../GOVERNANCE.md#5-review-and-merge-requirements):
+  one for ordinary documentation-only or test-only changes, two for code, sensitive changes and policy changes.
+  Required owner or maintainer approvals are included in that total; never count the author. Mixed
+  changes take the stricter requirement, and governance policy changes also require the §10 vote.
 - Require all review conversations to be resolved before merging.
 - Require the pipeline to pass.
-- Restrict merge permission to the `maintainer` role.
+- Allow committers and maintainers to merge only after all required approvals and checks pass;
+  neither role, including administrators, bypasses the gates. Repository settings, role management
+  and releases remain maintainer responsibilities.
 - Disable force-push and branch deletion.
 
 Required checks, in the order a contributor hits them:
@@ -68,6 +72,19 @@ Required checks, in the order a contributor hits them:
 | `unit-test` | `make test-unit` |
 | `e2e` | `go test ./e2etest/route-server/ -timeout 60m` (may run nightly on slow runners) |
 | `dco` | every commit carries `Signed-off-by` |
+
+Configuration status: this repository contains `.codearts/build.sh`, but no configuration for the
+complete set of checks above. Platform-side CI, required checks, branch protection and CODEOWNERS team
+permissions have not been verified. This list states the intended gates, not evidence that they are
+already enforced. PR title and commit message formats also require review or a separately configured
+validator; the PR template does not validate them.
+
+Verify that the platform can enforce the change-dependent approval counts and owner requirements
+before configuring those rules. An unsupported setting must not be treated as automatic enforcement.
+
+The current Make test targets do not preserve `go test` failure exit codes, and `make test-unit` still
+runs the E2E suite. A CI job must use the actual `go test` result rather than treating the Make exit
+status as proof of success; see [CONTRIBUTING.md §3](../CONTRIBUTING.md#3-build-and-test).
 
 Area-specific review requirements come from [.github/CODEOWNERS](../.github/CODEOWNERS), and the
 general requirements are in
@@ -105,21 +122,19 @@ git push origin v0.2.0
 
 ## 7. Release branches and hotfixes
 
-Create `release/vX.Y` only when the previous minor version must keep receiving fixes while `main`
-moves on:
-
-```bash
-git switch -c release/v0.1 v0.1.3
-# fixes: cherry-pick -x <sha> from main, never merge main in
-```
+At the current pre-1.0 stage, do not create maintenance release branches such as `release/vX.Y`.
+Only the latest release and `main` receive fixes, as described in [SECURITY.md](../SECURITY.md).
+If supporting multiple versions becomes necessary, obtain explicit approval and update this document,
+[GOVERNANCE.md](../GOVERNANCE.md) and the security support policy together before creating a maintenance
+branch. The existence of a branch alone does not establish a support commitment.
 
 Hotfixes:
 
-1. Branch `fix/<slug>` from `main` (not from the release branch).
-2. Ordinary review, ordinarily merged.
-3. Tag a patch release from `main`.
-4. If a maintained `release/vX.Y` is affected, `git cherry-pick -x <merge-sha>` and tag there too.
+1. Branch `fix/<slug>` from the latest `main`.
+2. Meet the ordinary review and CI gates in [GOVERNANCE.md §5](../GOVERNANCE.md#5-review-and-merge-requirements);
+   a committer or maintainer squash-merges the pull request into `main`.
+3. Merge the release note before tagging; a maintainer tags and publishes the patch release from the
+   green commit on `main`.
 
-Emergency path: during an active incident a single maintainer may merge with one approval, provided the
-pull request is labelled `hotfix` and a second review is completed within 24 hours. The label exists so
-these cases are auditable.
+During an active incident, label the pull request `hotfix` so it can be prioritized and audited.
+The label does not reduce the required approvals or bypass CI; owner requirements still apply.

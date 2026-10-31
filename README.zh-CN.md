@@ -94,8 +94,10 @@ curl -X GET http://<YOUR_IP>:9800/status
 3. **完成你的修改**并确保代码质量：
    ```bash
    make lint   # go fmt + go vet
-   make test   # go test ./...
+   go test ./... -v -timeout 60m
    ```
+   请直接运行 `go test`：Make 测试目标当前会丢失测试失败的退出码，详见
+   [测试说明](CONTRIBUTING.zh-CN.md#3-构建与测试)。
 4. 使用 Conventional Commits 规范的信息**提交**并签署（`git commit -s`）
 5. 针对 `main` **提交 Pull Request**
 

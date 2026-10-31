@@ -57,20 +57,29 @@ committer 或 maintainer 连续**六个月**没有评审、提交或 triage 活�
 
 | 改动类型 | 所需 approve | 附加要求 |
 | --- | --- | --- |
-| 文档、注释、错别字 | 1 | — |
+| 文档、注释、错别字（不改变政策） | 1 | — |
 | 仅测试 | 1 | CI 绿 |
 | 普通代码（`pkg/`、`cmd/`） | 2 | CI 绿 |
 | 调度器、中间件、HTTP/TLS 处理 | 2 | 其中 1 个必须是该领域 owner |
-| `deploy/`、`Makefile`、`.codearts/` | 2 | 其中 1 个是 release owner |
-| `main` 保护规则、`GOVERNANCE.md`、`SECURITY.md` | 2 | 至少 1 个 maintainer approve |
+| 构建、部署或 CI 规则/行为（`deploy/`、`Makefile`、`.codearts/`） | 2 | 其中 1 个是 release owner |
+| 项目政策或分支保护变更，包括 `GOVERNANCE.md`、`SECURITY.md` 及其翻译 | 2 | 至少 1 个 maintainer approve |
 | 安全修复 | 1 名 maintainer + 1 名安全评审人 | 披露前使用私有分支，见 [SECURITY.zh-CN.md](SECURITY.zh-CN.md) |
 
-以下几条没有例外：
+本表是审批要求的权威依据，人数按不同的非作者评审人计算。按改动的实际影响分类：仅文档、仅测试改动需 1 人审批，
+但涉及项目政策、构建、部署或 CI 规则变更时不适用该简化要求。混合改动取适用的更严格人数，
+并满足所有适用的 owner 或 maintainer 要求。
+必需的领域 owner 与 maintainer 审批均**计入总人数**，不额外增加评审人。治理政策变更还需执行第 10 节的投票；
+纯编辑性修正不属于政策变更。
+
+committer 与 maintainer 均可在必需审批满足、评审对话解决且检查通过后合入。
+仓库设置、角色管理和发版仍由 maintainer 负责，两种角色均不得绕过门禁。
+
+以下几条没有例外，热修复也适用：
 
 - **作者永远不能 approve 自己的改动**，maintainer 也一样。
-- **任何人都不能直接 push 到 `main`**。所有改动，包括 maintainer 自己的，都以 PR 形式进入。唯一例外是
-  内网仓库的自动导入，而它本身也以 PR 形式被评审（见 [docs/branching.zh-CN.md](docs/branching.zh-CN.md)）。
-- **CI 红灯绝不合并**，也不以管理员身份例行绕过必需的检查。
+- **任何人都不能直接 push 到 `main`**。所有改动，包括 maintainer 自己的，都以 PR 形式进入。
+  内网仓库的自动导入也必须通过评审后的 PR（见 [docs/branching.zh-CN.md](docs/branching.zh-CN.md)）。
+- **CI 红灯绝不合并**，管理员也不得绕过必需的审批或检查。
 
 ## 6. 决策
 
@@ -90,8 +99,11 @@ maintainer 重新指派评审。评审长期悬空是流程缺陷，不是降低
 
 ## 7. 发版
 
-- 发版由 **release manager** 从 `main` 切出。该角色按版本轮换，在发版跟踪 issue 中自愿认领。
-- 只有 maintainer 可以打 tag，且只能是 `vX.Y.Z`（可带 `-rc.N` / `-alpha.N` 预发布后缀）——打 tag 规则见
+- 当前 pre-1.0 阶段，所有版本（含热修复版本）只从 `main` 切出，不使用维护发版分支。
+  同时支持多个版本需先明确批准政策变更，同步调整 [docs/branching.zh-CN.md](docs/branching.zh-CN.md) 与
+  [SECURITY.zh-CN.md](SECURITY.zh-CN.md)，再创建维护分支。
+- **release manager** 协调每次发版，在发版跟踪 issue 中自愿认领该角色；发版 tag 的创建与版本发布仍由 maintainer 负责。
+- 只有 maintainer 可以打 tag，且只能是 `vX.Y.Z`（可带 `-rc.N` / `-alpha.N` / `-beta.N` 预发布后缀）——打 tag 规则见
   [docs/branching.zh-CN.md](docs/branching.zh-CN.md)。
 - 每个版本都要有 `docs/versions/release-note-<version>.md`，列出用户可见变更、破坏性变更与已知问题。
   发版说明是发版的一部分，不是事后补的。
