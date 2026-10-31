@@ -54,6 +54,7 @@ go build -trimpath -o output/config_generator ./cmd/config-tool
 # Assemble the deployment package
 cp deploy/deploy.sh output/
 cp deploy/*.yaml output/
+cp -r deploy/k8s-configmap output/
 cp -r deploy/scale output/
 cp -r deploy/pipelines output/
 printf 'Build Tag/Branch: %s\nBuild Commit ID: %s\nBuild Time: %s\n' \

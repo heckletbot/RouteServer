@@ -74,6 +74,13 @@ type Metrics struct {
 	UnreachableWorkers        prometheus.Gauge
 	ETCDConnectionRetries     prometheus.Counter
 	MetricsCollectionFailures prometheus.Counter
+	ClusterServiceConnStatus  prometheus.Gauge
+	ClusterStateWriteFailures *prometheus.CounterVec
+
+	// Metrics specific to ConfigMap Pod List periodic reconciliation
+	// (only effective when fallback-pod-discovery-enabled is true).
+	ConfigmapFallbackPodListTotal        prometheus.Counter
+	ConfigmapFallbackTopologyChangeTotal prometheus.Counter
 
 	// APC related metrics
 	APCQueryLatencySeconds               prometheus.Histogram // APC query latency distribution
@@ -140,6 +147,11 @@ func InitMetrics(cfg *commoncfg.MetricsCfg) {
 			UnreachableWorkers:        newUnreachableWorkersGauge(),
 			ETCDConnectionRetries:     newETCDConnectionRetriesCounter(),
 			MetricsCollectionFailures: newMetricsCollectionFailuresCounter(),
+			ClusterServiceConnStatus:  newClusterServiceConnStatusGauge(),
+			ClusterStateWriteFailures: newClusterStateWriteFailuresCounter(),
+
+			ConfigmapFallbackPodListTotal:        newConfigmapFallbackPodListTotalCounter(),
+			ConfigmapFallbackTopologyChangeTotal: newConfigmapFallbackTopologyChangeTotalCounter(),
 		}
 	})
 }
@@ -218,6 +230,37 @@ func newMetricsCollectionFailuresCounter() prometheus.Counter {
 	return promauto.NewCounter(prometheus.CounterOpts{
 		Name: "rs:metrics_collection_failures_total",
 		Help: "Total number of metrics collection failures",
+	})
+}
+
+func newClusterServiceConnStatusGauge() prometheus.Gauge {
+	return promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "rs:cluster_service_connection_status",
+		Help: "Connection status to cluster state store (etcd/apiserver): 1=connected, 0=disconnected",
+	})
+}
+
+func newClusterStateWriteFailuresCounter() *prometheus.CounterVec {
+	return promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "rs:cluster_state_write_failures_total",
+		Help: "Total number of cluster state write failures",
+	}, []string{"operation", "resource"})
+}
+
+// ConfigMap Pod List periodic reconciliation metrics.
+// No active Gauge is exported: this mechanism has no mode switching, only
+// periodic execution counters.
+func newConfigmapFallbackPodListTotalCounter() prometheus.Counter {
+	return promauto.NewCounter(prometheus.CounterOpts{
+		Name: "rs:configmap_fallback_pod_list_total",
+		Help: "Total number of Pod List reconciliations triggered by the configmap fallback ticker",
+	})
+}
+
+func newConfigmapFallbackTopologyChangeTotalCounter() prometheus.Counter {
+	return promauto.NewCounter(prometheus.CounterOpts{
+		Name: "rs:configmap_fallback_topology_change_total",
+		Help: "Total number of topology changes detected by configmap Pod List reconciliation",
 	})
 }
 
@@ -474,6 +517,41 @@ func RecordETCDConnectionsRetries() {
 
 func RecordMetricsCollectionFailures() {
 	metrics.MetricsCollectionFailures.Inc()
+}
+
+func SetClusterServiceConnStatus(connected bool) {
+	if connected {
+		metrics.ClusterServiceConnStatus.Set(1)
+	} else {
+		metrics.ClusterServiceConnStatus.Set(0)
+	}
+}
+
+func ReadClusterServiceConnStatus() float64 {
+	dtoMetric := &dto.Metric{}
+	if err := metrics.ClusterServiceConnStatus.Write(dtoMetric); err != nil {
+		return -1
+	}
+	if dtoMetric.GetGauge() != nil {
+		return dtoMetric.GetGauge().GetValue()
+	}
+	return -1
+}
+
+func RecordClusterStateWriteFailure(operation, resource string) {
+	metrics.ClusterStateWriteFailures.WithLabelValues(operation, resource).Inc()
+}
+
+// RecordConfigmapFallbackPodList increments the Pod List reconciliation
+// execution counter. Called each time the fallback ticker hits the List branch.
+func RecordConfigmapFallbackPodList() {
+	metrics.ConfigmapFallbackPodListTotal.Inc()
+}
+
+// RecordConfigmapFallbackTopologyChange increments the counter when the Pod
+// List reconciliation detects a non-empty diff against the in-memory state.
+func RecordConfigmapFallbackTopologyChange() {
+	metrics.ConfigmapFallbackTopologyChangeTotal.Inc()
 }
 
 func IncFaultyEndpoint(role string, faultType string) {

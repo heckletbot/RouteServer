@@ -153,6 +153,10 @@ func (a *App) initManagers() (*Managers, error) {
 	messageCenter.InitTopic(constant.LocalWorkerEventsTopic)
 	messageCenter.InitTopic(constant.InstanceDownTopic)
 
+	// init metrics first
+	metrics.InitMetrics(&options.GetConfig().MetricsCfg)
+	metrics.InitPerfMetrics(&options.GetConfig().MetricsCfg)
+
 	peerClient, err := peer_client.NewPeerClient(options.GetConfig().ServerConfig.Name, options.GetConfig().PeerClientCfg, options.GetConfig().OpsPeerClientCfg)
 	if err != nil {
 		return managers, fmt.Errorf("fail to create peer client, err = %v", err)
@@ -174,8 +178,6 @@ func (a *App) initManagers() (*Managers, error) {
 		return managers, fmt.Errorf("failed when subscribe message center, err = %v", err)
 	}
 
-	metrics.InitMetrics(&options.GetConfig().MetricsCfg)
-	metrics.InitPerfMetrics(&options.GetConfig().MetricsCfg)
 	err = scheduler.InitBuiltinScheduleAlgorithms()
 	if err != nil {
 		return managers, fmt.Errorf("fail to init builtin schedule algorithms, err = %v", err)
