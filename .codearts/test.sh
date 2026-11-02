@@ -8,7 +8,7 @@
 # only runs one test scope and exits non-zero on failure.
 set -e
 SCOPE="${1:-unit}"
-echo "CI-SMOKE-MARKER: this line only exists on branch ci-smoke-test (PR checkout verification K1)"
+echo "CI-SMOKE-MARKER v2: webhook trigger test"
 
 # Go toolchain bootstrap (same as .codearts/build.sh)
 export GOPROXY="${GOPROXY:-https://goproxy.cn,direct}"
