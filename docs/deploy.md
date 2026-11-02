@@ -1,10 +1,12 @@
 # Deployment Guide
 
-This guide describes deployment options. All deployment examples in this guide have HTTPS disabled. 
+This guide describes deployment options. 
+
+All deployment examples in this guide have HTTPS disabled. 
 
 For secure deployment in production environments, refer to [security reference](./security.md)
 
-> **Before you start**: If you are building from source, see the [Build Guide](./build.md) first to compile the project. If you have a pre-built release package (`.zip`), you can skip straight to [Installation Process](#installation-process).
+> **Before you start**: If you are building from source, see the [Build Guide](./build.md) first to compile the project. If you have a pre-built release package (`.zip` or `.rar`), you can skip straight to [Installation Process](#installation-process).
 
 ## Environment Configuration
 
@@ -130,13 +132,11 @@ The `deploy.sh` script supports the following optional parameters:
 - **Effect**: Automatically adjusts event sync interval and remote-scheduler settings
 - **Priority**: Lower than `--remote-scheduler-type` and `--remote-scheduler-endpoint`
 - **Default**: `singleton`
-- **Note**: `k8s-configmap` derives topology from a Kubernetes ConfigMap; see "Deploy as Cluster (ConfigMap Mode)" below
 
 #### `--cluster-namespace`
 - **Description**: Kubernetes namespace for cluster resources when `--mode k8s-configmap`
 - **Default**: empty, falls back to the `POD_NAMESPACE` environment variable
 - **Note**: Ignored in `singleton` and `etcd` modes
-
 
 #### `--remote-scheduler-type`
 - **Description**: Type of remote centralized scheduling
