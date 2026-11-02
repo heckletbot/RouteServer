@@ -502,6 +502,9 @@ func PostPrefillStreamProcessResponse(res *http.Response, ctx *PipelineContext, 
 		writerResponseHeaders(res, ctx)
 		// ForceReuseFirstToken is now atomic.Bool, pass its pointer
 		passTokenTime := handler.GetPassTokenTime(ctx.IsChat(), ctx.IsLayerWise, ctx.RequestContext.ParsedRequest.GetMaxToken(), ctx.GetRequestCtx().IsFirstTokenFromPrefill.Load())
+		if ctx.IsLayerWise {
+			passTokenTime++
+		}
 		bodyBytes, rsError, details, finishReason = handler.WritePrefillStreamRes(ctx.GetRequestCtx().MainGinCtx, ctx.RequestContext.ParsedRequest, res,
 			ctx.RequestContext.Tracer.Tracer, ctx.GetPerfMetrics(), instanceId, phase.StageName(), ctx.InferManager.WorkerEventCollector, passTokenTime, ctx.RequestContext.ForceReuseFirstToken)
 		if details != nil {
