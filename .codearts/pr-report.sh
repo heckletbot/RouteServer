@@ -2,25 +2,25 @@
 # Report the rs-release pipeline result to the GitCode pull request as a comment.
 #
 # Invoked by the "rs-pr-report" CodeArts build task in the pipeline's
-# post-processing stage (configured to always run, so it reports failures too):
+# post-processing stage (always runs, so failures are reported too):
 #   sh .codearts/pr-report.sh
 #
-# Required environment (set as build-task parameters):
-#   GITCODE_TOKEN   GitCode personal access token (secret param)
+# Build-task parameters (set from the pipeline's post job):
+#   GITCODE_TOKEN   GitCode personal access token (secret param, required)
+#   MR_ID           PR number, from ${{ sources.RouteServer.merge_id }}
+#   JOB_STATUSES    "<unit>,<e2e>,<build>" job statuses, from
+#                   ${{ format('{0},{1},{2}', jobs.JOB_unit.status, ...) }}
+#                   (COMPLETED / FAILED / CANCELED / INIT / ...)
 # Optional:
-#   CI_RESULT       overall pipeline outcome hint wired from pipeline params
-#                   (SUCCESS / FAIL); when empty the script infers what it can
-#   MR_ID           merge-request number on merge-request triggers
+#   CI_RESULT       explicit overall result override (SUCCESS / FAIL)
 #
-# The script discovers the open PR whose head branch matches the checked-out
-# branch and posts one comment; without an open PR (e.g. manual runs on
-# pipeline) it exits cleanly without commenting.
+# Without MR_ID the script looks up the open PR whose head branch matches the
+# checked-out branch; with no open PR (e.g. manual runs) it exits cleanly.
 set -eu
 
 REPO_OWNER="InferTurbo"
 REPO_NAME="RouteServer"
 API="https://api.gitcode.com/api/v5"
-PIPELINE_NAME="rs-release"
 PIPELINE_URL="https://devcloud.cn-north-4.huaweicloud.com/cicd/project/48aa1cc519f34d39a0563e19418bbc1e/pipeline/history/0a83fefdda6b404f9f170f278eb0611f?from=in-project"
 
 # CodeArts checks the code out into the working directory; tolerate subdirectory layout
@@ -31,20 +31,21 @@ if [ -z "${GITCODE_TOKEN:-}" ]; then
     exit 0
 fi
 
-# --- discover the source branch of this run --------------------------------
-# GIT_LOCAL_BRANCH is exported by CodeArts build tasks (verified in task env)
+# GIT_LOCAL_BRANCH is the PR source branch, codeBranch the merge target; on
+# merge-request triggers CodeArts builds the source merged into the target
 BRANCH="${GIT_LOCAL_BRANCH:-${CI_SOURCE_BRANCH:-}}"
 if [ -z "$BRANCH" ] && command -v git >/dev/null 2>&1; then
     BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
 fi
-[ "$BRANCH" = "HEAD" ] && BRANCH=""  # detached checkout
-COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo '${COMMIT_ID:-unknown}')"
+[ "$BRANCH" = "HEAD" ] && BRANCH=""
+COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
-# Debug: dump candidate variables once so the wiring can be verified in logs
-echo "[pr-report] branch=${BRANCH:-<none>} commit=${COMMIT:-<none>} mr_id=${MR_ID:-<unset>} ci_result=${CI_RESULT:-<unset>}"
-env | grep -Ei 'mr_id|stage|result|pipeline' | grep -v GITCODE_TOKEN | sed 's/^/[pr-report] env: /' || true
+echo "[pr-report] branch=${BRANCH:-<none>} target=${codeBranch:-<none>} commit=${COMMIT}" \
+    "mr_id=${MR_ID:-<unset>} job_statuses=${JOB_STATUSES:-<unset>} run=${pipelineRunId:-<unset>}"
 
-# --- find the open PR for this branch --------------------------------------
+# An unevaluated expression means the pipeline did not substitute the param
+case "${MR_ID:-}" in *'${{'*) MR_ID="" ;; esac
+
 PR_NUMBER="${MR_ID:-}"
 if [ -z "$PR_NUMBER" ]; then
     if [ -z "$BRANCH" ]; then
@@ -57,8 +58,7 @@ if [ -z "$PR_NUMBER" ]; then
 import sys, json
 branch = sys.argv[1]
 for pr in json.load(sys.stdin):
-    head = pr.get('head') or {}
-    if head.get('ref') == branch:
+    if (pr.get('head') or {}).get('ref') == branch:
         print(pr['number'])
         break
 " "$BRANCH" || true)"
@@ -69,47 +69,56 @@ if [ -z "$PR_NUMBER" ]; then
 fi
 echo "[pr-report] reporting to PR #${PR_NUMBER}"
 
-# --- build the comment body -------------------------------------------------
-case "${CI_RESULT:-}" in
-    SUCCESS|success|success*)
-        ICON="✅"; VERDICT="流水线通过"
-        ;;
-    FAIL|FAILED|fail*|error*)
-        ICON="❌"; VERDICT="流水线失败"
-        ;;
-    *)
-        ICON="▶️"; VERDICT="流水线已执行（结果以链接为准）"
-        ;;
-esac
-export REPORT_ICON="$ICON" REPORT_VERDICT="$VERDICT" REPORT_BRANCH="${BRANCH:-unknown}" \
-    REPORT_COMMIT="$COMMIT" REPORT_URL="$PIPELINE_URL" REPORT_PIPELINE="$PIPELINE_NAME"
-
 BODY_FILE="$(mktemp)"
+REPORT_BRANCH="${BRANCH:-unknown}" REPORT_TARGET="${codeBranch:-}" REPORT_COMMIT="$COMMIT" \
+REPORT_URL="$PIPELINE_URL" REPORT_RUN="${pipelineRunId:-}" \
+REPORT_STATUSES="${JOB_STATUSES:-}" REPORT_OVERRIDE="${CI_RESULT:-}" \
 python3 - "$BODY_FILE" <<'PYEOF'
-import sys, os
-path = sys.argv[1]
-icon = os.environ.get("REPORT_ICON", "▶️")
-verdict = os.environ.get("REPORT_VERDICT", "流水线已执行")
+import json, os, sys
+
+stages = ["单元测试", "e2e测试", "构建出包"]
+raw = os.environ.get("REPORT_STATUSES", "")
+statuses = [] if "${{" in raw else [s.strip().upper() for s in raw.split(",")] if raw else []
+
+mark = {
+    "COMPLETED": "✅ 通过",
+    "FAILED": "❌ 失败",
+    "CANCELED": "⚠️ 已中止",
+}
+rows = []
+for i, name in enumerate(stages):
+    st = statuses[i] if i < len(statuses) else ""
+    rows.append(f"| {name} | {mark.get(st, '⏭️ 未执行' if st else '❔ 未知')} |")
+
+override = os.environ.get("REPORT_OVERRIDE", "").upper()
+if override.startswith("SUCCESS") or (statuses and all(s == "COMPLETED" for s in statuses)):
+    head = "## ✅ 流水线通过"
+elif override.startswith("FAIL") or "FAILED" in statuses:
+    head = "## ❌ 流水线失败"
+elif "CANCELED" in statuses:
+    head = "## ⚠️ 流水线已中止"
+else:
+    head = "## ▶️ 流水线已执行（结果以链接为准）"
+
 branch = os.environ.get("REPORT_BRANCH", "unknown")
-commit = os.environ.get("REPORT_COMMIT", "unknown")
-url = os.environ.get("REPORT_URL", "")
+target = os.environ.get("REPORT_TARGET", "")
+code_desc = f"`{branch}` 合入 `{target}` 后的代码" if target and target != branch else f"`{branch}`"
+run = os.environ.get("REPORT_RUN", "")
 lines = [
-    f"## {icon} {verdict}（{os.environ.get('REPORT_PIPELINE','rs-release')}）",
+    f"{head}（rs-release）",
     "",
-    f"- 分支：`{branch}` @ {commit}",
-    f"- 详情：[CodeArts 流水线运行记录]({url})",
+    "| 阶段 | 结果 |",
+    "| --- | --- |",
+    *rows,
+    "",
+    f"- 构建代码：{code_desc} @ {os.environ.get('REPORT_COMMIT', 'unknown')}",
+    f"- 详情：[CodeArts 流水线运行记录]({os.environ.get('REPORT_URL', '')})" + (f"（运行 ID `{run[:8]}`）" if run else ""),
     "",
     "<!-- rs-release-ci-report -->",
 ]
-with open(path, "w", encoding="utf-8") as f:
-    f.write("\n".join(lines))
-PYEOF
-
-# non-ASCII body must go through a UTF-8 JSON file (curl -d mojibakes on Git Bash)
-python3 - "$BODY_FILE" <<'PYEOF'
-import json, sys
-body = open(sys.argv[1], encoding="utf-8").read()
-open(sys.argv[1], "w", encoding="utf-8").write(json.dumps({"body": body}, ensure_ascii=False))
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    # non-ASCII body must go through a UTF-8 JSON file (curl -d mojibakes on Git Bash)
+    f.write(json.dumps({"body": "\n".join(lines)}, ensure_ascii=False))
 PYEOF
 
 HTTP_CODE="$(curl -s -o /tmp/pr-report-resp.json -w '%{http_code}' --max-time 20 \
