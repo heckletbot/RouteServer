@@ -35,7 +35,7 @@ REUSE_PREFILLED_TOKENS="false"
 OPS_PORT=""
 ETCD_AUTO_SYNC_SECOND="10"
 CLUSTER_NAMESPACE=""
-OPS_ENABLE_HTTPS="true"
+OPS_ENABLE_HTTPS="false"
 OPS_ENABLE_MTLS="true"
 OPS_TLS_CERT_FILE=""
 OPS_TLS_KEY_FILE=""
@@ -44,16 +44,16 @@ TLS_CERT_FILE=""
 TLS_KEY_FILE=""
 TLS_CA_CERT_FILE=""
 TLS_SKIP_VERIFY="false"
-ENABLE_HTTPS="true"
+ENABLE_HTTPS="false"
 ENABLE_MTLS="true"
 # InstanceClient (vLLM) TLS
-CLIENT_HTTPS_ENABLE="true"
+CLIENT_HTTPS_ENABLE="false"
 CLIENT_MTLS_ENABLE="true"
 CLIENT_CERT_FILE=""
 CLIENT_KEY_FILE=""
 CLIENT_CA_CERT_FILE=""
 # etcd TLS
-ETCD_TLS_ENABLE="true"
+ETCD_TLS_ENABLE="false"
 ETCD_MTLS_ENABLE="true"
 ETCD_CERT_FILE=""
 ETCD_KEY_FILE=""
@@ -88,7 +88,7 @@ RS_INSTALL_DIR/<rs_name>/${PACKAGE_DIR}/log/route-server.log, must give full rea
   echo "  --readiness-cfg readiness config, set the least number of instances for each role, separate with # (default: prefill:1#decode:1)"
   echo "  --reuse-prefilled-tokens enable this flag to reuse prefilled tokens for layerwise mode (default: false)"
   echo "  --ops-port    port of the ops server for admin operations (default: http-port + 10)"
-  echo "  --ops-enable-https enable HTTPS for ops server. true/false (default: true)"
+  echo "  --ops-enable-https enable HTTPS for ops server. true/false (default: false)"
   echo "  --ops-enable-mtls enable mTLS for ops server (requires --ops-tls-ca-cert-file). true/false (default: true)"
   echo "  --ops-tls-cert-file path to ops TLS certificate file (required when --ops-enable-https=true, independent from --tls-cert-file)"
   echo "  --ops-tls-key-file path to ops TLS private key file (required when --ops-enable-https=true, independent from --tls-key-file)"
@@ -96,15 +96,15 @@ RS_INSTALL_DIR/<rs_name>/${PACKAGE_DIR}/log/route-server.log, must give full rea
   echo "  --tls-cert-file path to TLS certificate file (e.g. /etc/certs/server.crt) [required when enable-https=true]"
   echo "  --tls-key-file path to TLS private key file (e.g. /etc/certs/server.key) [required when enable-https=true]"
   echo "  --tls-ca-cert-file path to CA certificate file for mTLS client verification (e.g. /etc/certs/ca.crt) [required when enable-mtls=true]"
-  echo "  --enable-https enable HTTPS for the main server port. true/false (default: true)"
+  echo "  --enable-https enable HTTPS for the main server port. true/false (default: false)"
   echo "  --enable-mtls enable mutual TLS (requires --tls-ca-cert-file). true/false (default: true)"
   echo "  --tls-skip-verify skip TLS certificate verification. true/false (default: false)"
-  echo "  --client-https-enable enable HTTPS for vLLM instance client. true/false (default: true)"
+  echo "  --client-https-enable enable HTTPS for vLLM instance client. true/false (default: false)"
   echo "  --client-mtls-enable enable mTLS for vLLM instance client. true/false (default: true)"
   echo "  --client-cert-file path to vLLM client TLS certificate file (e.g. /etc/certs/client.crt)"
   echo "  --client-key-file path to vLLM client TLS private key file (e.g. /etc/certs/client.key)"
   echo "  --client-ca-cert-file path to vLLM client CA certificate file (e.g. /etc/certs/ca.crt)"
-  echo "  --etcd-tls-enable enable TLS for etcd connection. true/false (default: true)"
+  echo "  --etcd-tls-enable enable TLS for etcd connection. true/false (default: false)"
   echo "  --etcd-mtls-enable enable mTLS for etcd connection. true/false (default: true)"
   echo "  --etcd-cert-file path to etcd client TLS certificate file (e.g. /etc/certs/etcd-client.crt)"
   echo "  --etcd-key-file path to etcd client TLS private key file (e.g. /etc/certs/etcd-client.key)"
@@ -853,9 +853,8 @@ if [[ "${MODE}" == "k8s-configmap" ]]; then
     echo "Warning: MODE is k8s-configmap but k8s-configmap.yaml not found in deploy dir, \
 route-server will fail to start unless the file is provided manually"
   fi
-  # The service account needs RBAC to create/update the rs-status ConfigMap and
-  # the leader-election Lease. Apply it before starting RouteServer, otherwise
-  # ConfigMap operations fail with Forbidden.
+# The service account needs RBAC to create/update the rs-status ConfigMap and
+# the leader-election Lease.
   if [ -f "${DEPLOY_ROOT_PATH}/k8s-configmap/rbac.yaml" ]; then
     echo "Note: apply the RBAC manifest before starting route-server:"
     echo "  kubectl apply -f ${DEPLOY_ROOT_PATH}/k8s-configmap/rbac.yaml"

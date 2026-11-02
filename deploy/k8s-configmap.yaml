@@ -93,9 +93,7 @@ infer-group-name: <infer-group-name>
 # Pod label keys used by Pod List reconciliation. Set these to match the labels
 # your inference Pods carry; both are required when reconciliation is enabled.
 # infer-group-label-key: Pod label key marking the inference group name
-#   (instance isolation boundary). Used together with infer-group-name to build
-#   the labelSelector when listing Pods.
-# infer-group-role-type-label-key: Pod label key marking the group_type
-#   (e.g. master/prefill/decode).
+# Used together with infer-group-name to build the labelSelector when listing Pods.
+# infer-group-role-type-label-key: Pod label key marking the group_type  (e.g. master/prefill/decode).
 infer-group-label-key: <infer-group-label-key>                # e.g. route-server/infer-group
 infer-group-role-type-label-key: <infer-group-role-type-label-key>  # e.g. route-server/group-type
