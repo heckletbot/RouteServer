@@ -56,6 +56,7 @@ func TestStartProbeAsync_Concurrent(t *testing.T) {
 		lastProbeTime:     make(map[string]int64),
 		probingInstances:  make(map[string]bool),
 		probeStates:       make(map[string]ProbeState),
+		invalidProbeCount: make(map[string]int),
 		probeInferRequest: &ProbeInferRequest{},
 		leaderHealthChecker: &LeaderHealthChecker{
 			healthInstance:    map[string]*client.Instance{"test-instance": {ID: "test-instance"}},
@@ -77,16 +78,24 @@ func TestStartProbeAsync_Concurrent(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Should only initiate one probe
-	leader.mu.Lock()
-	probingCount := 0
-	if leader.probingInstances["test-instance"] {
-		probingCount = 1
-	}
-	leader.mu.Unlock()
-
-	if probingCount != 1 {
-		t.Errorf("Expected probing count = 1, got %d", probingCount)
+	// The probe runs asynchronously and cleans up probingInstances when it
+	// finishes; wait for it to settle before asserting the final state.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		leader.mu.Lock()
+		_, stillProbing := leader.probingInstances["test-instance"]
+		state := leader.probeStates["test-instance"]
+		leader.mu.Unlock()
+		if !stillProbing {
+			if state != ProbeStateFailed {
+				t.Errorf("Expected probe state ProbeStateFailed after an invalid probe, got %v", state)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("async probe goroutine did not settle within 2s")
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
@@ -103,6 +112,7 @@ func TestStartProbeAsync_NonBlocking(t *testing.T) {
 		lastProbeTime:     make(map[string]int64),
 		probingInstances:  make(map[string]bool),
 		probeStates:       make(map[string]ProbeState),
+		invalidProbeCount: make(map[string]int),
 		probeInferRequest: &ProbeInferRequest{},
 		leaderHealthChecker: &LeaderHealthChecker{
 			healthInstance:    map[string]*client.Instance{"instance-1": {ID: "instance-1"}, "instance-2": {ID: "instance-2"}},
