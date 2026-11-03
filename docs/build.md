@@ -10,7 +10,7 @@ Ensure the following tools are installed on your build machine:
 
 | Tool | Minimum Version | Purpose                          |
 |------|-----------------|----------------------------------|
-| Go   | 1.25.0          | Compile Go source code           |
+| Go   | 1.26.0          | Compile Go source code           |
 | Make | 3.82            | Build orchestration              |
 | Bash | 3.2             | `/bin/bash` provides `pipefail` for Make test targets |
 
@@ -78,6 +78,11 @@ Python 3. The checks use temporary directories, controlled Go/tee failures, and 
 Go tests in a separate module when Go is installed. They disable downloads and do not run project E2E.
 The same command checks Make and CodeArts archive layouts with a build fixture; this does not validate
 the compiled RouteServer binaries or an actual deployment.
+
+Deployment-script regressions: run `python3 .codearts/test_deploy.py -v` (Python 3). Temporary packages
+and controlled generator/process fixtures cover failure preservation, rewrites, defaults and exit status.
+It opens no ports, deploys no real services and does not exercise ConfigMap. Real release packages still
+need the readiness and inference checks in the deployment guide.
 
 After a module-path or linker-target change, run `python3 .codearts/test_module_metadata.py`.
 It builds real artifacts from temporary working-source snapshots and checks the module recorded by
@@ -205,7 +210,7 @@ make clean && make package
 
 | Issue | Likely Cause | Solution |
 |-------|--------------|----------|
-| `go: command not found` | Go is not installed | Install Go 1.25.0 or higher |
+| `go: command not found` | Go is not installed | Install Go 1.26.0 or higher |
 | `make: command not found` | Make is not installed | Install make 3.82+ via your package manager |
 | `fatal: not a git repository` | Build is running outside a git clone | Clone the repository first, or version fields will default to `"unknown"` |
 | `fatal: path '...': permission denied` | File permission issue | Check file ownership; ensure you have read/write access to the project directory |

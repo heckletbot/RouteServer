@@ -39,7 +39,7 @@ contributors, committers and maintainers alike.
 
 | Tool | Minimum version | Notes |
 | --- | --- | --- |
-| Go | 1.25.0 | The module declares `go 1.25.0` |
+| Go | 1.26.0 | The module declares `go 1.26.0` |
 | Make | 3.82 | Drives build, test and packaging |
 | Bash | 3.2 | `/bin/bash` is used by the Make test targets for `pipefail` |
 | Git | 2.23 | Needed for `--force-with-lease` and worktrees |
@@ -86,6 +86,11 @@ To verify the Make test pipelines without running the project E2E suite, run
 Go is available, real passing and failing tests in an isolated module with downloads disabled.
 It also checks Make/CodeArts archive layouts using a build fixture; that layout check does not compile
 the RouteServer binaries or perform a deployment.
+
+Deployment-script regressions: run `python3 .codearts/test_deploy.py -v` (Python 3). Temporary packages
+and controlled generator/process fixtures cover failure preservation, rewrites, defaults and exit status.
+It opens no ports, deploys no real services and does not exercise ConfigMap. Real release packages still
+need the readiness and inference checks in the deployment guide.
 
 ### End-to-end tests
 

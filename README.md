@@ -26,7 +26,7 @@ see our [architecture docs](docs/architecture.md) and [code-base structure](docs
 
 ### Prerequisites
 
-- Go 1.25.0 or higher
+- Go 1.26.0 or higher
 - Make 3.82 or higher
 
 ### Build and Package

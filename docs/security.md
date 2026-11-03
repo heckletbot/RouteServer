@@ -4,6 +4,11 @@
 
 This guide is designed to assist operations and security teams in hardening network listening interfaces, environment configurations, and external component communications for the **RouteServer** service. By properly configuring network boundaries, implementing secure environment variables, and enforcing mutual TLS (mTLS) authentication, you can eliminate the risks of cleartext data transmission and unauthorized access.
 
+HTTPS defaults to off on the main, ops, vLLM and etcd planes; mTLS takes effect only after that plane's HTTPS is enabled.
+This guide recommends production hardening and explicitly enables the illustrated planes. Certificate paths alone do not
+enable encryption; a single-plane example leaves the other planes at their defaults. Replace placeholder addresses,
+backend environment variables, certificate paths and passphrases with real values. Use `--option value`, not equals syntax.
+
 ---
 
 ## 1. Hardening Network Interfaces, Listening Ports, and Key Passwords
@@ -39,6 +44,10 @@ bash deploy.sh  \
   --host "*.*.*.*" \
   --port 9800 \
   --mode singleton \
+  --enable-https true \
+  --enable-mtls true \
+  --ops-enable-https true \
+  --ops-enable-mtls true \
   --tls-cert-file "/etc/certs/standalone/api-server.crt" \
   --tls-key-file "/etc/certs/standalone/api-server.key" \
   --tls-ca-cert-file "/etc/certs/standalone/api-ca.crt" \
@@ -75,8 +84,8 @@ bash deploy.sh \
   --host "*.*.*.*" \
   --port 9800 \
   --mode singleton \
-  --client-https-enable=true \
-  --client-mtls-enable=true \
+  --client-https-enable true \
+  --client-mtls-enable true \
   --client-cert-file "/etc/certs/standalone/vllm-client.crt" \
   --client-key-file "/etc/certs/standalone/vllm-client.key" \
   --client-ca-cert-file "/etc/certs/standalone/vllm-ca.crt"
@@ -107,9 +116,10 @@ export TLS_ETCD_KEY_PASSWORD="***"
 bash deploy.sh  \
   --host "*.*.*.*" \
   --port 9800 \
-  --mode singleton \
-  --etcd-tls-enable=true \
-  --etcd-mtls-enable=true \
+  --mode etcd \
+  --etcd-endpoints "etcd.example.internal:2379" \
+  --etcd-tls-enable true \
+  --etcd-mtls-enable true \
   --etcd-cert-file "/etc/certs/standalone/etcd-client.crt" \
   --etcd-key-file "/etc/certs/standalone/etcd-client.key" \
   --etcd-ca-cert-file "/etc/certs/standalone/etcd-ca.crt"
@@ -160,20 +170,28 @@ bash deploy.sh \
   --port 9800 \
   --mode "etcd" \
   --etcd-endpoints "${ETCD_CLUSTER_ENDPOINTS}" \
-  --candidate true \
+  --candidate false \
   --infer-mode "Layerwise-CPCD" \
   --reuse-prefilled-tokens \
   --infer-module-version "pipeline" \
   --remote-scheduler-type "leader" \
+  --enable-https true \
+  --enable-mtls true \
+  --ops-enable-https true \
+  --ops-enable-mtls true \
   --tls-cert-file "${CERT_DIR}/api-server.crt" \
   --tls-key-file "${CERT_DIR}/api-server.key" \
   --tls-ca-cert-file "${CERT_DIR}/api-ca.crt" \
   --ops-tls-cert-file "${CERT_DIR}/ops-server.crt" \
   --ops-tls-key-file "${CERT_DIR}/ops-server.key" \
   --ops-tls-ca-cert-file "${CERT_DIR}/ops-ca.crt" \
+  --client-https-enable true \
+  --client-mtls-enable true \
   --client-cert-file "${CERT_DIR}/vllm-client.crt" \
   --client-key-file "${CERT_DIR}/vllm-client.key" \
   --client-ca-cert-file "${CERT_DIR}/vllm-ca.crt" \
+  --etcd-tls-enable true \
+  --etcd-mtls-enable true \
   --etcd-cert-file "${CERT_DIR}/etcd-client.crt" \
   --etcd-key-file "${CERT_DIR}/etcd-client.key" \
   --etcd-ca-cert-file "${CERT_DIR}/etcd-ca.crt"
@@ -195,15 +213,23 @@ bash deploy.sh \
   --reuse-prefilled-tokens \
   --infer-module-version "pipeline" \
   --remote-scheduler-type "leader" \
+  --enable-https true \
+  --enable-mtls true \
+  --ops-enable-https true \
+  --ops-enable-mtls true \
   --tls-cert-file "${CERT_DIR}/api-server.crt" \
   --tls-key-file "${CERT_DIR}/api-server.key" \
   --tls-ca-cert-file "${CERT_DIR}/api-ca.crt" \
   --ops-tls-cert-file "${CERT_DIR}/ops-server.crt" \
   --ops-tls-key-file "${CERT_DIR}/ops-server.key" \
   --ops-tls-ca-cert-file "${CERT_DIR}/ops-ca.crt" \
+  --client-https-enable true \
+  --client-mtls-enable true \
   --client-cert-file "${CERT_DIR}/vllm-client.crt" \
   --client-key-file "${CERT_DIR}/vllm-client.key" \
   --client-ca-cert-file "${CERT_DIR}/vllm-ca.crt" \
+  --etcd-tls-enable true \
+  --etcd-mtls-enable true \
   --etcd-cert-file "${CERT_DIR}/etcd-client.crt" \
   --etcd-key-file "${CERT_DIR}/etcd-client.key" \
   --etcd-ca-cert-file "${CERT_DIR}/etcd-ca.crt"

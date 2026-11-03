@@ -4,6 +4,10 @@
 
 本指南旨在帮助运维与安全团队加固 **RouteServer** 服务的网络监听接口、环境配置以及外部组件通信。通过正确配置网络边界、使用安全的环境变量并强制启用双向 TLS（mTLS）认证，可以消除明文传输数据与未授权访问的风险。
 
+HTTPS 在业务、运维、vLLM 和 etcd 四个平面默认均关闭；mTLS 开关仅在对应 HTTPS 开启后生效。
+本文是生产加固建议，示例显式开启所述平面的 TLS。仅提供证书路径不会启用加密；单平面示例不会启用其他平面。
+请将占位 IP/域名、后端地址环境变量、证书路径和口令替换为实际值。参数使用 `--选项 值`，不使用等号形式。
+
 ---
 
 ## 1. 加固网络接口、监听端口与密钥口令
@@ -39,6 +43,10 @@ bash deploy.sh  \
   --host "*.*.*.*" \
   --port 9800 \
   --mode singleton \
+  --enable-https true \
+  --enable-mtls true \
+  --ops-enable-https true \
+  --ops-enable-mtls true \
   --tls-cert-file "/etc/certs/standalone/api-server.crt" \
   --tls-key-file "/etc/certs/standalone/api-server.key" \
   --tls-ca-cert-file "/etc/certs/standalone/api-ca.crt" \
@@ -76,8 +84,8 @@ bash deploy.sh \
   --host "*.*.*.*" \
   --port 9800 \
   --mode singleton \
-  --client-https-enable=true \
-  --client-mtls-enable=true \
+  --client-https-enable true \
+  --client-mtls-enable true \
   --client-cert-file "/etc/certs/standalone/vllm-client.crt" \
   --client-key-file "/etc/certs/standalone/vllm-client.key" \
   --client-ca-cert-file "/etc/certs/standalone/vllm-ca.crt"
@@ -109,9 +117,10 @@ export TLS_ETCD_KEY_PASSWORD="***"
 bash deploy.sh  \
   --host "*.*.*.*" \
   --port 9800 \
-  --mode singleton \
-  --etcd-tls-enable=true \
-  --etcd-mtls-enable=true \
+  --mode etcd \
+  --etcd-endpoints "etcd.example.internal:2379" \
+  --etcd-tls-enable true \
+  --etcd-mtls-enable true \
   --etcd-cert-file "/etc/certs/standalone/etcd-client.crt" \
   --etcd-key-file "/etc/certs/standalone/etcd-client.key" \
   --etcd-ca-cert-file "/etc/certs/standalone/etcd-ca.crt"
@@ -162,20 +171,28 @@ bash deploy.sh \
   --port 9800 \
   --mode "etcd" \
   --etcd-endpoints "${ETCD_CLUSTER_ENDPOINTS}" \
-  --candidate true \
+  --candidate false \
   --infer-mode "Layerwise-CPCD" \
   --reuse-prefilled-tokens \
   --infer-module-version "pipeline" \
   --remote-scheduler-type "leader" \
+  --enable-https true \
+  --enable-mtls true \
+  --ops-enable-https true \
+  --ops-enable-mtls true \
   --tls-cert-file "${CERT_DIR}/api-server.crt" \
   --tls-key-file "${CERT_DIR}/api-server.key" \
   --tls-ca-cert-file "${CERT_DIR}/api-ca.crt" \
   --ops-tls-cert-file "${CERT_DIR}/ops-server.crt" \
   --ops-tls-key-file "${CERT_DIR}/ops-server.key" \
   --ops-tls-ca-cert-file "${CERT_DIR}/ops-ca.crt" \
+  --client-https-enable true \
+  --client-mtls-enable true \
   --client-cert-file "${CERT_DIR}/vllm-client.crt" \
   --client-key-file "${CERT_DIR}/vllm-client.key" \
   --client-ca-cert-file "${CERT_DIR}/vllm-ca.crt" \
+  --etcd-tls-enable true \
+  --etcd-mtls-enable true \
   --etcd-cert-file "${CERT_DIR}/etcd-client.crt" \
   --etcd-key-file "${CERT_DIR}/etcd-client.key" \
   --etcd-ca-cert-file "${CERT_DIR}/etcd-ca.crt"
@@ -197,15 +214,23 @@ bash deploy.sh \
   --reuse-prefilled-tokens \
   --infer-module-version "pipeline" \
   --remote-scheduler-type "leader" \
+  --enable-https true \
+  --enable-mtls true \
+  --ops-enable-https true \
+  --ops-enable-mtls true \
   --tls-cert-file "${CERT_DIR}/api-server.crt" \
   --tls-key-file "${CERT_DIR}/api-server.key" \
   --tls-ca-cert-file "${CERT_DIR}/api-ca.crt" \
   --ops-tls-cert-file "${CERT_DIR}/ops-server.crt" \
   --ops-tls-key-file "${CERT_DIR}/ops-server.key" \
   --ops-tls-ca-cert-file "${CERT_DIR}/ops-ca.crt" \
+  --client-https-enable true \
+  --client-mtls-enable true \
   --client-cert-file "${CERT_DIR}/vllm-client.crt" \
   --client-key-file "${CERT_DIR}/vllm-client.key" \
   --client-ca-cert-file "${CERT_DIR}/vllm-ca.crt" \
+  --etcd-tls-enable true \
+  --etcd-mtls-enable true \
   --etcd-cert-file "${CERT_DIR}/etcd-client.crt" \
   --etcd-key-file "${CERT_DIR}/etcd-client.key" \
   --etcd-ca-cert-file "${CERT_DIR}/etcd-ca.crt"

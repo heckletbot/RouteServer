@@ -36,7 +36,7 @@
 
 | 工具 | 最低版本 | 说明 |
 | --- | --- | --- |
-| Go | 1.25.0 | 模块声明为 `go 1.25.0` |
+| Go | 1.26.0 | 模块声明为 `go 1.26.0` |
 | Make | 3.82 | 驱动构建、测试与打包 |
 | Bash | 3.2 | Make 测试目标使用 `/bin/bash` 的 `pipefail` |
 | Git | 2.23 | 需要 `--force-with-lease` 与 worktree |
@@ -79,6 +79,10 @@ make package       # 构建 + 部署件 + version.info + 打 zip
 验证 Make 测试管道而不运行项目 E2E 套件，可执行 `python3 .codearts/test_makefile.py`（需要 Python 3）。
 它检查受控的命令/日志失败，并在 Go 可用时使用禁止下载的独立模块运行真实的通过和失败测试。
 它还使用构建替身检查 Make/CodeArts 归档布局；该布局检查不会编译 RouteServer 二进制或执行部署。
+
+部署脚本回归：运行 `python3 .codearts/test_deploy.py -v`（Python 3）。它在临时目录中使用受控的
+生成器/进程替身检查失败保护、改写、默认参数和退出码；不监听端口，不部署真实服务，不运行 ConfigMap。
+真实发布包仍需按部署指南完成就绪与推理验证。
 
 ### 端到端测试
 

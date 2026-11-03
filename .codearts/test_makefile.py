@@ -140,14 +140,17 @@ exec """ + shlex.quote(real_tee) + " \"$@\"\n")
 
     def test_package_layout_matches_deploy_script(self):
         repo = MAKEFILE.parent
-        for directory in ("cmd/route_server", "cmd/config-tool", "deploy/scale", "deploy/pipelines"):
+        for directory in ("cmd/route_server", "cmd/config-tool", "deploy/scale", "deploy/pipelines",
+                          "deploy/k8s-configmap"):
             (self.root / directory).mkdir(parents=True)
         shutil.copyfile(repo / "deploy/deploy.sh", self.root / "deploy/deploy.sh")
         (self.root / "deploy/route-server-template.yaml").write_text("# fixture\n")
+        (self.root / "deploy/k8s-configmap.yaml").write_text("# configmap fixture\n")
+        (self.root / "deploy/k8s-configmap/rbac.yaml").write_text("# rbac fixture\n")
         fake_go = self.executable("go", '''#!/bin/sh
 case "$1" in
-    env) printf 'go1.25.0\\n'; exit 0 ;;
-    version) printf 'go version go1.25.0 fixture/fixture\\n'; exit 0 ;;
+    env) printf 'go1.26.0\\n'; exit 0 ;;
+    version) printf 'go version go1.26.0 fixture/fixture\\n'; exit 0 ;;
     build)
         while [ "$#" -gt 0 ]; do
             if [ "$1" = "-o" ]; then
@@ -183,15 +186,32 @@ exit 99
         with tarfile.open(archives[0]) as archive:
             codearts_names = {name[2:] if name.startswith("./") else name for name in archive.getnames()}
         required = {"route-server/bin/route-server", "route-server/version.info",
-                    "config_generator", "deploy.sh", "route-server-template.yaml"}
+                    "config_generator", "deploy.sh", "route-server-template.yaml",
+                    "k8s-configmap.yaml", "k8s-configmap/rbac.yaml"}
         for names in (make_names, codearts_names):
             self.assertTrue(required.issubset(names), names)
             self.assertFalse(any("DistributedScheduler" in name for name in names))
         self.assertIn("PACKAGE_DIR=route-server\n", (self.root / "deploy/deploy.sh").read_text())
 
+    def test_codearts_rejects_go_below_module_minimum(self):
+        self.executable("go", "#!/bin/sh\nprintf 'go1.25.0\\n'\n")
+        url_file = self.root / "toolchain-url"
+        self.env["ROUTESERVER_TOOLCHAIN_URL"] = str(url_file)
+        self.executable("curl", '''#!/bin/sh
+printf '%s\\n' "$@" > "$ROUTESERVER_TOOLCHAIN_URL"
+exit 43
+''')
+        result = subprocess.run(
+            ["bash", str(MAKEFILE.parent / ".codearts/build.sh")],
+            cwd=self.root, env=self.env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+        )
+        self.assertEqual(result.returncode, 43, result.stdout + result.stderr)
+        self.assertRegex(url_file.read_text(), r"go1\.26\.0\.linux-(amd64|arm64)\.tar\.gz")
+
     @unittest.skipUnless(shutil.which("go"), "Go toolchain is not available")
     def test_real_go_success_and_failure(self):
-        (self.root / "go.mod").write_text("module example.invalid/makefile-fixture\n\ngo 1.25.0\n")
+        (self.root / "go.mod").write_text("module example.invalid/makefile-fixture\n\ngo 1.26.0\n")
         (self.root / "fixture_test.go").write_text('''package fixture
 
 import (

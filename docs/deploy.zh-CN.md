@@ -52,9 +52,9 @@
    bash deploy.sh --mode singleton --infer-mode PD --port 9800 --host <YOUR_IP> ...
    ```
 
-   只执行 `bash deploy.sh` 是**不够**的：四个平面的 HTTPS 与 mTLS 默认都是 `true`，
-   因此除非传入证书，或显式关闭不需要加固的平面，脚本会直接退出
-   （见 [HTTPS 与 mTLS](#https-与-mtls)）。各拓扑的完整命令见[示例用法](#示例用法)。
+   四个平面的 HTTPS 默认关闭，无需证书即可使用 HTTP；mTLS 开关仅在对应 HTTPS 开启时生效。
+   仍需提供拓扑所需的后端地址、可用的本机 IP 和安装目录权限。生产环境建议显式开启所需平面的
+   HTTPS/mTLS 并配置证书（见 [HTTPS 与 mTLS](#https-与-mtls)）。各拓扑完整命令见[示例用法](#示例用法)。
 
 > [!WARNING]
 > 请用 `bash` 而非 `sh`：脚本依赖 `[[ ]]` 等 Bash 语法，在 `dash` 下会失败，
@@ -66,24 +66,18 @@
 
 部署脚本执行以下操作：
 
-1. **复制**软件与配置文件到 `RS_INSTALL_DIR/<rs_name>/` 目录
+1. 校验参数、所需证书及发布资源，在私有临时目录复制和处理 pipeline/指标配置，调用原有配置生成器。
+   任何复制、改写或生成失败都立即非零退出，清理临时目录，不替换安装内容或停止旧实例。
+2. 配置成功生成后，备份旧 `route-server.yaml` 为 `.bak`，仅向安装路径下的同名可执行进程发送终止信号，
+   最多等待 10 秒；无法停止则退出，不强杀。随后将准备好的资源写入 `RS_INSTALL_DIR/<rs_name>/route-server/`。
+3. 导出 `ENV_ROUTE_SERVER_CONFIG_PATH`（配置目录）、`ENV_ROUTE_SERVER_LOG_PATH`（日志目录），
+   按参数设置 `GOMAXPROCS`。默认日志路径指向最终安装目录，不指向临时目录。
+4. 后台启动 RouteServer，等待 5 秒检查进程是否仍存活。提前退出时返回 `1` 并报告子进程退出码；
+   未启用 `--daemon true` 时，存活即返回 `0`；启用时继续等待并返回子进程退出码。
 
-2. **生成**RouteServer 配置文件（`route-server.yaml`），依据：
-   - 模板 YAML 文件
-   - 本机 IP 地址
-   - 传给 deploy.sh 脚本的参数
-   - 将配置保存到 `RS_INSTALL_DIR/<rs_name>/route-server/config/`
-
-3. **导出**环境变量，包括：
-   - `ENV_ROUTE_SERVER_CONFIG_PATH`，指向生成的 route-server.yaml
-   - 根据传入参数设置 `GOMAXPROCS`
-
-4. **启动**RouteServer 进程
-
-5. **校验**进程状态：
-   - 进程启动成功返回 `0`
-   - 进程启动失败返回 `1`
-   - （守护模式下，脚本会等 RouteServer 进程退出后再返回）
+此启动检查不等于后端就绪或推理成功，还需执行后文的就绪和实际请求检查。
+准备阶段通过后，停止旧实例及安装阶段的 I/O/启动错误会非零退出；脚本不提供自动回滚。
+CPU 数读取使用 `getconf`，文件改写兼容 GNU/BSD `sed`；Linux 仍是正式部署目标，本机 macOS 检查见验证进度。
 
 ---
 
@@ -220,26 +214,25 @@
 
 ### HTTPS 与 mTLS
 
-所有 TLS 开关默认都是 `true`。要么为每个保持启用的平面提供证书，要么显式关闭
-在别处终止 TLS 的平面。这也是直接执行 `bash deploy.sh` 会失败的原因：脚本在生成任何
-配置之前就要求提供证书对。
-
+四个 HTTPS 开关默认均为 `false`，四个 mTLS 开关默认均为 `true`，但仅在对应 HTTPS 开启时生效。
+仅传入证书路径不会自动启用 HTTPS。生产环境建议显式开启所需平面的 HTTPS/mTLS，配置对应的信任链和身份；
+本文的 HTTP 示例用于功能演示，默认值保持关闭。
 | 平面 | 开关（默认值） | 证书参数 |
 |-------|--------------------|-------------------|
-| 主 HTTP 端口 | `--enable-https`（`true`）、`--enable-mtls`（`true`） | `--tls-cert-file`、`--tls-key-file`、`--tls-ca-cert-file` |
-| 运维端口 | `--ops-enable-https`（`true`）、`--ops-enable-mtls`（`true`） | `--ops-tls-cert-file`、`--ops-tls-key-file`、`--ops-tls-ca-cert-file` |
-| 下游 vLLM 实例客户端 | `--client-https-enable`（`true`）、`--client-mtls-enable`（`true`） | `--client-cert-file`、`--client-key-file`、`--client-ca-cert-file` |
-| etcd 客户端 | `--etcd-tls-enable`（`true`）、`--etcd-mtls-enable`（`true`） | `--etcd-cert-file`、`--etcd-key-file`、`--etcd-ca-cert-file` |
+| 主 HTTP 端口 | `--enable-https`（`false`）、`--enable-mtls`（`true`） | `--tls-cert-file`、`--tls-key-file`、`--tls-ca-cert-file` |
+| 运维端口 | `--ops-enable-https`（`false`）、`--ops-enable-mtls`（`true`） | `--ops-tls-cert-file`、`--ops-tls-key-file`、`--ops-tls-ca-cert-file` |
+| 下游 vLLM 实例客户端 | `--client-https-enable`（`false`）、`--client-mtls-enable`（`true`） | `--client-cert-file`、`--client-key-file`、`--client-ca-cert-file` |
+| etcd 客户端 | `--etcd-tls-enable`（`false`）、`--etcd-mtls-enable`（`true`） | `--etcd-cert-file`、`--etcd-key-file`、`--etcd-ca-cert-file` |
 
-`deploy.sh` 强制执行的规则：
+`deploy.sh` 的校验与现有 TLS 行为：
 
-- `<plane> https = true` 要求该平面的证书**和**私钥；否则脚本以
-  `Error: ... required when --enable-https=true` 退出。
-- `https = true` **且** `mtls = true` 还要求该平面的 CA 证书。
-- `--tls-skip-verify`（`true`/`false`，默认 `false`）关闭对主服务器证书的
-  校验。它只是诊断用的应急开关 —— 不要在生产环境使用。
-- 关闭 HTTPS 即可跳过证书要求；mTLS 继承所在平面的 HTTPS 开关，无需单独关闭也能
-  通过检查。
+- 业务/运维服务端开启 HTTPS 时必须提供该平面的证书和私钥；同时开启 mTLS 时还必须提供 CA。
+- 启用的平面如指定证书、私钥或 CA 文件，文件必须存在且为可读普通文件。
+- vLLM/etcd 客户端使用现有 Go TLS 实现：可使用系统信任库；客户端身份和自定义 CA 按需配置。
+  mTLS 开关不会生成客户端证书，生产双向认证示例显式提供证书、私钥和 CA。
+- HTTPS 关闭时跳过该平面的证书要求，mTLS 开关不会单独开启加密。
+- `--tls-skip-verify` 默认 `false`，不建议生产跳过证书校验。
+- 参数使用独立取值，如 `--client-https-enable true`，不支持 `--client-https-enable=true`。
 
 加密私钥口令、mTLS 示例以及完整的集群加固部署，见[安全参考](./security.zh-CN.md)。
 
@@ -313,7 +306,24 @@ bash deploy.sh \
 curl -iX GET "http://x.x.x.x:9800/status" -H "Content-Type:application/json"
 ```
 
-若返回码为 200，说明 RouteServer 部署成功。
+HTTP 200 仅说明 `/status` 可访问；即使后端故障，也可能返回 200 和 `status: fault`。
+检查响应中的角色/后端状态是否符合所选拓扑，并检查工作节点就绪：
+
+```bash
+curl --fail --max-time 10 "http://${HOST}:${PORT}/internal/worker/readiness"
+```
+
+就绪接口必须返回 HTTP 200 且 `is_ready: true`。随后使用后端实际提供的模型名发送一次有超时的推理请求，
+检查生成内容；流式请求还需完整收到 `[DONE]`。例如（替换 `MODEL`）：
+
+```bash
+MODEL=your-served-model
+curl --fail --max-time 30 "http://${HOST}:${PORT}/v1/chat/completions" \
+  -H 'Content-Type: application/json' \
+  -d "{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"max_tokens\":4,\"stream\":false}"
+```
+
+HTTP 示例对应本节关闭 HTTPS 的命令；启用 TLS 后使用 `https://` 及相应 CA/客户端证书。
 
 #### 查看日志
 
@@ -534,7 +544,7 @@ bash deploy.sh \
     --etcd-tls-enable false
 ```
 
-看到类似下面的输出，说明 RouteServer 部署成功。
+以下输出仅确认进程存活；完成下方校验后再判定部署是否成功。
 
 ```shell
 RouteServer process is running (PID: 18942), --daemon is not true, exit with 0
@@ -552,7 +562,7 @@ RouteServer process is running (PID: 18942), --daemon is not true, exit with 0
 curl -iX GET "http://x.x.x.x:9800/status" -H "Content-Type:application/json"
 ```
 
-若返回码为 200，说明当前节点到 RouteServer 的连接正常。
+HTTP 200 仅确认接口可访问。还需按[单例校验步骤](#校验部署)检查状态内容、工作节点就绪及有超时的推理请求；候选节点另需确认选主/etcd 状态。
 
 #### 查看日志
 
@@ -634,7 +644,7 @@ bash deploy.sh \
     --etcd-tls-enable false
 ```
 
-看到类似下面的输出，说明 RouteServer 部署成功。
+以下输出仅确认进程存活；完成下方校验后再判定部署是否成功。
 
 ```shell
 RouteServer process is running (PID: 18942), --daemon is not true, exit with 0
@@ -652,7 +662,7 @@ RouteServer process is running (PID: 18942), --daemon is not true, exit with 0
 curl -iX GET "http://x.x.x.x:9800/status" -H "Content-Type:application/json"
 ```
 
-若返回码为 200，说明当前节点到 RouteServer 的连接正常。
+HTTP 200 仅确认接口可访问。还需按[单例校验步骤](#校验部署)检查状态内容、工作节点就绪及有超时的推理请求；候选节点另需确认选主/etcd 状态。
 
 确认 Candidate 与 Worker 两类 RouteServer 实例的日志中都有成功启动并连上 ETCD、获知最新 leader 的记录。
 

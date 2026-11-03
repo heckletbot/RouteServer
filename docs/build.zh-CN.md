@@ -10,7 +10,7 @@
 
 | 工具 | 最低版本 | 用途                          |
 |------|-----------------|----------------------------------|
-| Go   | 1.25.0          | 编译 Go 源码           |
+| Go   | 1.26.0          | 编译 Go 源码           |
 | Make | 3.82            | 构建编排              |
 | Bash | 3.2             | `/bin/bash` 为 Make 测试目标提供 `pipefail` |
 
@@ -78,6 +78,10 @@ output/route-server-<version>-<timestamp>.zip
 检查使用临时目录、受控的 Go/tee 失败，并在安装 Go 时于独立模块内运行真实的通过/失败测试；
 禁止下载依赖，不运行项目 E2E。
 同一命令还用构建替身检查 Make 与 CodeArts 的归档布局，不代表已验证 RouteServer 编译产物或真实部署。
+
+部署脚本回归：运行 `python3 .codearts/test_deploy.py -v`（Python 3）。它在临时目录中使用受控的
+生成器/进程替身检查失败保护、改写、默认参数和退出码；不监听端口，不部署真实服务，不运行 ConfigMap。
+真实发布包仍需按部署指南完成就绪与推理验证。
 
 模块路径或链接目标变更后，执行 `python3 .codearts/test_module_metadata.py`。
 它从工作区源码的临时快照构建真实制品，检查 `go version -m` 的模块身份及已有 `GET /` 响应的全部字段，
@@ -199,7 +203,7 @@ make clean && make package
 
 | 问题 | 可能原因 | 解决方式 |
 |-------|--------------|----------|
-| `go: command not found` | 未安装 Go | 安装 Go 1.25.0 或更高版本 |
+| `go: command not found` | 未安装 Go | 安装 Go 1.26.0 或更高版本 |
 | `make: command not found` | 未安装 Make | 通过包管理器安装 make 3.82+ |
 | `fatal: not a git repository` | 构建在 git 克隆之外运行 | 先克隆仓库，否则版本字段将默认为 `"unknown"` |
 | `fatal: path '...': permission denied` | 文件权限问题 | 检查文件属主；确保对项目目录有读写权限 |
