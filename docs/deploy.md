@@ -51,10 +51,11 @@ Both release artifacts use the same inner layout: deployment assets (`deploy.sh`
    bash deploy.sh --mode singleton --infer-mode PD --port 9800 --host <YOUR_IP> ...
    ```
 
-   A bare `bash deploy.sh` is **not** enough: HTTPS and mTLS default to `true` on all four
-   planes, so the script exits unless you pass certificates or explicitly disable the planes you
-   do not want to secure (see [HTTPS and mTLS](#https-and-mtls)). The complete commands for each
-   topology are in [Example Usage](#example-usage).
+   HTTPS defaults to off on all four planes, so HTTP does not require certificates; mTLS switches
+   take effect only when their corresponding HTTPS switch is enabled. You still need the backend
+   addresses for your topology, a valid local IP, and permission to write the install directory.
+   For production, explicitly enable HTTPS/mTLS on the required planes and supply certificates
+   (see [HTTPS and mTLS](#https-and-mtls)). Complete commands are in [Example Usage](#example-usage).
 
 > Use `bash`, not `sh`: the script relies on Bash constructs such as `[[ ]]` and fails under
 > `dash`, which is `/bin/sh` on most Linux distributions.
@@ -65,24 +66,22 @@ Both release artifacts use the same inner layout: deployment assets (`deploy.sh`
 
 The deployment script performs the following operations:
 
-1. **Copies** the software and configuration files to `RS_INSTALL_DIR/<rs_name>/` directory
+1. Validates arguments, required certificates and release assets, then copies and rewrites pipeline/metrics
+   files in a private temporary directory using the existing config generator. Copy, rewrite or generation
+   failures exit nonzero and remove staging without replacing the installation or stopping the old instance.
+2. Once generation succeeds, backs up the old `route-server.yaml` as `.bak` and signals only the executable
+   at this installation path to stop. It waits up to 10 seconds, fails if still running, and never force-kills.
+   It then installs the prepared files into `RS_INSTALL_DIR/<rs_name>/route-server/`.
+3. Exports `ENV_ROUTE_SERVER_CONFIG_PATH` (config directory) and `ENV_ROUTE_SERVER_LOG_PATH` (log directory)
+   and sets `GOMAXPROCS` as requested. The default log path uses the final installation, not staging.
+4. Starts RouteServer in the background and checks process liveness after 5 seconds. Early exit returns `1`
+   and reports the child status. A live process returns `0` unless `--daemon true` is set; that mode waits
+   and returns the child's exit status.
 
-2. **Generates** the RouteServer configuration file (`route-server.yaml`) based on:
-   - Template YAML files
-   - Local IP address
-   - Parameters provided to the deploy.sh script
-   - Saves the configuration to `RS_INSTALL_DIR/<rs_name>/route-server/config/`
-
-3. **Exports** environment variables, including:
-   - `ENV_ROUTE_SERVER_CONFIG_PATH` pointing to the generated route-server.yaml
-   - Sets `GOMAXPROCS` based on the provided parameters
-
-4. **Starts** the RouteServer process
-
-5. **Verifies** the process status:
-   - Returns `0` if the process started successfully
-   - Returns `1` if the process failed to start
-   - (In daemon mode, the script waits for the RouteServer process to exit before returning)
+The startup check does not establish backend readiness or inference success; perform the readiness and
+request checks below. Stop/install I/O or startup errors after preparation exit nonzero; no automatic
+rollback is provided. CPU detection uses `getconf` and file rewrites support GNU/BSD `sed`; Linux remains
+the deployment target. Native macOS checks are recorded in validation progress.
 
 ---
 
@@ -224,26 +223,27 @@ The `deploy.sh` script supports the following optional parameters:
 
 ### HTTPS and mTLS
 
-All TLS switches default to `true`. Either provide the certificates for every plane you keep
-enabled, or explicitly disable the planes you terminate elsewhere. This is why a bare
-`bash deploy.sh` fails: the script requires a certificate pair before it generates any config.
-
+All four HTTPS switches default to `false`. The four mTLS switches default to `true` but only take
+effect when their plane's HTTPS is enabled. Certificate paths alone do not enable HTTPS. For production,
+explicitly enable HTTPS/mTLS on the required planes and configure their trust and identity material.
+The HTTP examples here demonstrate functionality; defaults remain off.
 | Plane | Switches (default) | Certificate flags |
 |-------|--------------------|-------------------|
-| Main HTTP port | `--enable-https` (`true`), `--enable-mtls` (`true`) | `--tls-cert-file`, `--tls-key-file`, `--tls-ca-cert-file` |
-| Ops port | `--ops-enable-https` (`true`), `--ops-enable-mtls` (`true`) | `--ops-tls-cert-file`, `--ops-tls-key-file`, `--ops-tls-ca-cert-file` |
-| Downstream vLLM instance client | `--client-https-enable` (`true`), `--client-mtls-enable` (`true`) | `--client-cert-file`, `--client-key-file`, `--client-ca-cert-file` |
-| etcd client | `--etcd-tls-enable` (`true`), `--etcd-mtls-enable` (`true`) | `--etcd-cert-file`, `--etcd-key-file`, `--etcd-ca-cert-file` |
+| Main HTTP port | `--enable-https` (`false`), `--enable-mtls` (`true`) | `--tls-cert-file`, `--tls-key-file`, `--tls-ca-cert-file` |
+| Ops port | `--ops-enable-https` (`false`), `--ops-enable-mtls` (`true`) | `--ops-tls-cert-file`, `--ops-tls-key-file`, `--ops-tls-ca-cert-file` |
+| Downstream vLLM instance client | `--client-https-enable` (`false`), `--client-mtls-enable` (`true`) | `--client-cert-file`, `--client-key-file`, `--client-ca-cert-file` |
+| etcd client | `--etcd-tls-enable` (`false`), `--etcd-mtls-enable` (`true`) | `--etcd-cert-file`, `--etcd-key-file`, `--etcd-ca-cert-file` |
 
-Rules enforced by `deploy.sh`:
+Validation and existing TLS behavior:
 
-- `<plane> https = true` requires that plane's certificate **and** key; otherwise the script exits
-  with `Error: ... required when --enable-https=true`.
-- `https = true` **and** `mtls = true` additionally require that plane's CA certificate.
-- `--tls-skip-verify` (`true`/`false`, default `false`) disables verification of the main server's
-  certificate. It is a diagnostic escape hatch only — do not use it in production.
-- Disabling HTTPS is enough to skip the certificate requirement; mTLS inherits the plane's HTTPS
-  switch and needs no separate disable for the check to pass.
+- Main/ops servers require their certificate and key when HTTPS is enabled, plus a CA when mTLS is also enabled.
+- Any supplied certificate, key or CA on an enabled plane must be a readable regular file.
+- The existing vLLM/etcd Go TLS clients can use the system trust store; client identity and custom CAs are
+  configured as needed. An mTLS switch does not create client certificates. Production mutual-authentication
+  examples explicitly supply a certificate, key and CA.
+- HTTPS off skips that plane's certificate requirements; the mTLS switch alone does not enable encryption.
+- `--tls-skip-verify` defaults to `false`; do not skip certificate verification in production.
+- Use separate option values, e.g. `--client-https-enable true`, not `--client-https-enable=true`.
 
 See the [security reference](./security.md) for encrypted private-key passphrases, mTLS examples,
 and a full hardened cluster deployment.
@@ -318,7 +318,26 @@ After starting the RouteServer service, execute the following command to check i
 curl -iX GET "http://x.x.x.x:9800/status" -H "Content-Type:application/json"
 ```
 
-If it returns code 200, the RouteServer deployment is successful.
+HTTP 200 only establishes that `/status` is reachable; an unhealthy backend can still return 200
+with `status: fault`. Inspect role/backend state for your topology and check worker readiness:
+
+```bash
+curl --fail --max-time 10 "http://${HOST}:${PORT}/internal/worker/readiness"
+```
+
+Require HTTP 200 and `is_ready: true`. Then send a bounded inference request using a model actually
+served by your backend and check the generated content; streaming must also finish with `[DONE]`.
+For example (replace `MODEL`):
+
+```bash
+MODEL=your-served-model
+curl --fail --max-time 30 "http://${HOST}:${PORT}/v1/chat/completions" \
+  -H 'Content-Type: application/json' \
+  -d "{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"max_tokens\":4,\"stream\":false}"
+```
+
+These HTTP checks match this section's HTTPS-disabled commands. Use `https://` and the corresponding
+CA/client credentials after enabling TLS.
 
 #### View Logs
 
@@ -538,7 +557,7 @@ bash deploy.sh \
     --etcd-tls-enable false
 ```
 
-When you see fields similar to the following, the RouteServer deployment is successful.
+The following output confirms process liveness; complete the verification checks below before accepting the deployment.
 
 ```shell
 RouteServer process is running (PID: 18942), --daemon is not true, exit with 0
@@ -556,7 +575,7 @@ After starting the RouteServer service, execute the following command to check i
 curl -iX GET "http://x.x.x.x:9800/status" -H "Content-Type:application/json"
 ```
 
-If it returns code 200, the current node's connection to RouteServer is normal.
+HTTP 200 only confirms reachability. Also follow the [singleton verification checks](#verify-deployment) for state, worker readiness and a bounded inference request; candidates additionally need election/etcd state checks.
 
 #### View Logs
 
@@ -638,7 +657,7 @@ bash deploy.sh \
     --etcd-tls-enable false
 ```
 
-When you see fields similar to the following, the RouteServer deployment is successful.
+The following output confirms process liveness; complete the verification checks below before accepting the deployment.
 
 ```shell
 RouteServer process is running (PID: 18942), --daemon is not true, exit with 0
@@ -656,7 +675,7 @@ After starting the RouteServer service, execute the following command to check i
 curl -iX GET "http://x.x.x.x:9800/status" -H "Content-Type:application/json"
 ```
 
-If it returns code 200, the current node's connection to RouteServer is normal.
+HTTP 200 only confirms reachability. Also follow the [singleton verification checks](#verify-deployment) for state, worker readiness and a bounded inference request; candidates additionally need election/etcd state checks.
 
 Confirm that both Candidate and Worker RouteServer instances have the following logs indicating successful startup and connection to ETCD, knowing the latest leader.
 
@@ -920,7 +939,7 @@ Then start one candidate per Pod. `--host` must be the Pod IP because RouteServe
   --etcd-tls-enable false --etcd-mtls-enable false
 ```
 
-`--host` and the TLS flags matter in practice: without `--host` the address comes from `hostname -I`, and the TLS defaults are `true` on every hop, which fails outright when no certificates are configured.
+`--host` and the TLS flags matter in practice: without `--host` the address comes from `hostname -I`, and HTTPS defaults to `false` on every hop. For production, explicitly enable the required TLS planes and supply their credentials.
 
 Expected steady state:
 

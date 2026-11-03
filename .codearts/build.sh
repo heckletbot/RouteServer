@@ -21,15 +21,15 @@ if [ -z "${TARGET_ARCH}" ]; then
 fi
 [ "${TARGET_ARCH}" = "$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')" ] || export GOARCH="${TARGET_ARCH}"
 
-# Go toolchain: use the preinstalled version if >=1.25, otherwise install a fixed version from the official mirror
-if command -v go >/dev/null 2>&1 && [ "$(go env GOVERSION | cut -d. -f2)" -ge 25 ] 2>/dev/null; then
+# Go toolchain: use the preinstalled version if >=1.26, otherwise install a fixed version from the official mirror
+if command -v go >/dev/null 2>&1 && [ "$(go env GOVERSION | cut -d. -f2)" -ge 26 ] 2>/dev/null; then
     echo "use preinstalled go: $(go version)"
 else
     case "$(uname -m)" in
         aarch64) HOST_ARCH=arm64 ;;
         *)       HOST_ARCH=amd64 ;;
     esac
-    curl -fsSL -o /tmp/go.tgz "https://golang.google.cn/dl/go1.25.0.linux-${HOST_ARCH}.tar.gz"
+    curl -fsSL -o /tmp/go.tgz "https://golang.google.cn/dl/go1.26.0.linux-${HOST_ARCH}.tar.gz"
     mkdir -p "$HOME/.local"
     tar -C "$HOME/.local" -xzf /tmp/go.tgz
     export PATH="$HOME/.local/go/bin:$PATH"

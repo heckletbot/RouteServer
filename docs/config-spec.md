@@ -12,6 +12,10 @@ This document describes all configuration parameters for the RouteServer (`route
 ## Deployment Notes
 Parameters marked with "Template default" in the Constraints column refer to the default value provided in the `route-server.yaml` shipped with the release package. When deploying via `deploy.sh`, this template file is used to generate the final deployed configuration.
 
+HTTPS defaults to off in both the shipped template (including peer communication) and `deploy.sh`.
+The mTLS switches take effect only after HTTPS is enabled. For production, explicitly enable the required
+planes with their credentials; see the [security guide](security.md).
+
 This document references two types of defaults:
 
 - Template default: The value pre-filled in the deploy/route-server-template.yaml deployment template.
@@ -64,14 +68,14 @@ server:
         - "/v1/metaserver"
       cleanup-interval-minutes: 5
   tls:
-    enable-https: true
+    enable-https: false
     cert-file:
     key-file:
     ca-cert-file:
     skip-verify: false
     enable-mtls: true
   ops-tls:
-    enable-https: true
+    enable-https: false
     cert-file:
     key-file:
     ca-cert-file:
@@ -100,13 +104,13 @@ server:
 | `server.rate-limit.non-reference-apis.requests-per-minute`      | int    | Maximum requests per minute per API path for non-reference APIs                                                                                                                            | Template default:`60`                                                                                                                                                                                      |
 | `server.rate-limit.non-reference-apis.exempt-paths`             | List   | API paths exempt from rate limiting                                                                                                                                                      | Template default:`/v1/chat/completions`, `/v1/completions`, `/v1/metaserver`                                                                                                                               |
 | `server.rate-limit.non-reference-apis.cleanup-interval-minutes` | int    | Interval for cleaning up expired rate-limit entries                                                                                                                                      | Template default:`5`                                                                                                                                                                                       |
-| `server.tls.enable-https`                                       | bool   | Enable HTTPS for the main server port                                                                                                                                                    | Template default:`true`; `deploy.sh` default: `false`                                                                                                                                                                                    |
+| `server.tls.enable-https`                                       | bool   | Enable HTTPS for the main server port                                                                                                                                                    | Template default:`false`; `deploy.sh` default: `false`                                                                                                                                                                                    |
 | `server.tls.cert-file`                                          | string | Path to the TLS certificate file                                                                                                                                                         | Template default: empty                                                                                                                                                                                    |
 | `server.tls.key-file`                                           | string | Path to the TLS private key file                                                                                                                                                         | Template default: empty                                                                                                                                                                                    |
 | `server.tls.ca-cert-file`                                       | string | Path to the CA certificate file for mTLS                                                                                                                                                 | Template default: empty                                                                                                                                                                                    |
 | `server.tls.skip-verify`                                        | bool   | Skip TLS certificate verification (not recommended for production)                                                                                                                       | Template default:`false`                                                                                                                                                                                   |
 | `server.tls.enable-mtls`                                        | bool   | Enable mutual TLS (mTLS) for the main server port                                                                                                                                        | Template default:`true`                                                                                                                                                                                    |
-| `server.ops-tls.enable-https`                                   | bool   | Enable HTTPS for the OPS (management) port                                                                                                                                               | Template default:`true`; `deploy.sh` default: `false`                                                                                                                                                                                    |
+| `server.ops-tls.enable-https`                                   | bool   | Enable HTTPS for the OPS (management) port                                                                                                                                               | Template default:`false`; `deploy.sh` default: `false`                                                                                                                                                                                    |
 | `server.ops-tls.cert-file`                                      | string | Path to the OPS TLS certificate file                                                                                                                                                     | Template default: empty                                                                                                                                                                                    |
 | `server.ops-tls.key-file`                                       | string | Path to the OPS TLS private key file                                                                                                                                                     | Template default: empty                                                                                                                                                                                    |
 | `server.ops-tls.ca-cert-file`                                   | string | Path to the OPS CA certificate file for mTLS                                                                                                                                             | Template default: empty                                                                                                                                                                                    |
@@ -177,7 +181,7 @@ http:
   dialer-timeout: 600
   dialer-keepalive: 5
   tls:
-    enable-https: true
+    enable-https: false
     enable-mtls: true
     cert-file:
     key-file:
@@ -194,7 +198,7 @@ http:
 | `http.max-idle-conns-per-host` | int    | Maximum idle keep-alive connections per peer host. Setting to 0 resets to the transport default of 2. Only meaningful when`dialer-keepalive` > 0 | Default:`1800`; Template default: `1800`            |
 | `http.idle-conn-timeout`       | int    | Idle keep-alive connection timeout in seconds. Idle connections exceeding this duration are destroyed                                            | Default:`10`; Template default: `110`               |
 | `http.max-conns-per-host`      | int    | Maximum total connections (including non-idle) per host                                                                                          | Template default:`2048`                                  |
-| `http.tls.enable-https`        | bool   | Enable HTTPS for HTTP client connections                                                                                                         | Template default:`true`; `deploy.sh` default: `false`                                  |
+| `http.tls.enable-https`        | bool   | Enable HTTPS for HTTP client connections                                                                                                         | Template default:`false`; `deploy.sh` default: `false`                                  |
 | `http.tls.enable-mtls`         | bool   | Enable mTLS for HTTP client connections                                                                                                          | Template default:`true`                                  |
 | `http.tls.cert-file`           | string | TLS certificate file path for HTTP client connections                                                                                            | Template default: empty                                  |
 | `http.tls.key-file`            | string | TLS private key file path for HTTP client connections                                                                                            | Template default: empty                                  |
@@ -589,7 +593,7 @@ cluster:
     lease-ttl-sec: 3
     lease-refresh-interval-ms: 1000
     tls:
-      enable-https: true
+      enable-https: false
       enable-mtls: true
       cert-file:
       key-file:
@@ -615,7 +619,7 @@ cluster:
 | `cluster.etcd.retry-interval-sec`        | int    | Wait interval between retry attempts                                                                                                                                            | Default:`5`. Range: `[0, 60]`. Template default: `5`            |
 | `cluster.etcd.lease-ttl-sec`             | int    | TTL for etcd sessions used in leader election and service registration. If network isolation exceeds this duration, the session expires and the node is evicted from leadership | Default:`3`. Range: `[1, 600]`. Template default: `3` (seconds) |
 | `cluster.etcd.lease-refresh-interval-ms` | int    | Interval for refreshing the etcd lease                                                                                                                                          | Default:`1000`. Range: `[50, 60000]`. Template default: `1000`  |
-| `cluster.etcd.tls.enable-https`          | bool   | Enable HTTPS for etcd connections                                                                                                                                               | Template default:`true`; `deploy.sh` default: `false`                                         |
+| `cluster.etcd.tls.enable-https`          | bool   | Enable HTTPS for etcd connections                                                                                                                                               | Template default:`false`; `deploy.sh` default: `false`                                         |
 | `cluster.etcd.tls.enable-mtls`           | bool   | Enable mTLS for etcd connections                                                                                                                                                | Template default:`true`                                         |
 | `cluster.etcd.tls.cert-file`             | string | etcd client TLS certificate file path                                                                                                                                           | Template default: empty                                         |
 | `cluster.etcd.tls.key-file`              | string | etcd client TLS private key file path                                                                                                                                           | Template default: empty                                         |

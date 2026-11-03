@@ -3225,6 +3225,48 @@ logger:
 	})
 }
 
+// Exercise the published template through generation, without deploy.sh's
+// explicit TLS overrides. Direct generator users must also default to HTTP.
+func Test_shippedTemplateHTTPSDefaults(t *testing.T) {
+	defer saveGlobals()()
+	testDir := t.TempDir()
+	setupBasicGlobals(testDir)
+	flags := []*string{&EnableHTTPS, &OpsHTTPSEnable, &ClientHTTPSEnable, &EtcdTLSEnable,
+		&OpsMTLSEnable, &ClientMTLSEnable, &EtcdMTLSEnable, &ClientCertFile, &ClientKeyFile,
+		&ClientCaCertFile, &EtcdCertFile, &EtcdKeyFile, &EtcdCaCertFile}
+	saved := make([]string, len(flags))
+	for i, flag := range flags {
+		saved[i] = *flag
+		*flag = ""
+	}
+	t.Cleanup(func() {
+		for i, flag := range flags {
+			*flag = saved[i]
+		}
+	})
+	TemplatePath = filepath.Join("..", "..", "deploy", "route-server-template.yaml")
+	Mode = "singleton"
+	if !assert.NoError(t, os.MkdirAll(filepath.Join(DeployTargetPath, "config"), 0o700)) {
+		return
+	}
+	if !assert.True(t, mainProc(false)) {
+		return
+	}
+	cfg, err := loadFromFile(filepath.Join(DeployTargetPath, "config", "route-server.yaml"))
+	if !assert.NoError(t, err) {
+		return
+	}
+	for name, tls := range map[string]*config.TLSCertificateConfig{
+		"main": cfg.ServerConfig.TLSConfig, "ops": cfg.ServerConfig.OpsTLSConfig,
+		"vllm": cfg.HttpConfig.TLSConfig, "etcd": cfg.ClusterCfg.EtcdCfg.TLSConfig,
+		"peer": cfg.PeerClientCfg.HttpCfg.TLSConfig,
+	} {
+		if assert.NotNil(t, tls, name) {
+			assert.False(t, tls.EnableHTTPS, name)
+		}
+	}
+}
+
 func Test_mainProc_applyServerConfigFails(t *testing.T) {
 	defer saveGlobals()()
 	testDir := t.TempDir()

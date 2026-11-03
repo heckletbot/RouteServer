@@ -13,6 +13,9 @@
 
 约束列中标记为"模板默认值"的参数，指发布包内附带的 `route-server.yaml` 所提供的默认值。通过 `deploy.sh` 部署时，会使用该模板文件生成最终部署配置。
 
+发布模板（含节点间通信）与 `deploy.sh` 的 HTTPS 默认均关闭；mTLS 开关仅在对应 HTTPS 开启后生效。
+生产环境建议显式开启所需平面并配置证书，见[安全指南](security.zh-CN.md)。
+
 本文档涉及两类默认值：
 
 - 模板默认值：deploy/route-server-template.yaml 部署模板中预先填入的值。
@@ -65,14 +68,14 @@ server:
         - "/v1/metaserver"
       cleanup-interval-minutes: 5
   tls:
-    enable-https: true
+    enable-https: false
     cert-file:
     key-file:
     ca-cert-file:
     skip-verify: false
     enable-mtls: true
   ops-tls:
-    enable-https: true
+    enable-https: false
     cert-file:
     key-file:
     ca-cert-file:
@@ -101,13 +104,13 @@ server:
 | `server.rate-limit.non-reference-apis.requests-per-minute` | int | 非参考 API 每个 API 路径每分钟的最大请求数 | 模板默认值：`60` |
 | `server.rate-limit.non-reference-apis.exempt-paths` | List | 免于限流的 API 路径 | 模板默认值：`/v1/chat/completions`、`/v1/completions`、`/v1/metaserver` |
 | `server.rate-limit.non-reference-apis.cleanup-interval-minutes` | int | 清理过期限流记录的间隔 | 模板默认值：`5` |
-| `server.tls.enable-https` | bool | 为主服务端口启用 HTTPS | 模板默认值：`true` |
+| `server.tls.enable-https` | bool | 为主服务端口启用 HTTPS | 模板默认值：`false` |
 | `server.tls.cert-file` | string | TLS 证书文件路径 | 模板默认值：空 |
 | `server.tls.key-file` | string | TLS 私钥文件路径 | 模板默认值：空 |
 | `server.tls.ca-cert-file` | string | 用于 mTLS 的 CA 证书文件路径 | 模板默认值：空 |
 | `server.tls.skip-verify` | bool | 跳过 TLS 证书校验（不建议用于生产环境） | 模板默认值：`false` |
 | `server.tls.enable-mtls` | bool | 为主服务端口启用双向 TLS（mTLS） | 模板默认值：`true` |
-| `server.ops-tls.enable-https` | bool | 为 OPS（管理）端口启用 HTTPS | 模板默认值：`true` |
+| `server.ops-tls.enable-https` | bool | 为 OPS（管理）端口启用 HTTPS | 模板默认值：`false` |
 | `server.ops-tls.cert-file` | string | OPS TLS 证书文件路径 | 模板默认值：空 |
 | `server.ops-tls.key-file` | string | OPS TLS 私钥文件路径 | 模板默认值：空 |
 | `server.ops-tls.ca-cert-file` | string | 用于 mTLS 的 OPS CA 证书文件路径 | 模板默认值：空 |
@@ -178,7 +181,7 @@ http:
   dialer-timeout: 600
   dialer-keepalive: 5
   tls:
-    enable-https: true
+    enable-https: false
     enable-mtls: true
     cert-file:
     key-file:
@@ -195,7 +198,7 @@ http:
 | `http.max-idle-conns-per-host` | int | 每个对等主机的空闲 keep-alive 连接数上限。设为 0 会重置为 transport 默认值 2。仅在 `dialer-keepalive` > 0 时有效 | 默认值：`1800`；模板默认值：`1800` |
 | `http.idle-conn-timeout` | int | 空闲 keep-alive 连接超时，单位秒。超过该时长的空闲连接会被销毁 | 默认值：`10`；模板默认值：`110` |
 | `http.max-conns-per-host` | int | 每个主机的连接总数上限（包含非空闲连接） | 模板默认值：`2048` |
-| `http.tls.enable-https` | bool | 为 HTTP 客户端连接启用 HTTPS | 模板默认值：`true` |
+| `http.tls.enable-https` | bool | 为 HTTP 客户端连接启用 HTTPS | 模板默认值：`false` |
 | `http.tls.enable-mtls` | bool | 为 HTTP 客户端连接启用 mTLS | 模板默认值：`true` |
 | `http.tls.cert-file` | string | HTTP 客户端连接的 TLS 证书文件路径 | 模板默认值：空 |
 | `http.tls.key-file` | string | HTTP 客户端连接的 TLS 私钥文件路径 | 模板默认值：空 |
@@ -591,7 +594,7 @@ cluster:
     lease-ttl-sec: 3
     lease-refresh-interval-ms: 1000
     tls:
-      enable-https: true
+      enable-https: false
       enable-mtls: true
       cert-file:
       key-file:
@@ -617,7 +620,7 @@ cluster:
 | `cluster.etcd.retry-interval-sec` | int | 各次重试之间的等待间隔 | 默认值：`5`。范围：`[0, 60]`。模板默认值：`5` |
 | `cluster.etcd.lease-ttl-sec` | int | 用于 leader 选举与服务注册的 etcd 会话 TTL。若网络隔离超过该时长，会话过期，节点被逐出 leader 地位 | 默认值：`3`。范围：`[1, 600]`。模板默认值：`3`（秒） |
 | `cluster.etcd.lease-refresh-interval-ms` | int | 刷新 etcd 租约的间隔 | 默认值：`1000`。范围：`[50, 60000]`。模板默认值：`1000` |
-| `cluster.etcd.tls.enable-https` | bool | 为 etcd 连接启用 HTTPS | 模板默认值：`true` |
+| `cluster.etcd.tls.enable-https` | bool | 为 etcd 连接启用 HTTPS | 模板默认值：`false` |
 | `cluster.etcd.tls.enable-mtls` | bool | 为 etcd 连接启用 mTLS | 模板默认值：`true` |
 | `cluster.etcd.tls.cert-file` | string | etcd 客户端 TLS 证书文件路径 | 模板默认值：空 |
 | `cluster.etcd.tls.key-file` | string | etcd 客户端 TLS 私钥文件路径 | 模板默认值：空 |

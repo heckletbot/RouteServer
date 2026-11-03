@@ -14,8 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set -eo pipefail
 umask 077
-DEPLOY_ROOT_PATH=$(cd "$(dirname "$0")"; pwd)
+DEPLOY_ROOT_PATH=$(cd "$(dirname "$0")" && pwd)
 RS_NAME=""
 PORT=9800
 MAXPROCS=0
@@ -132,10 +133,14 @@ RS_INSTALL_DIR/<rs_name>/${PACKAGE_DIR}/log/route-server.log, must give full rea
 }
 
 
-CPU_COUNT=$(nproc)
-
 validate_max_procs() {
     local procs=$1
+    local CPU_COUNT
+    CPU_COUNT=$(getconf _NPROCESSORS_ONLN)
+    if [[ ! "$CPU_COUNT" =~ ^[0-9]+$ ]] || (( CPU_COUNT < 1 )); then
+        echo "Failed to determine CPU count" >&2
+        return 1
+    fi
     if [[ ! "$procs" =~ ^[0-9]+$  ]]; then
         echo "max-procs must be number" >&2
         return 1
@@ -620,8 +625,7 @@ get_ip() {
 }
 
 if [ -z "${RS_NAME}" ]; then
-  echo Failed: RS_NAME is required
-  ip=$(get_ip)
+  ip=${HOST:-$(get_ip)}
   if [ -z "$ip" ]; then
     echo "Failed: No rs_name is given, failed to get host ip to assign name"
     exit 1
@@ -680,90 +684,6 @@ if [ "${INFER_MODE}" = "EPD" ] && [ -z "${ENCODE_SERVERS}" ] ; then
     exit 1
 fi
 
-RS_PATH=${RS_INSTALL_DIR}/${RS_NAME}
-
-if [ ! -d "${RS_PATH}" ]; then
-  mkdir -p "${RS_PATH}"
-fi
-
-echo install RouteServer to "${RS_PATH}"
-if [ -d "${RS_PATH}/${PACKAGE_DIR}/bin" ]; then
-  chmod u+w "${RS_PATH}/${PACKAGE_DIR}/bin"
-fi
-cp -rf "${DEPLOY_ROOT_PATH}/${PACKAGE_DIR}" "${RS_PATH}/"
-
-export ENV_ROUTE_SERVER_CONFIG_PATH="${RS_PATH}/${PACKAGE_DIR}/config"
-export ENV_ROUTE_SERVER_LOG_PATH="${RS_PATH}/${PACKAGE_DIR}/log"
-mkdir -p "${ENV_ROUTE_SERVER_CONFIG_PATH}"
-mkdir -p "${ENV_ROUTE_SERVER_LOG_PATH}"
-
-echo kill existing route server if exists
-ps -ef | grep "${RS_PATH}/${PACKAGE_DIR}" | grep -v grep | awk -F ' ' '{print $2}' | xargs kill
-
-echo wait for kill to take effect
-sleep 1
-
-RS_CONFIG_DIR="${RS_PATH}/${PACKAGE_DIR}"/config
-cp "${DEPLOY_ROOT_PATH}"/metrics_config*.yaml "${RS_PATH}/${PACKAGE_DIR}"/config/
-rm -rf "${ENV_ROUTE_SERVER_CONFIG_PATH}"/pipelines/*
-cp -rf "${DEPLOY_ROOT_PATH}"/pipelines "${ENV_ROUTE_SERVER_CONFIG_PATH}/"
-
-# Always process pipeline configs for prefill token settings
-metaserver_cdcp_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/metaserver_cdcp.yaml"
-layerwise_cdcp_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/layerwise_cdcp.yaml"
-metaserver_cpcd_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/metaserver_cpcd.yaml"
-layerwise_cpcd_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/layerwise_cpcd.yaml"
-
-if [ "${REUSE_PREFILLED_TOKENS}" = "true" ]; then
-  echo "REUSE_PREFILLED_TOKENS is enabled, setting prefill_stream functions..."
-
-  # Process CDCP configs
-  if [ -f "$metaserver_cdcp_config" ]; then
-    sed -i 's/prefill_prepare_request/prefill_stream_prepare_request/g' "$metaserver_cdcp_config"
-    sed -i 's/prefill_post_response/prefill_stream_post_response/g' "$metaserver_cdcp_config"
-  fi
-
-  # Process CPCD configs
-  if [ -f "$layerwise_cpcd_config" ]; then
-    sed -i 's/prefill_prepare_request/prefill_stream_prepare_request/g' "$layerwise_cpcd_config"
-    sed -i 's/prefill_post_response/prefill_stream_post_response/g' "$layerwise_cpcd_config"
-  fi
-else
-  echo "REUSE_PREFILLED_TOKENS is disabled, setting non-stream prefill functions..."
-
-  # Process CDCP configs
-  if [ -f "$metaserver_cdcp_config" ]; then
-    sed -i 's/prefill_stream_prepare_request/prefill_prepare_request/g' "$metaserver_cdcp_config"
-    sed -i 's/prefill_stream_post_response/prefill_post_response/g' "$metaserver_cdcp_config"
-  fi
-
-  # Process CPCD configs
-  if [ -f "$layerwise_cpcd_config" ]; then
-    sed -i 's/prefill_stream_prepare_request/prefill_prepare_request/g' "$layerwise_cpcd_config"
-    sed -i 's/prefill_stream_post_response/prefill_post_response/g' "$layerwise_cpcd_config"
-  fi
-fi
-
-pd_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/pd_separate.yaml"
-
-if [ "${INFER_MODE}" = "VA-PD" ]; then
-  echo "VA-PD mode enabled, applying vllm_ascend pipeline customizations..."
-  if [ -f "$pd_config" ]; then
-    sed -i '/- prefill_prepare_request$/a\          - vllm_ascend_prepare_request' "$pd_config"
-    sed -i '/- prefill_stream_prepare_request$/a\          - vllm_ascend_prepare_request' "$pd_config"
-    sed -i 's/type: default_fail/type: vllm_ascend_fail/g' "$pd_config"
-  fi
-  INFER_MODE="PD"
-fi
-
-if [ -z "$COLLECT_METRICS_UNIQUE_IP" ] || [ "$COLLECT_METRICS_UNIQUE_IP" = "false" ]; then
-  echo "collect-metrics-unique-ip is null, so collect metrics form all instances."
-  sed -i 's/collect_from_uniq_ip: .*/collect_from_uniq_ip: false/' "${RS_PATH}"/${PACKAGE_DIR}/config/metrics_config*.yaml
-else
-  echo "collect-metrics-unique-ip is true, so collect metrics form one unique instances per node."
-  sed -i 's/collect_from_uniq_ip: .*/collect_from_uniq_ip: true/' "${RS_PATH}"/${PACKAGE_DIR}/config/metrics_config*.yaml
-fi
-
 # when enable-https=true, cert-file and key-file is required
 if [[ "${ENABLE_HTTPS}" == "true" ]]; then
   if [[ -z "${TLS_CERT_FILE}" || -z "${TLS_KEY_FILE}" ]]; then
@@ -794,10 +714,116 @@ if [[ "${OPS_ENABLE_HTTPS}" == "true" && "${OPS_ENABLE_MTLS}" == "true" ]]; then
   fi
 fi
 
-if [ -f "${RS_CONFIG_DIR}"/route-server.yaml ]; then
-  echo "route-server.yaml exists in config dir, backup and regenerate"
-  mv "${RS_CONFIG_DIR}"/route-server.yaml "${RS_CONFIG_DIR}"/route-server.yaml.bak
+# Check supplied files only on enabled planes. Client TLS may use the system
+# trust store and does not require a client identity unless one is configured.
+check_tls_files() {
+  local enabled=$1
+  shift
+  if [[ "$enabled" != "true" ]]; then return 0; fi
+  local file
+  for file in "$@"; do
+    if [[ -n "$file" ]] && { [[ ! -f "$file" ]] || [[ ! -r "$file" ]]; }; then
+      echo "Error: TLS file is not a readable regular file: $file" >&2
+      return 1
+    fi
+  done
+}
+check_tls_files "$ENABLE_HTTPS" "$TLS_CERT_FILE" "$TLS_KEY_FILE" "$TLS_CA_CERT_FILE"
+check_tls_files "$OPS_ENABLE_HTTPS" "$OPS_TLS_CERT_FILE" "$OPS_TLS_KEY_FILE" "$OPS_TLS_CA_CERT_FILE"
+check_tls_files "$CLIENT_HTTPS_ENABLE" "$CLIENT_CERT_FILE" "$CLIENT_KEY_FILE" "$CLIENT_CA_CERT_FILE"
+check_tls_files "$ETCD_TLS_ENABLE" "$ETCD_CERT_FILE" "$ETCD_KEY_FILE" "$ETCD_CA_CERT_FILE"
+
+# Validate and generate in a private staging directory before touching an old
+# installation. A failed copy, rewrite or generator must never reach startup.
+INSTALL_PATH=${RS_INSTALL_DIR}/${RS_NAME}
+if [[ "$INSTALL_PATH" != /* ]]; then INSTALL_PATH="$PWD/$INSTALL_PATH"; fi
+STAGING_DIR=$(mktemp -d "${TMPDIR:-/tmp}/route-server-deploy.XXXXXXXX")
+trap 'rm -rf "${STAGING_DIR}"' EXIT
+RS_PATH=${STAGING_DIR}
+if [ -z "${LOG_FILE_FULL_PATH}" ]; then
+  LOG_FILE_FULL_PATH="${INSTALL_PATH}/${PACKAGE_DIR}/log/route-server.log"
 fi
+cp -rf "${DEPLOY_ROOT_PATH}/${PACKAGE_DIR}" "${RS_PATH}/"
+
+export ENV_ROUTE_SERVER_CONFIG_PATH="${RS_PATH}/${PACKAGE_DIR}/config"
+export ENV_ROUTE_SERVER_LOG_PATH="${RS_PATH}/${PACKAGE_DIR}/log"
+mkdir -p "${ENV_ROUTE_SERVER_CONFIG_PATH}"
+mkdir -p "${ENV_ROUTE_SERVER_LOG_PATH}"
+
+RS_CONFIG_DIR="${RS_PATH}/${PACKAGE_DIR}"/config
+cp "${DEPLOY_ROOT_PATH}"/metrics_config*.yaml "${RS_PATH}/${PACKAGE_DIR}"/config/
+rm -rf "${ENV_ROUTE_SERVER_CONFIG_PATH}"/pipelines/*
+cp -rf "${DEPLOY_ROOT_PATH}"/pipelines "${ENV_ROUTE_SERVER_CONFIG_PATH}/"
+
+# Always process pipeline configs for prefill token settings
+# BSD sed requires an explicit empty backup suffix; GNU sed does not.
+sed_in_place() {
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    sed -i '' "$@"
+  else
+    sed -i "$@"
+  fi
+}
+metaserver_cdcp_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/metaserver_cdcp.yaml"
+layerwise_cdcp_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/layerwise_cdcp.yaml"
+metaserver_cpcd_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/metaserver_cpcd.yaml"
+layerwise_cpcd_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/layerwise_cpcd.yaml"
+
+if [ "${REUSE_PREFILLED_TOKENS}" = "true" ]; then
+  echo "REUSE_PREFILLED_TOKENS is enabled, setting prefill_stream functions..."
+
+  # Process CDCP configs
+  if [ -f "$metaserver_cdcp_config" ]; then
+    sed_in_place 's/prefill_prepare_request/prefill_stream_prepare_request/g' "$metaserver_cdcp_config"
+    sed_in_place 's/prefill_post_response/prefill_stream_post_response/g' "$metaserver_cdcp_config"
+  fi
+
+  # Process CPCD configs
+  if [ -f "$layerwise_cpcd_config" ]; then
+    sed_in_place 's/prefill_prepare_request/prefill_stream_prepare_request/g' "$layerwise_cpcd_config"
+    sed_in_place 's/prefill_post_response/prefill_stream_post_response/g' "$layerwise_cpcd_config"
+  fi
+else
+  echo "REUSE_PREFILLED_TOKENS is disabled, setting non-stream prefill functions..."
+
+  # Process CDCP configs
+  if [ -f "$metaserver_cdcp_config" ]; then
+    sed_in_place 's/prefill_stream_prepare_request/prefill_prepare_request/g' "$metaserver_cdcp_config"
+    sed_in_place 's/prefill_stream_post_response/prefill_post_response/g' "$metaserver_cdcp_config"
+  fi
+
+  # Process CPCD configs
+  if [ -f "$layerwise_cpcd_config" ]; then
+    sed_in_place 's/prefill_stream_prepare_request/prefill_prepare_request/g' "$layerwise_cpcd_config"
+    sed_in_place 's/prefill_stream_post_response/prefill_post_response/g' "$layerwise_cpcd_config"
+  fi
+fi
+
+pd_config="${ENV_ROUTE_SERVER_CONFIG_PATH}/pipelines/pd_separate.yaml"
+
+if [ "${INFER_MODE}" = "VA-PD" ]; then
+  echo "VA-PD mode enabled, applying vllm_ascend pipeline customizations..."
+  if [ -f "$pd_config" ]; then
+    sed_in_place '/- prefill_prepare_request$/a\
+          - vllm_ascend_prepare_request' "$pd_config"
+    sed_in_place '/- prefill_stream_prepare_request$/a\
+          - vllm_ascend_prepare_request' "$pd_config"
+    sed_in_place 's/type: default_fail/type: vllm_ascend_fail/g' "$pd_config"
+  fi
+  INFER_MODE="PD"
+fi
+
+if [ -z "$COLLECT_METRICS_UNIQUE_IP" ] || [ "$COLLECT_METRICS_UNIQUE_IP" = "false" ]; then
+  echo "collect-metrics-unique-ip is null, so collect metrics form all instances."
+  sed_in_place 's/collect_from_uniq_ip: .*/collect_from_uniq_ip: false/' "${RS_PATH}"/${PACKAGE_DIR}/config/metrics_config*.yaml
+else
+  echo "collect-metrics-unique-ip is true, so collect metrics form one unique instances per node."
+  sed_in_place 's/collect_from_uniq_ip: .*/collect_from_uniq_ip: true/' "${RS_PATH}"/${PACKAGE_DIR}/config/metrics_config*.yaml
+fi
+
+# Remove any packaged config so a generator returning success without writing a
+# new config cannot accidentally launch a stale one.
+rm -f "${RS_CONFIG_DIR}/route-server.yaml"
 
 chmod +x "${DEPLOY_ROOT_PATH}"/config_generator
 "${DEPLOY_ROOT_PATH}"/config_generator \
@@ -847,6 +873,11 @@ chmod +x "${DEPLOY_ROOT_PATH}"/config_generator
   --etcd-key-file "${ETCD_KEY_FILE}" \
   --etcd-ca-cert-file "${ETCD_CA_CERT_FILE}"
 
+if [ ! -s "${RS_CONFIG_DIR}/route-server.yaml" ]; then
+  echo "Failed: config_generator did not produce route-server.yaml" >&2
+  exit 1
+fi
+
 cp "${DEPLOY_ROOT_PATH}/prometheus-template.yaml" "${RS_PATH}/${PACKAGE_DIR}/config"
 
 # In k8s-configmap mode, copy the configmap config template alongside
@@ -870,7 +901,45 @@ service account has configmaps get/list/watch/create/update and leases get/creat
   fi
 fi
 
+if [ -f "${INSTALL_PATH}/${PACKAGE_DIR}/config/route-server.yaml" ]; then
+  cp "${INSTALL_PATH}/${PACKAGE_DIR}/config/route-server.yaml" "${RS_CONFIG_DIR}/route-server.yaml.bak"
+fi
+
+# Match only this installation's executable, not another instance or a command
+# that merely mentions its directory. Never invoke kill with an empty PID list.
+EXISTING_PIDS=$(ps -ax -o pid= -o command= | awk -v binary="${INSTALL_PATH}/${PACKAGE_DIR}/bin/route-server" '
+  { pid=$1; sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "");
+    if ($0 == binary || index($0, binary " ") == 1) print pid }')
+for old_pid in ${EXISTING_PIDS}; do
+  if kill -0 "${old_pid}" 2>/dev/null; then
+    echo "Stopping existing RouteServer (PID: ${old_pid})"
+    if ! kill "${old_pid}"; then
+      if kill -0 "${old_pid}" 2>/dev/null; then
+        echo "Failed to stop RouteServer (PID: ${old_pid})" >&2
+        exit 1
+      fi
+    fi
+    for ((attempt=0; attempt<10; attempt++)); do
+      if ! kill -0 "${old_pid}" 2>/dev/null; then break; fi
+      sleep 1
+    done
+    if kill -0 "${old_pid}" 2>/dev/null; then
+      echo "Failed: RouteServer did not stop within 10 seconds (PID: ${old_pid})" >&2
+      exit 1
+    fi
+  fi
+done
+
+RS_PATH=${INSTALL_PATH}
+echo install RouteServer to "${RS_PATH}"
+mkdir -p "${RS_PATH}"
+if [ -d "${RS_PATH}/${PACKAGE_DIR}/bin" ]; then
+  chmod u+w "${RS_PATH}/${PACKAGE_DIR}/bin"
+fi
+rm -rf "${RS_PATH}/${PACKAGE_DIR}/config/pipelines"
+cp -rf "${STAGING_DIR}/${PACKAGE_DIR}" "${RS_PATH}/"
 export ENV_ROUTE_SERVER_CONFIG_PATH="${RS_PATH}/${PACKAGE_DIR}/config"
+export ENV_ROUTE_SERVER_LOG_PATH="${RS_PATH}/${PACKAGE_DIR}/log"
 
 echo "config file path is ${ENV_ROUTE_SERVER_CONFIG_PATH}" > "${ENV_ROUTE_SERVER_LOG_PATH}/start.log"
 
@@ -899,8 +968,8 @@ echo pid is ${PID}, waiting for 5 sec to check.
 sleep 5
 
 if ! ps -p "${PID}" > /dev/null; then
-  wait "${PID}"
-  status=$?
+  status=0
+  wait "${PID}" || status=$?
   echo "Failed: RouteServer process exit, retCode: $status (previous PID: ${PID}), check logs at ${ENV_ROUTE_SERVER_LOG_PATH}"
   exit 1
 fi
