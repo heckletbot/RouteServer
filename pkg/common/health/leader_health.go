@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,15 +20,15 @@ import (
 	"sync"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/utils"
 
 	"github.com/gin-gonic/gin"
-	"infer-dp-scheduler/pkg/common/client"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/errs"
-	instance_metrics "infer-dp-scheduler/pkg/common/instance-metrics"
-	"infer-dp-scheduler/pkg/common/logger"
+	"route-server/pkg/common/client"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/errs"
+	instance_metrics "route-server/pkg/common/instance-metrics"
+	"route-server/pkg/common/logger"
 )
 
 type LeaderEventListener interface {

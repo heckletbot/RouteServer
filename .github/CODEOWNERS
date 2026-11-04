@@ -1,0 +1,64 @@
+# CODEOWNERS — who must review what
+#
+# Rules are evaluated bottom-up: the LAST matching pattern wins, so put the most specific paths last.
+# Approval counts and mandatory owner requirements are defined by GOVERNANCE.md §5.
+# Ordinary documentation-only and test-only changes need 1 approval; code, sensitive and policy changes
+# need 2. Required area-owner or maintainer approvals count WITHIN the total, not as extra reviews.
+# Mixed changes take the stricter applicable requirements. The author never counts as an approver.
+# 审批人数与必需 owner 要求以 GOVERNANCE.zh-CN.md 第 5 节为准：普通仅文档、仅测试改动需 1 人，
+# 代码、敏感改动及政策变更需 2 人；必需的领域 owner 或 maintainer 审批计入总人数，不额外增加评审人。
+# 混合改动取适用的更严格要求，作者不计入审批人数。
+#
+# PLACEHOLDERS: `@InferTurbo/<team>` names below must exist as teams in the InferTurbo organisation.
+# An owner that does not resolve is silently ignored by the platform, which means the review is NOT
+# enforced. Before relying on this file, replace every team name with a real one (or with individual
+# handles), and keep it in sync with MAINTAINERS.md.
+#
+# Verify hosting-platform support for CODEOWNERS and change-dependent approval counts before
+# configuring enforcement. A mapping in this file does not prove that a matching gate is active.
+# 配置自动执行前需核实平台对 CODEOWNERS 与按改动类型设置审批人数的支持；此映射不代表门禁已生效。
+
+# --- default ---------------------------------------------------------------------------------
+*                                   @InferTurbo/maintainers
+
+# --- project process and policy ---------------------------------------------------------------
+/CONTRIBUTING.md                    @InferTurbo/maintainers
+/CONTRIBUTING.zh-CN.md              @InferTurbo/maintainers
+/GOVERNANCE.md                      @InferTurbo/maintainers
+/GOVERNANCE.zh-CN.md                @InferTurbo/maintainers
+/MAINTAINERS.md                     @InferTurbo/maintainers
+/CODE_OF_CONDUCT.md                 @InferTurbo/maintainers
+/CODE_OF_CONDUCT.zh-CN.md           @InferTurbo/maintainers
+/SECURITY.md                        @InferTurbo/security
+/SECURITY.zh-CN.md                  @InferTurbo/security
+/docs/branching.md                  @InferTurbo/maintainers
+/docs/branching.zh-CN.md            @InferTurbo/maintainers
+
+# --- user-facing documentation ----------------------------------------------------------------
+/docs/                              @InferTurbo/maintainers
+
+# --- scheduling and load balancing (request-routing correctness) -------------------------------
+/pkg/common/scheduler/              @InferTurbo/scheduler
+/pkg/route-server/scheduler/        @InferTurbo/scheduler
+
+# --- cluster coordination, leader election, instance registry ----------------------------------
+/pkg/common/cluster/                @InferTurbo/cluster
+/pkg/route-server/cluster/          @InferTurbo/cluster
+/pkg/route-server/instances/        @InferTurbo/cluster
+
+# --- HTTP surface, middleware and TLS: security sensitive --------------------------------------
+/pkg/common/http/                   @InferTurbo/security
+/pkg/route-server/middleware/       @InferTurbo/security
+/pkg/route-server/handler/          @InferTurbo/security
+
+# --- build, packaging and deployment assets ----------------------------------------------------
+/Makefile                           @InferTurbo/release
+/deploy/                            @InferTurbo/release
+/.codearts/                         @InferTurbo/release
+
+# --- dependency surface: every new dependency is a governance decision (GOVERNANCE.md §8) ------
+/go.mod                             @InferTurbo/maintainers
+/go.sum                             @InferTurbo/maintainers
+
+# --- end-to-end suites that spawn real processes and touch iptables ----------------------------
+/e2etest/                           @InferTurbo/scheduler @InferTurbo/cluster

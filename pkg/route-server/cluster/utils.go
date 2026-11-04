@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,10 @@
 package cluster
 
 import (
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
 )
 
 type StateChangeReport struct {

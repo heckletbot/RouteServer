@@ -19,12 +19,12 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
-	"infer-dp-scheduler/cmd/route_server/server/options"
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/errs"
-	"infer-dp-scheduler/pkg/common/health"
-	"infer-dp-scheduler/pkg/common/openai"
+	"route-server/cmd/route_server/server/options"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/errs"
+	"route-server/pkg/common/health"
+	"route-server/pkg/common/openai"
 )
 
 const (

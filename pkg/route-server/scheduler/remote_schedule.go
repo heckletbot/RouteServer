@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,14 +25,14 @@ import (
 	"strings"
 	"time"
 
-	peer_client "infer-dp-scheduler/pkg/common/client/peer-client"
+	peer_client "route-server/pkg/common/client/peer-client"
 
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	http2 "infer-dp-scheduler/pkg/common/http"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/trace"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	http2 "route-server/pkg/common/http"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/trace"
+	"route-server/pkg/common/utils"
 )
 
 const (
@@ -210,11 +210,18 @@ type ClusterLeaderProvider struct {
 }
 
 func (c *ClusterLeaderProvider) ShouldDispatchLocally() (bool, error) {
-	_, id := c.clusterService.GetLeader()
+	leader, id := c.clusterService.GetLeader()
 	if id == "" {
 		return true, fmt.Errorf("no leader is available")
 	}
-	return c.clusterService.LocalNode().Name == id, nil
+	localNode := c.clusterService.LocalNode()
+	if leader != nil && localNode != nil {
+		return leader.Addr.Host == localNode.Addr.Host && leader.Addr.HttpPort == localNode.Addr.HttpPort, nil
+	}
+	if localNode != nil {
+		return localNode.Name == id, nil
+	}
+	return false, fmt.Errorf("local node is nil")
 }
 
 func (c *ClusterLeaderProvider) ProcessLeaderReq(ctx context.Context, body []byte, timeOutMs int, tracer trace.RequestTracer, request utils.GenerateRequest) ([]byte, error) {

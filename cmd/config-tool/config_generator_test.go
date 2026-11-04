@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,9 @@ import (
 	"reflect"
 	"testing"
 
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/route-server/scheduler"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/route-server/scheduler"
 
 	"github.com/agiledragon/gomonkey/v2"
 	"github.com/goccy/go-yaml"
@@ -1545,6 +1545,7 @@ func Test_modifyClusterConfig(t *testing.T) {
 		etcdEndpoints      string
 		etcdAutoSyncSecond string
 		mode               string
+		clusterNamespace   string
 		expectCfgFunc      func(cfg *config.Config) bool
 	}{
 		{
@@ -1726,6 +1727,93 @@ func Test_modifyClusterConfig(t *testing.T) {
 				return true
 			},
 		},
+		{
+			name:             "cluster mode k8s-configmap with namespace",
+			isCandidate:      "True",
+			mode:             "k8s-configmap",
+			clusterNamespace: "my-cluster",
+			wantSuccess:      true,
+			args: args{
+				cfg: &config.Config{
+					InstanceManagerCfg: config.InstanceManagerCfg{
+						HealthCheckConfig: &config.HealthCheckConfig{
+							EventThresholdIntervalMs: 0,
+						},
+					},
+					ClusterCfg: config.ClusterConfig{
+						RoleCandidate: false,
+					},
+				},
+			},
+			expectCfgFunc: func(cfg *config.Config) bool {
+				assert.Equal(t, "k8s-configmap", cfg.ClusterCfg.ClusterServiceType)
+				assert.True(t, cfg.ClusterCfg.RoleCandidate)
+				assert.Equal(t, "k8s-configmap.yaml", cfg.ClusterCfg.ConfigMapConfigFile)
+				assert.NotNil(t, cfg.ClusterCfg.ConfigMapCfg)
+				assert.Equal(t, "my-cluster", cfg.ClusterCfg.ConfigMapCfg.Namespace)
+				assert.NotNil(t, cfg.SchedulersCfg.RemoteSchedule)
+				assert.Equal(t, scheduler.ClusterLeaderType, cfg.SchedulersCfg.RemoteSchedule.RemoteType)
+				return true
+			},
+		},
+		{
+			name:             "cluster mode k8s-configmap without namespace",
+			isCandidate:      "True",
+			mode:             "k8s-configmap",
+			clusterNamespace: "",
+			wantSuccess:      true,
+			args: args{
+				cfg: &config.Config{
+					InstanceManagerCfg: config.InstanceManagerCfg{
+						HealthCheckConfig: &config.HealthCheckConfig{
+							EventThresholdIntervalMs: 0,
+						},
+					},
+					ClusterCfg: config.ClusterConfig{
+						RoleCandidate: false,
+					},
+				},
+			},
+			expectCfgFunc: func(cfg *config.Config) bool {
+				assert.Equal(t, "k8s-configmap", cfg.ClusterCfg.ClusterServiceType)
+				assert.Equal(t, "k8s-configmap.yaml", cfg.ClusterCfg.ConfigMapConfigFile)
+				// Namespace left empty so POD_NAMESPACE/in-cluster fallback applies.
+				assert.Nil(t, cfg.ClusterCfg.ConfigMapCfg)
+				return true
+			},
+		},
+		{
+			name:             "cluster mode k8s-configmap existing remote schedule",
+			isCandidate:      "True",
+			mode:             "k8s-configmap",
+			clusterNamespace: "ns-1",
+			wantSuccess:      true,
+			args: args{
+				cfg: &config.Config{
+					InstanceManagerCfg: config.InstanceManagerCfg{
+						HealthCheckConfig: &config.HealthCheckConfig{
+							EventThresholdIntervalMs: 0,
+						},
+					},
+					ClusterCfg: config.ClusterConfig{
+						RoleCandidate: false,
+					},
+					SchedulersCfg: config.SchedulersCfg{
+						RemoteSchedule: &config.RemoteSchedulerCfg{
+							Enabled:        false,
+							RemoteType:     scheduler.EndpointType,
+							RemoteEndpoint: "http://old:1234",
+						},
+					},
+				},
+			},
+			expectCfgFunc: func(cfg *config.Config) bool {
+				assert.Equal(t, "k8s-configmap", cfg.ClusterCfg.ClusterServiceType)
+				assert.NotNil(t, cfg.SchedulersCfg.RemoteSchedule)
+				assert.Equal(t, scheduler.ClusterLeaderType, cfg.SchedulersCfg.RemoteSchedule.RemoteType)
+				return true
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1733,6 +1821,7 @@ func Test_modifyClusterConfig(t *testing.T) {
 			EtcdEndpoints = tt.etcdEndpoints
 			EtcdAutoSyncSecond = tt.etcdAutoSyncSecond
 			Mode = tt.mode
+			ClusterNamespace = tt.clusterNamespace
 			success := modifyClusterConfig(tt.args.cfg)
 			assert.Equal(t, tt.wantSuccess, success, "modifyClusterConfig() = %v, want %v", success, tt.wantSuccess)
 			if success {
@@ -2160,6 +2249,7 @@ func saveGlobals() func() {
 		tlsCaCertFile       string
 		tlsSkipVerify       string
 		enableMTLS          string
+		clusterNamespace    string
 	}{
 		templatePath:        TemplatePath,
 		deployTargetPath:    DeployTargetPath,
@@ -2188,6 +2278,7 @@ func saveGlobals() func() {
 		tlsCaCertFile:       TLSCaCertFile,
 		tlsSkipVerify:       TLSSkipVerify,
 		enableMTLS:          EnableMTLS,
+		clusterNamespace:    ClusterNamespace,
 	}
 	return func() {
 		TemplatePath = saved.templatePath
@@ -2217,6 +2308,7 @@ func saveGlobals() func() {
 		TLSCaCertFile = saved.tlsCaCertFile
 		TLSSkipVerify = saved.tlsSkipVerify
 		EnableMTLS = saved.enableMTLS
+		ClusterNamespace = saved.clusterNamespace
 	}
 }
 
@@ -2248,6 +2340,7 @@ func setupBasicGlobals(testDir string) {
 	TLSCaCertFile = ""
 	TLSSkipVerify = ""
 	EnableMTLS = ""
+	ClusterNamespace = ""
 }
 
 func Test_mainProc_loadConfig_DeployTargetPathEmpty(t *testing.T) {
@@ -3130,6 +3223,48 @@ logger:
 		assert.Empty(t, cfg.ServerConfig.OpsPort,
 			"ops-port should be empty when --ops-port is not provided (route-server will default to http-port + 10)")
 	})
+}
+
+// Exercise the published template through generation, without deploy.sh's
+// explicit TLS overrides. Direct generator users must also default to HTTP.
+func Test_shippedTemplateHTTPSDefaults(t *testing.T) {
+	defer saveGlobals()()
+	testDir := t.TempDir()
+	setupBasicGlobals(testDir)
+	flags := []*string{&EnableHTTPS, &OpsHTTPSEnable, &ClientHTTPSEnable, &EtcdTLSEnable,
+		&OpsMTLSEnable, &ClientMTLSEnable, &EtcdMTLSEnable, &ClientCertFile, &ClientKeyFile,
+		&ClientCaCertFile, &EtcdCertFile, &EtcdKeyFile, &EtcdCaCertFile}
+	saved := make([]string, len(flags))
+	for i, flag := range flags {
+		saved[i] = *flag
+		*flag = ""
+	}
+	t.Cleanup(func() {
+		for i, flag := range flags {
+			*flag = saved[i]
+		}
+	})
+	TemplatePath = filepath.Join("..", "..", "deploy", "route-server-template.yaml")
+	Mode = "singleton"
+	if !assert.NoError(t, os.MkdirAll(filepath.Join(DeployTargetPath, "config"), 0o700)) {
+		return
+	}
+	if !assert.True(t, mainProc(false)) {
+		return
+	}
+	cfg, err := loadFromFile(filepath.Join(DeployTargetPath, "config", "route-server.yaml"))
+	if !assert.NoError(t, err) {
+		return
+	}
+	for name, tls := range map[string]*config.TLSCertificateConfig{
+		"main": cfg.ServerConfig.TLSConfig, "ops": cfg.ServerConfig.OpsTLSConfig,
+		"vllm": cfg.HttpConfig.TLSConfig, "etcd": cfg.ClusterCfg.EtcdCfg.TLSConfig,
+		"peer": cfg.PeerClientCfg.HttpCfg.TLSConfig,
+	} {
+		if assert.NotNil(t, tls, name) {
+			assert.False(t, tls.EnableHTTPS, name)
+		}
+	}
 }
 
 func Test_mainProc_applyServerConfigFails(t *testing.T) {

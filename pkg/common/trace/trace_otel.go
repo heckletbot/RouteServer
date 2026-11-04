@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,9 +26,9 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/trace"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/openai"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/openai"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

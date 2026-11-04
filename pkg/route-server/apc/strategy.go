@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package apc
 
-import "infer-dp-scheduler/pkg/common/utils"
+import "route-server/pkg/common/utils"
 
 // MatchResult represents the matching result
 type MatchResult struct {

@@ -8,7 +8,7 @@ SRC_DIR := cmd/route_server
 CONFIG_TOOL_DIR := cmd/config-tool
 BUILD_DIR := build
 OUTPUT_DIR := output
-PKG_NAME := DistributedScheduler
+PKG_NAME := route-server
 DEPLOY_DIR := deploy
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "unknown")
@@ -16,10 +16,10 @@ BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u '+%Y%m%d%H%M%S' 2>/dev/null || date -f "%Y%m%d%H%M%S" 2>/dev/null || echo "unknown")
 
-LDFLAGS := -X 'infer-dp-scheduler/cmd/route_server/server.version=$(VERSION)' \
-           -X 'infer-dp-scheduler/cmd/route_server/server.tagOrBranch=$(BRANCH)' \
-           -X 'infer-dp-scheduler/cmd/route_server/server.commitId=$(COMMIT)' \
-           -X 'infer-dp-scheduler/cmd/route_server/server.buildTime=$(BUILD_TIME)'
+LDFLAGS := -X 'route-server/cmd/route_server/server.version=$(VERSION)' \
+           -X 'route-server/cmd/route_server/server.tagOrBranch=$(BRANCH)' \
+           -X 'route-server/cmd/route_server/server.commitId=$(COMMIT)' \
+           -X 'route-server/cmd/route_server/server.buildTime=$(BUILD_TIME)'
 
 $(OUTPUT_DIR)/$(PKG_NAME)/bin:
 	@mkdir -p $@
@@ -43,6 +43,7 @@ copy-deploy:
 	@mkdir -p $(OUTPUT_DIR)
 	@cp $(DEPLOY_DIR)/deploy.sh $(OUTPUT_DIR)/
 	@cp $(DEPLOY_DIR)/*.yaml $(OUTPUT_DIR)/ 2>/dev/null || true
+	@cp -r $(DEPLOY_DIR)/k8s-configmap $(OUTPUT_DIR)/ 2>/dev/null || true
 	@cp -r $(DEPLOY_DIR)/scale $(OUTPUT_DIR)/ 2>/dev/null || true
 	@cp -r $(DEPLOY_DIR)/pipelines $(OUTPUT_DIR)/ 2>/dev/null || true
 	@cp Dockerfile $(OUTPUT_DIR)/ 2>/dev/null || true
@@ -56,21 +57,25 @@ package: build copy-deploy version-info
 	@cd $(OUTPUT_DIR) && zip -q -r $(PKG_NAME)-$(VERSION)-$(BUILD_TIME).zip ./
 	@echo "Package created: $(OUTPUT_DIR)/$(PKG_NAME)-$(VERSION)-$(BUILD_TIME).zip"
 
+# Test pipelines need Bash pipefail so neither go test nor tee failures are hidden.
+# Keep the shell change local to these targets.
+test test-coverage test-unit: SHELL := /bin/bash
+
 test:
 	@mkdir -p $(BUILD_DIR)
 	@echo "Running tests at $$(date)" | tee $(BUILD_DIR)/test.log
-	@$(GO) test ./... -v -failfast=false 2>&1 | tee -a $(BUILD_DIR)/test.log
+	@set -o pipefail; $(GO) test ./... -v -failfast=false 2>&1 | tee -a $(BUILD_DIR)/test.log
 
 test-coverage:
 	@mkdir -p $(BUILD_DIR)
 	@echo "Running tests with coverage at $$(date)" | tee $(BUILD_DIR)/coverage.log
-	@$(GO) test ./... -v -failfast=false -coverprofile=$(BUILD_DIR)/coverage.out 2>&1 | tee -a $(BUILD_DIR)/coverage.log
+	@set -o pipefail; $(GO) test ./... -v -failfast=false -coverprofile=$(BUILD_DIR)/coverage.out 2>&1 | tee -a $(BUILD_DIR)/coverage.log
 	@echo "Coverage report generated: $(BUILD_DIR)/coverage.out"
 
 test-unit:
 	@mkdir -p $(BUILD_DIR)
 	@echo "Running unit tests at $$(date)" | tee $(BUILD_DIR)/unit-test.log
-	@$(GO) test ./... -v -failfast=false -short 2>&1 | tee -a $(BUILD_DIR)/unit-test.log
+	@set -o pipefail; $(GO) test ./... -v -failfast=false -short 2>&1 | tee -a $(BUILD_DIR)/unit-test.log
 
 clean:
 	@echo "Cleaning..."

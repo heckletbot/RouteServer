@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,9 +38,9 @@ import (
 	"github.com/onsi/gomega/gexec"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/openai"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/openai"
 )
 
 const (

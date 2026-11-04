@@ -1,5 +1,7 @@
 # RouteServer API Documentation
 
+[English](restful-api.md) | [简体中文](restful-api.zh-CN.md)
+
 ## Port Description
 
 The **Listen Port** in each API description indicates which port the API listens on:
@@ -251,6 +253,70 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
     }
 }
 ```
+
+### POST /v1/messages
+
+**Listen Port**: Service Port
+
+**Functionality**: Anthropic Messages API compatible inference endpoint for Claude-compatible clients.
+
+**Handler**: RouteServer's pipeline inference handler. The route must be registered by the pipeline configuration (`handler: messages_infer`) in pipeline inference mode (`--infer-module-version pipeline`). Legacy v0 mode does not register this route; a request that reaches the default router receives `404`.
+
+**Caller**: Anthropic SDK and other Claude-compatible clients
+
+**Constraints/Conditions**:
+- RouteServer runs in pipeline inference mode
+- Must have available inference instances
+- Network connection is normal
+
+**Parameters**:
+```json
+{
+    "model": "claude-3-sonnet",
+    "max_tokens": 1024,
+    "system": "You are a helpful assistant",
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Hello"
+                }
+            ]
+        }
+    ]
+}
+```
+
+**Response Example**:
+```json
+{
+    "id": "msg_xxxxx",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+        {
+            "type": "text",
+            "text": "Hello! How can I help you today?"
+        }
+    ],
+    "model": "claude-3-sonnet",
+    "stop_reason": "end_turn",
+    "usage": {
+        "input_tokens": 10,
+        "output_tokens": 9
+    }
+}
+```
+
+**Streaming**: Add `"stream": true` to receive Anthropic SSE events (`message_start`, `content_block_delta`, `message_stop`).
+
+**Error Codes**:
+| Code | Meaning |
+| --- | --- |
+| 404 | The route is not registered, including in legacy v0 mode (default router response) |
+| 502 | No available inference instances |
 
 ### POST /v1/metaserver
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,17 +29,18 @@ import (
 	"sync"
 	"time"
 
-	"infer-dp-scheduler/pkg/route-server/instances"
+	"route-server/pkg/route-server/instances"
 
-	peer_client "infer-dp-scheduler/pkg/common/client/peer-client"
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/events"
-	http2 "infer-dp-scheduler/pkg/common/http"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/cluster/etcd"
-	"infer-dp-scheduler/pkg/route-server/cluster/singleton"
+	peer_client "route-server/pkg/common/client/peer-client"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/events"
+	http2 "route-server/pkg/common/http"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/cluster/configmap"
+	"route-server/pkg/route-server/cluster/etcd"
+	"route-server/pkg/route-server/cluster/singleton"
 
 	"github.com/gin-gonic/gin"
 )
@@ -77,6 +78,8 @@ func newClusterService(config *config.Config, client *peer_client.PeerClient) (c
 		service = &singleton.SingletonClusterService{}
 	case cluster.TypeEtcd:
 		service = &etcd.EtcdClusterService{}
+	case cluster.TypeK8sConfigMap:
+		service = &configmap.ConfigMapClusterService{}
 	case "":
 		service = &singleton.SingletonClusterService{}
 	default:

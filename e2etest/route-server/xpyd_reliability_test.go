@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/utils"
 
 	"github.com/goccy/go-yaml"
 	"github.com/google/uuid"
@@ -23,9 +23,9 @@ import (
 	"github.com/onsi/gomega/gexec"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/openai"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/openai"
 )
 
 const (

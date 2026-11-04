@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,13 +26,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	peer_client "infer-dp-scheduler/pkg/common/client/peer-client"
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
-	cluster2 "infer-dp-scheduler/pkg/route-server/cluster"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	peer_client "route-server/pkg/common/client/peer-client"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
+	cluster2 "route-server/pkg/route-server/cluster"
+	"route-server/pkg/route-server/metrics"
 )
 
 type EtcdClusterService struct {
@@ -103,7 +103,7 @@ func (ecs *EtcdClusterService) Init(config config.ClusterConfig, initRoute *conf
 	etcdWrapper := &EtcdWrapper{
 		logId: 0,
 	}
-	etcdWrapper.status.Store(StatusDisconnected)
+	etcdWrapper.setStatus(StatusDisconnected)
 	etcdWrapper.localNode = localPeer
 	etcdWrapper.leaderId.Store("")
 	ecs.etcdWrapper.Store(etcdWrapper)
@@ -406,7 +406,7 @@ func (ecs *EtcdClusterService) HandleLeaveInstance(req *cluster.InstanceLeaveReq
 func (ecs *EtcdClusterService) updateLocalState(state *cluster.ClusterState, reason string) {
 	state.Version = time.Now().UnixMilli()
 	ecs.atomicState.Store(state)
-	if reason == StateUpdateReasonRestore {
+	if reason == cluster.StateUpdateReasonRestore {
 		for _, listener := range ecs.stateChangeListeners {
 			listener.OnStateRestored(state)
 		}

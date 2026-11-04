@@ -38,14 +38,14 @@ server:
         - "/v1/metaserver"
       cleanup-interval-minutes: 5  # Cleanup expired entries every 5 minutes
   tls:
-    enable-https: true
+    enable-https: false
     cert-file:
     key-file:
     ca-cert-file:
     skip-verify: false
     enable-mtls: true
   ops-tls:
-    enable-https: true
+    enable-https: false
     cert-file:
     key-file:
     ca-cert-file:
@@ -73,7 +73,7 @@ http:
   dialer-timeout: 600
   dialer-keepalive: 5
   tls:
-    enable-https: true
+    enable-https: false
     enable-mtls: true
     cert-file:
     key-file:
@@ -267,7 +267,7 @@ cluster:
     lease-refresh-interval-ms: 1000
     auto-sync-interval-sec: 10
     tls:
-      enable-https: true
+      enable-https: false
       enable-mtls: true
       cert-file:
       key-file:
@@ -293,7 +293,7 @@ peer-client:
     dialer-timeout: 600
     dialer-keepalive: 5
     tls:
-      enable-https: true
+      enable-https: false
       enable-mtls: true
       cert-file:
       key-file:

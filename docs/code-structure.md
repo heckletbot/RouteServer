@@ -1,5 +1,7 @@
 # Code base structure
 
+[English](code-structure.md) | [简体中文](code-structure.zh-CN.md)
+
 RouteServer is implemented with go. Structure of code base is organized as follows:
 
 ```

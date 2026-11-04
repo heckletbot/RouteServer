@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: route-server
+  namespace: <namespace>
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: route-server-configmap-role
+  namespace: <namespace>
+rules:
+  # ConfigMap: Watch topology + persist failure snapshots.
+  # create is needed by the leader to create the <owner>-rs-status ConfigMap.
+  # update is needed by the leader to write the failures-key.
+  # If an operator pre-creates rs-status, create can be dropped.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update"]
+  # Lease: Leader election (candidate nodes create/update; all nodes get/watch).
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "watch"]
+  # Pods: list — only required when Pod List periodic reconciliation is enabled
+  # (fallback-pod-discovery-enabled: true). This is a one-shot List query (not a
+  # long-lived Watch), filtered by the infer-group-label-key label configured in
+  # k8s-configmap.yaml. Omit this rule when reconciliation is disabled to keep
+  # RBAC minimal.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list"]
+  # Owner resource: get — only required when owner-reference is configured.
+  # The leader resolves the owner UID with a dynamic-client Get before creating
+  # rs-status. Replace <owner-group>/<owner-plural> with your owner object, e.g.
+  # "apps"/"deployments" or "apps.red.io"/"podgroups".
+  # - apiGroups: ["<owner-group>"]
+  #   resources: ["<owner-plural>"]
+  #   verbs: ["get"]
+  # Owner finalizers: update — required in addition to the above when the
+  # cluster enables the OwnerReferencesPermissionEnforcement admission plugin.
+  # RouteServer sets blockOwnerDeletion: true on rs-status, which that plugin
+  # rejects unless the caller may update the owner's finalizers.
+  # - apiGroups: ["<owner-group>"]
+  #   resources: ["<owner-plural>/finalizers"]
+  #   verbs: ["update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: route-server-configmap-binding
+  namespace: <namespace>
+subjects:
+  - kind: ServiceAccount
+    name: route-server
+roleRef:
+  kind: Role
+  name: route-server-configmap-role
+  apiGroup: rbac.authorization.k8s.io

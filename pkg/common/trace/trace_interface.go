@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,10 +23,10 @@ import (
 	"sync"
 
 	"go.opentelemetry.io/otel/trace"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/openai"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/openai"
 )
 
 type TracerWithContext struct {

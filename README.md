@@ -1,5 +1,7 @@
 # RouteServer
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 # About
 
 RouteServer is a distributed OpenAI inference orchestration frontend, designed for Large Language Model (LLM) service scenarios. It supports inference workflows across various vLLM deployment patterns. Aims to provide distributed high-availability inference request execution workflows, it achieves efficient, scalable, and reliable inference load-balancing services through centralized request scheduling, inference engine fault awareness and isolation, and cluster state coordination.
@@ -24,7 +26,7 @@ see our [architecture docs](docs/architecture.md) and [code-base structure](docs
 
 ### Prerequisites
 
-- Go 1.25.0 or higher
+- Go 1.26.0 or higher
 - Make 3.82 or higher
 
 ### Build and Package
@@ -34,15 +36,15 @@ see our [architecture docs](docs/architecture.md) and [code-base structure](docs
 make clean && make package
 ```
 
-This will produce a zip package at `output/ModelOrch-<version>-<timestamp>.zip`.
+This will produce a zip package at `output/route-server-<version>-<timestamp>.zip`.
 
 For detailed build instructions and available Makefile targets, see the [Build Guide](docs/build.md).
 
 ### Deploy with PD Separation Example
 
-1. Navigate to the package directory:
+1. Navigate to the package directory (the `output/` directory created by `make package`):
 ```bash
-cd output/RouteServer
+cd output
 ```
 
 2. Set environment variables for your inference framework instances (OpenAI format compatible):
@@ -72,7 +74,7 @@ For more deployment options and configurations, see our [deploying script refere
 
 ## Security
 
-We strongly advise enable https and mTLS in production, see our [security guide](docs/security.md)
+We strongly advise enable https and mTLS in production, see our [security guide](docs/security.md). HTTPS/TLS is disabled by default (`--enable-https`, `--ops-enable-https`, `--client-https-enable` and `--etcd-tls-enable` all default to `false`), so the example above needs no certificates; enable them explicitly for production.
 
 ## API reference
 
@@ -82,22 +84,29 @@ visit our [Config reference](docs/config-spec.md) for developers
 
 ## Contributing
 
-We welcome contributions! Please follow these steps:
+We welcome contributions! The full guide is in [CONTRIBUTING.md](CONTRIBUTING.md) —
+中文版见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)（含分支模型、提交规范与评审流程）。
+
+The short version:
 
 1. **Fork** the repository
-2. **Create a feature branch** (`git checkout -b feature/my-feature`)
+2. **Create a topic branch** from `main` (`git checkout -b feat/my-feature`)
 3. **Make your changes** and ensure code quality:
    ```bash
-   # Format and lint your code
-   make fmt
-   make vet
-   # Run tests
-   make test
+   make lint   # go fmt + go vet
+   go test ./... -v -timeout 60m
    ```
-4. **Commit your changes** with a clear commit message
-5. **Submit a Pull Request** against the main branch
+   For Make test targets, the Bash requirement and E2E coverage, see
+   [the testing notes](CONTRIBUTING.md#3-build-and-test).
+4. **Commit** with a Conventional Commits message and sign off (`git commit -s`)
+5. **Submit a Pull Request** against `main`
 
-For major changes, please open an issue first to discuss what you would like to change.
+For major changes, please open an issue first to discuss what you would like to change. Do not open pull
+requests against `intranet-sync` — it is written by a machine and changes there are overwritten.
+
+- Branch model: [docs/branching.md](docs/branching.md) · [中文](docs/branching.zh-CN.md)
+- Roles and decision making: [GOVERNANCE.md](GOVERNANCE.md) · [中文](GOVERNANCE.zh-CN.md)
+- Security reports: [SECURITY.md](SECURITY.md) · [中文](SECURITY.zh-CN.md)
 
 ## License
 

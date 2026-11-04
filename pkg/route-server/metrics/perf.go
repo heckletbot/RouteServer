@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	commoncfg "infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils/list"
+	commoncfg "route-server/pkg/common/config"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils/list"
 )
 
 var perfMetrics *PerfMetrics
@@ -178,7 +178,7 @@ func (m *PerfMetrics) calculate() {
 		return
 	}
 	isPrint := false
-	perfLog := "model orch Perf Metrics: "
+	perfLog := "route server Perf Metrics: "
 	for k, v := range m.pastPerfMetrics {
 		info := v.Statistics()
 		if info.Count == 0 {

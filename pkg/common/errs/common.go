@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"strings"
 
-	"infer-dp-scheduler/pkg/common/openai"
+	"route-server/pkg/common/openai"
 )
 
 const ObjectTypeError = "error"
@@ -94,7 +94,7 @@ type EngineError struct {
 
 type MaError struct {
 	Status    int    // http status code
-	Code      string // model orch internal error code
+	Code      string // route server internal error code
 	MsgEn     string
 	MsgCn     string
 	Args      []interface{}
