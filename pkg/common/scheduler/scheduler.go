@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@
 package scheduler
 
 import (
-	"infer-dp-scheduler/pkg/common/instance-metrics"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/instance-metrics"
+	"route-server/pkg/common/utils"
 )
 
 type ScheduleAlgorithm interface {

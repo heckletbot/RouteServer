@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,23 +26,23 @@ import (
 	"sync/atomic"
 	"time"
 
-	"infer-dp-scheduler/cmd/route_server/server/options"
-	"infer-dp-scheduler/pkg/common/errs"
+	"route-server/cmd/route_server/server/options"
+	"route-server/pkg/common/errs"
 
-	"infer-dp-scheduler/pkg/common/client"
-	instanceclient "infer-dp-scheduler/pkg/common/client/instance-client"
-	monitorclient "infer-dp-scheduler/pkg/common/client/monitor-client"
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/health"
-	http2 "infer-dp-scheduler/pkg/common/http"
-	instance_metrics "infer-dp-scheduler/pkg/common/instance-metrics"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/openai"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/metrics"
-	"infer-dp-scheduler/pkg/route-server/scheduler"
+	"route-server/pkg/common/client"
+	instanceclient "route-server/pkg/common/client/instance-client"
+	monitorclient "route-server/pkg/common/client/monitor-client"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/health"
+	http2 "route-server/pkg/common/http"
+	instance_metrics "route-server/pkg/common/instance-metrics"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/openai"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/metrics"
+	"route-server/pkg/route-server/scheduler"
 
 	"github.com/gin-gonic/gin"
 )
@@ -83,6 +83,7 @@ type Manager interface {
 	HandleForceReadiness(ctx *gin.Context)
 	GetReadinessStatus(readiness map[string]int) ReadinessStatus
 	GetInstanceNum() map[string]int
+	IsInstanceAvailable(name string) bool
 }
 
 // ReadinessStatus contains detailed status information for readiness check
@@ -1476,6 +1477,7 @@ func (m *InstanceManager) SnapshotUnhealthyInstances() {
 		logger.Log().Warnf("failed snapshot unhealthy instances: %v", err)
 		return
 	}
+	m.lastSnapshotTimestamp = time.Now()
 	logger.Log().Infof("successfully snapshot unhealthy instances [%s] to cluster state", utils.MapKeysStr(m.unavailableMap))
 	m.lastSnapshotRecords = snapshotRecords
 }
@@ -1490,9 +1492,10 @@ func (m *InstanceManager) shouldSnapshotFailuresNoLock() (shouldSnapshot bool, r
 		snapshotInterval = 2 * time.Duration(m.cfg.HealthCheckConfig.RestHealthCommonConfig.Interval) * time.Millisecond
 	}
 	now := time.Now()
-	if now.Sub(m.lastSnapshotTimestamp) > snapshotInterval && len(m.unavailableMap) > 0 {
-		m.lastSnapshotTimestamp = now
-		return true, SnapshotReasonTimeRenewed
+	if now.Sub(m.lastSnapshotTimestamp) > snapshotInterval {
+		if len(m.unavailableMap) > 0 || len(m.lastSnapshotRecords) > 0 {
+			return true, SnapshotReasonTimeRenewed
+		}
 	}
 	// TODO: compare consecutive time then decide snapshot
 	return false, SnapshotReasonNoChanges
@@ -1502,6 +1505,13 @@ func (m *InstanceManager) isSnapshotFuncNil() bool {
 	m.failureSnapshotMutex.RLock()
 	defer m.failureSnapshotMutex.RUnlock()
 	return m.failureSnapshotFunc == nil
+}
+
+func (m *InstanceManager) IsInstanceAvailable(name string) bool {
+	m.routeMapMutex.RLock()
+	defer m.routeMapMutex.RUnlock()
+	_, ok := m.availableMap[name]
+	return ok
 }
 
 func (m *InstanceManager) copyHeaders(dst, src http.Header, useBlackList bool) {

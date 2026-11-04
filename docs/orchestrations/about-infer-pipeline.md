@@ -1,5 +1,7 @@
 # About Infer Pipeline
 
+[English](about-infer-pipeline.md) | [简体中文](about-infer-pipeline.zh-CN.md)
+
 The Infer Pipeline is a core capability of RouteServer. It provides a configuration-driven approach to assembling inference workflows, generating a DAG-based execution pipeline by declaring Phases and their dependencies, flexibly adapting to various inference deployment patterns. This document is intended for open-source users and developers, covering the design rationale, core concepts, and the full workflow from configuration declaration to deployment.
 
 ## Design Background

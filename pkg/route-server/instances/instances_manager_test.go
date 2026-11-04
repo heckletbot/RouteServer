@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,29 +30,29 @@ import (
 	"testing"
 	"time"
 
-	peer_client "infer-dp-scheduler/pkg/common/client/peer-client"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	peer_client "route-server/pkg/common/client/peer-client"
+	"route-server/pkg/route-server/metrics"
 
 	"github.com/gin-gonic/gin"
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/errs"
-	"infer-dp-scheduler/pkg/common/health"
-	"infer-dp-scheduler/pkg/common/utils"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/errs"
+	"route-server/pkg/common/health"
+	"route-server/pkg/common/utils"
 
 	"github.com/stretchr/testify/assert"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/openai"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/openai"
 
 	"github.com/agiledragon/gomonkey/v2"
 	dto "github.com/prometheus/client_model/go"
-	"infer-dp-scheduler/pkg/common/client"
-	instanceclient "infer-dp-scheduler/pkg/common/client/instance-client"
-	monitor_client "infer-dp-scheduler/pkg/common/client/monitor-client"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	instance_metrics "infer-dp-scheduler/pkg/common/instance-metrics"
-	scheduler2 "infer-dp-scheduler/pkg/common/scheduler"
-	"infer-dp-scheduler/pkg/route-server/scheduler"
+	"route-server/pkg/common/client"
+	instanceclient "route-server/pkg/common/client/instance-client"
+	monitor_client "route-server/pkg/common/client/monitor-client"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	instance_metrics "route-server/pkg/common/instance-metrics"
+	scheduler2 "route-server/pkg/common/scheduler"
+	"route-server/pkg/route-server/scheduler"
 )
 
 func Test_getRoleInstanceSize(t *testing.T) {
@@ -2022,6 +2022,9 @@ func TestShouldSnapshotFailuresNoLock(t *testing.T) {
 	should, reason = m.shouldSnapshotFailuresNoLock()
 	assert.True(t, should)
 	assert.Equal(t, SnapshotReasonTimeRenewed, reason)
+
+	// Manually set lastSnapshotTimestamp to now, simulating a snapshot just completed
+	m.lastSnapshotTimestamp = time.Now()
 
 	// Call again, time difference is small, should not trigger
 	should, reason = m.shouldSnapshotFailuresNoLock()

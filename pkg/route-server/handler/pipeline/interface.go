@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,9 @@ package pipeline
 import (
 	"context"
 
-	"infer-dp-scheduler/pkg/common/errs"
-	utils2 "infer-dp-scheduler/pkg/common/infer"
-	"infer-dp-scheduler/pkg/common/trace"
+	"route-server/pkg/common/errs"
+	utils2 "route-server/pkg/common/infer"
+	"route-server/pkg/common/trace"
 )
 
 type Phase interface {

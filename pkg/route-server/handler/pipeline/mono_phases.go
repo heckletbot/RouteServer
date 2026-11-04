@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,16 +24,16 @@ import (
 	"net/http"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/errs"
-	common_infer "infer-dp-scheduler/pkg/common/infer"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/openai"
-	"infer-dp-scheduler/pkg/common/trace"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/handler"
-	"infer-dp-scheduler/pkg/route-server/handler/request"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/errs"
+	common_infer "route-server/pkg/common/infer"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/openai"
+	"route-server/pkg/common/trace"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/handler"
+	"route-server/pkg/route-server/handler/request"
+	"route-server/pkg/route-server/metrics"
 )
 
 type prepareRequestFunc func(ctx *PipelineContext, copiedBody *utils.JSONModifier) *utils.JSONModifier
@@ -502,6 +502,9 @@ func PostPrefillStreamProcessResponse(res *http.Response, ctx *PipelineContext, 
 		writerResponseHeaders(res, ctx)
 		// ForceReuseFirstToken is now atomic.Bool, pass its pointer
 		passTokenTime := handler.GetPassTokenTime(ctx.IsChat(), ctx.IsLayerWise, ctx.RequestContext.ParsedRequest.GetMaxToken(), ctx.GetRequestCtx().IsFirstTokenFromPrefill.Load())
+		if ctx.IsLayerWise {
+			passTokenTime++
+		}
 		bodyBytes, rsError, details, finishReason = handler.WritePrefillStreamRes(ctx.GetRequestCtx().MainGinCtx, ctx.RequestContext.ParsedRequest, res,
 			ctx.RequestContext.Tracer.Tracer, ctx.GetPerfMetrics(), instanceId, phase.StageName(), ctx.InferManager.WorkerEventCollector, passTokenTime, ctx.RequestContext.ForceReuseFirstToken)
 		if details != nil {

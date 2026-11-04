@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/onsi/gomega"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/health"
-	"infer-dp-scheduler/pkg/common/trace"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/health"
+	"route-server/pkg/common/trace"
 )
 
 func TestNewSchedulePhase_Minimal(t *testing.T) {

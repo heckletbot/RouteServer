@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,26 +26,26 @@ import (
 	"strconv"
 
 	"github.com/google/uuid"
-	"infer-dp-scheduler/cmd/route_server/server/options"
-	monitor_client "infer-dp-scheduler/pkg/common/client/monitor-client"
-	peer_client "infer-dp-scheduler/pkg/common/client/peer-client"
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/events"
-	"infer-dp-scheduler/pkg/common/health"
-	utils2 "infer-dp-scheduler/pkg/common/infer"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
-	metrics_collector "infer-dp-scheduler/pkg/metrics-collector"
-	metrics_logger "infer-dp-scheduler/pkg/metrics-collector/logger"
-	"infer-dp-scheduler/pkg/route-server/apc"
-	"infer-dp-scheduler/pkg/route-server/handler"
-	"infer-dp-scheduler/pkg/route-server/handler/infer"
-	"infer-dp-scheduler/pkg/route-server/handler/pipeline"
-	"infer-dp-scheduler/pkg/route-server/instances"
-	"infer-dp-scheduler/pkg/route-server/metrics"
-	"infer-dp-scheduler/pkg/route-server/scheduler"
+	"route-server/cmd/route_server/server/options"
+	monitor_client "route-server/pkg/common/client/monitor-client"
+	peer_client "route-server/pkg/common/client/peer-client"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/events"
+	"route-server/pkg/common/health"
+	utils2 "route-server/pkg/common/infer"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
+	metrics_collector "route-server/pkg/metrics-collector"
+	metrics_logger "route-server/pkg/metrics-collector/logger"
+	"route-server/pkg/route-server/apc"
+	"route-server/pkg/route-server/handler"
+	"route-server/pkg/route-server/handler/infer"
+	"route-server/pkg/route-server/handler/pipeline"
+	"route-server/pkg/route-server/instances"
+	"route-server/pkg/route-server/metrics"
+	"route-server/pkg/route-server/scheduler"
 )
 
 type App struct {
@@ -153,6 +153,10 @@ func (a *App) initManagers() (*Managers, error) {
 	messageCenter.InitTopic(constant.LocalWorkerEventsTopic)
 	messageCenter.InitTopic(constant.InstanceDownTopic)
 
+	// init metrics first
+	metrics.InitMetrics(&options.GetConfig().MetricsCfg)
+	metrics.InitPerfMetrics(&options.GetConfig().MetricsCfg)
+
 	peerClient, err := peer_client.NewPeerClient(options.GetConfig().ServerConfig.Name, options.GetConfig().PeerClientCfg, options.GetConfig().OpsPeerClientCfg)
 	if err != nil {
 		return managers, fmt.Errorf("fail to create peer client, err = %v", err)
@@ -174,8 +178,6 @@ func (a *App) initManagers() (*Managers, error) {
 		return managers, fmt.Errorf("failed when subscribe message center, err = %v", err)
 	}
 
-	metrics.InitMetrics(&options.GetConfig().MetricsCfg)
-	metrics.InitPerfMetrics(&options.GetConfig().MetricsCfg)
 	err = scheduler.InitBuiltinScheduleAlgorithms()
 	if err != nil {
 		return managers, fmt.Errorf("fail to init builtin schedule algorithms, err = %v", err)

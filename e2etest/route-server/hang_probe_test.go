@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,8 +33,8 @@ import (
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 
-	"infer-dp-scheduler/cmd/route_server/server/options"
-	"infer-dp-scheduler/pkg/common/constant"
+	"route-server/cmd/route_server/server/options"
+	"route-server/pkg/common/constant"
 )
 
 const (
@@ -177,7 +177,9 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 
 			GinkgoWriter.Println("Step 4: Verify isolation triggered")
 			Eventually(session.Out, 30*time.Second).Should(gbytes.Say("\\[HangCheck\\] instance .* is hang"))
-			Eventually(session.Out, 5*time.Second).Should(gbytes.Say("unhealthy instances found for role \\[decode\\]"))
+			// instanceWarningLoop emits this line on a 10s ticker
+			// (pkg/route-server/instances/instances_manager.go), so the wait must span more than one tick.
+			Eventually(session.Out, 30*time.Second).Should(gbytes.Say("unhealthy instances found for role \\[decode\\]"))
 
 			GinkgoWriter.Println("Step 5: Verify no repeated probes after isolation (within 30s there should be no more hang probe requests)")
 			Consistently(session.Out, 30*time.Second).ShouldNot(gbytes.Say("\\[HangProbe\\] instance .* start async probe inference request"))
@@ -365,7 +367,8 @@ var _ = Describe(HangProbeTestContext, Ordered, func() {
 			GinkgoWriter.Println("Step 9: Verify isolation triggered - should execute isolation after 3rd invalid probe")
 			Eventually(session.Out, 30*time.Second).Should(gbytes.Say("\\[HangProbe\\] instance .* has 3 consecutive invalid probe"))
 			Eventually(session.Out, 30*time.Second).Should(gbytes.Say("\\[HangCheck\\] instance .* is hang \\(probe failed\\)"))
-			Eventually(session.Out, 10*time.Second).Should(gbytes.Say("unhealthy instances found for role \\[decode\\]"))
+			// Same 10s warning ticker as the assertion in test case 1.
+			Eventually(session.Out, 30*time.Second).Should(gbytes.Say("unhealthy instances found for role \\[decode\\]"))
 
 			GinkgoWriter.Println("Step 10: Cleanup test environment - close request that triggered hang")
 			respTrigger.Body.Close()

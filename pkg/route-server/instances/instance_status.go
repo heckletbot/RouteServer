@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,13 +23,13 @@ import (
 	"sync"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	instance_metrics "infer-dp-scheduler/pkg/common/instance-metrics"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/cluster/singleton"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	instance_metrics "route-server/pkg/common/instance-metrics"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/cluster/singleton"
 
 	"github.com/gin-gonic/gin"
 )
@@ -149,8 +149,8 @@ func (m *InstanceManager) GetInstanceStatus(ctx *gin.Context) {
 	m.routeMapMutex.RLock()
 	defer func() {
 		m.routeMapMutex.RUnlock()
-		if rsp.Status == constant.FailedStatus {
-			logger.Log().Errorf("[GET /status] Cluster status is %s, detail info recorded in status response", constant.FailedStatus)
+		if rsp.Status == constant.FaultStatus {
+			logger.Log().Warnf("[GET /status] Cluster status is %s, detail info recorded in status response", constant.FaultStatus)
 		} else {
 			logger.Log().Infof("[GET /status] %s", rsp.Status)
 		}

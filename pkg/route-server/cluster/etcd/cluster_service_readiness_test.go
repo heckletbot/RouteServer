@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,11 +22,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"route-server/pkg/route-server/metrics"
 
-	peer_client "infer-dp-scheduler/pkg/common/client/peer-client"
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/utils"
+	peer_client "route-server/pkg/common/client/peer-client"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/utils"
 )
 
 // TestEtcdClusterServiceGetCfg tests the getCfg function
@@ -253,6 +254,8 @@ func TestEtcdClusterServiceInit(t *testing.T) {
 	}
 
 	peerClient := &peer_client.PeerClient{}
+
+	metrics.InitMetrics(nil)
 
 	ecs := &EtcdClusterService{}
 	ecs.Init(cfg, initRoute, localPeer, peerClient)

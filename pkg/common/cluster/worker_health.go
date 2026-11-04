@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,10 +21,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"infer-dp-scheduler/cmd/route_server/server/options"
-	"infer-dp-scheduler/pkg/common/logger"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/metrics"
+	"route-server/cmd/route_server/server/options"
+	"route-server/pkg/common/logger"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/metrics"
 )
 
 const (
@@ -49,6 +49,14 @@ type WorkerHealthChecker struct {
 }
 
 func NewWorkerHealthChecker(clusterService ClusterService) *WorkerHealthChecker {
+	if options.GetConfig().ClusterCfg.ClusterServiceType == TypeK8sConfigMap {
+		logger.Log().Infof("skip WorkerHealthChecker in k8s-configmap mode, worker health is managed by K8s pod lifecycle")
+		return &WorkerHealthChecker{
+			enable:    false,
+			closed:    atomic.Bool{},
+			closeChan: make(chan struct{}),
+		}
+	}
 	if options.GetConfig().MetaCleanupCfg == nil || options.GetConfig().MetaCleanupCfg.MaxWorkerDownTimeSec <= 0 {
 		logger.Log().Warnf("route server worker checker is disabled due to negative max-workers-down-time-sec")
 		return &WorkerHealthChecker{

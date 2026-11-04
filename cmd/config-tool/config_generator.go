@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,13 +27,13 @@ import (
 	"strconv"
 	"strings"
 
-	"infer-dp-scheduler/cmd/route_server/server"
+	"route-server/cmd/route_server/server"
 
-	"infer-dp-scheduler/pkg/common/cluster"
-	"infer-dp-scheduler/pkg/common/config"
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/common/utils"
-	"infer-dp-scheduler/pkg/route-server/scheduler"
+	"route-server/pkg/common/cluster"
+	"route-server/pkg/common/config"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/scheduler"
 
 	"github.com/goccy/go-yaml"
 )
@@ -84,6 +84,7 @@ var (
 	EtcdKeyFile                string
 	EtcdCaCertFile             string
 	EnableOpsAPIsOnServicePort string
+	ClusterNamespace           string
 )
 
 func main() {
@@ -840,6 +841,37 @@ func modifyClusterConfig(cfg *config.Config) (success bool) {
 				MaxWorkerDownTimeSec:   300,
 			}
 		}
+	} else if Mode == cluster.TypeK8sConfigMap {
+		// ConfigMap mode: topology is sourced from a ConfigMap rather than CRDs.
+		// The k8s-configmap.yaml file is copied alongside route-server.yaml by
+		// deploy.sh and loaded by InitClusterConfig at startup.
+		cfg.ClusterCfg.ClusterServiceType = cluster.TypeK8sConfigMap
+		cfg.ClusterCfg.ConfigMapConfigFile = "k8s-configmap.yaml"
+		cfg.InstanceManagerCfg.HealthCheckConfig.EventThresholdIntervalMs = constant.ClusterHealthEventIntervalMs
+		// Namespace is propagated into the ConfigMap config at load time via
+		// POD_NAMESPACE env / in-cluster serviceaccount when left empty here.
+		// If the operator passed --cluster-namespace, record it so the config
+		// file's namespace field wins only when set.
+		if ClusterNamespace != "" {
+			if cfg.ClusterCfg.ConfigMapCfg == nil {
+				cfg.ClusterCfg.ConfigMapCfg = &config.ConfigMapConfig{}
+			}
+			cfg.ClusterCfg.ConfigMapCfg.Namespace = ClusterNamespace
+		}
+		remoteScheduleCfg := cfg.SchedulersCfg.RemoteSchedule
+		if remoteScheduleCfg == nil {
+			remoteScheduleCfg = &config.RemoteSchedulerCfg{
+				Enabled:        true,
+				RemoteType:     scheduler.ClusterLeaderType,
+				RemoteEndpoint: "",
+				NeedContent:    false,
+				TimeoutMs:      1000,
+			}
+		}
+		remoteScheduleCfg.RemoteType = scheduler.ClusterLeaderType
+		cfg.SchedulersCfg.RemoteSchedule = remoteScheduleCfg
+		cfg.MetaCleanupCfg = nil
+		return true
 	} else {
 		if cfg.MetaCleanupCfg == nil {
 			cfg.MetaCleanupCfg = &config.MetaCleanupConfig{}
@@ -874,7 +906,7 @@ func modifyClusterConfig(cfg *config.Config) (success bool) {
 }
 
 func parseArgs() {
-	flag.StringVar(&TemplatePath, "template", "/opt/route_server/mo-deploy/route-server-template.yaml",
+	flag.StringVar(&TemplatePath, "template", "/opt/route_server/rs-deploy/route-server-template.yaml",
 		"path to template file")
 	flag.StringVar(&DeployTargetPath, "target", "/opt/route_server/",
 		"path to route_server deploy dir")
@@ -921,8 +953,9 @@ func parseArgs() {
 	flag.StringVar(&InferMode, "infer-mode", "PD", "infer deploy mode")
 	flag.StringVar(&InferModuleVersion, "infer-module-version", "pipeline", "infer orchestration module version")
 	flag.StringVar(&ReadinessCfg, "readiness-cfg", "", "readiness config, role least instance num, eg: prefill:1#decode:2#moe:3")
+	flag.StringVar(&ClusterNamespace, "cluster-namespace", "", "namespace for cluster mode, defaults to POD_NAMESPACE env if empty")
 	flag.UintVar(&OpsPort, "ops-port", 0, "port of the ops server for admin operations (default: http-port + 10)")
-	flag.StringVar(&OpsHTTPSEnable, "ops-enable-https", "", "enable HTTPS for ops server. true/false (default: true)")
+	flag.StringVar(&OpsHTTPSEnable, "ops-enable-https", "", "enable HTTPS for ops server. true/false (default: inherit template; false in the shipped template)")
 	flag.StringVar(&OpsMTLSEnable, "ops-enable-mtls", "", "enable mTLS for ops server (requires ops-tls-ca-cert-file). true/false (default: true)")
 	flag.StringVar(&OpsTLSCertFile, "ops-tls-cert-file", "", "path to ops TLS certificate file (default: reuse --tls-cert-file)")
 	flag.StringVar(&OpsTLSKeyFile, "ops-tls-key-file", "", "path to ops TLS private key file (default: reuse --tls-key-file)")
@@ -930,15 +963,15 @@ func parseArgs() {
 	flag.StringVar(&TLSCertFile, "tls-cert-file", "", "path to TLS certificate file (e.g. /etc/certs/server.crt)")
 	flag.StringVar(&TLSKeyFile, "tls-key-file", "", "path to TLS private key file (e.g. /etc/certs/server.key)")
 	flag.StringVar(&TLSCaCertFile, "tls-ca-cert-file", "", "path to CA certificate file for mTLS client verification (e.g. /etc/certs/ca.crt)")
-	flag.StringVar(&EnableHTTPS, "enable-https", "", "enable HTTPS for the main server port. true/false (default: true)")
+	flag.StringVar(&EnableHTTPS, "enable-https", "", "enable HTTPS for the main server port. true/false (default: inherit template; false in the shipped template)")
 	flag.StringVar(&EnableMTLS, "enable-mtls", "", "enable mutual TLS (requires tls-ca-cert-file). true/false (default: true)")
 	flag.StringVar(&TLSSkipVerify, "tls-skip-verify", "", "skip TLS certificate verification. true/false (default: false)")
-	flag.StringVar(&ClientHTTPSEnable, "client-https-enable", "", "enable HTTPS for vLLM instance client. true/false (default: true)")
+	flag.StringVar(&ClientHTTPSEnable, "client-https-enable", "", "enable HTTPS for vLLM instance client. true/false (default: inherit template; false in the shipped template)")
 	flag.StringVar(&ClientMTLSEnable, "client-mtls-enable", "", "enable mTLS for vLLM instance client. true/false (default: true)")
 	flag.StringVar(&ClientCertFile, "client-cert-file", "", "path to vLLM client TLS certificate file (e.g. /etc/certs/client.crt)")
 	flag.StringVar(&ClientKeyFile, "client-key-file", "", "path to vLLM client TLS private key file (e.g. /etc/certs/client.key)")
 	flag.StringVar(&ClientCaCertFile, "client-ca-cert-file", "", "path to vLLM client CA certificate file (e.g. /etc/certs/ca.crt)")
-	flag.StringVar(&EtcdTLSEnable, "etcd-tls-enable", "", "enable TLS for etcd connection. true/false (default: true)")
+	flag.StringVar(&EtcdTLSEnable, "etcd-tls-enable", "", "enable TLS for etcd connection. true/false (default: inherit template; false in the shipped template)")
 	flag.StringVar(&EtcdMTLSEnable, "etcd-mtls-enable", "", "enable mTLS for etcd connection. true/false (default: true)")
 	flag.StringVar(&EtcdCertFile, "etcd-cert-file", "", "path to etcd client TLS certificate file (e.g. /etc/certs/etcd-client.crt)")
 	flag.StringVar(&EtcdKeyFile, "etcd-key-file", "", "path to etcd client TLS private key file (e.g. /etc/certs/etcd-client.key)")

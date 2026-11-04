@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,8 +29,8 @@ import (
 	"testing"
 	"time"
 
-	"infer-dp-scheduler/pkg/common/constant"
-	"infer-dp-scheduler/pkg/route-server/instances"
+	"route-server/pkg/common/constant"
+	"route-server/pkg/route-server/instances"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -85,15 +85,15 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	projectRoot = getProjectRoot()
 
 	By("build route-server")
-	rsPath, err = gexec.Build("infer-dp-scheduler/cmd/route_server")
+	rsPath, err = gexec.Build("route-server/cmd/route_server")
 	Expect(err).NotTo(HaveOccurred())
 
 	By("build mock vllm")
-	mockVLLMPath, err = gexec.Build("infer-dp-scheduler/cmd/mock_server")
+	mockVLLMPath, err = gexec.Build("route-server/cmd/mock_server")
 	Expect(err).NotTo(HaveOccurred())
 
 	By("build config-tool")
-	configToolPath, err = gexec.Build("infer-dp-scheduler/cmd/config-tool")
+	configToolPath, err = gexec.Build("route-server/cmd/config-tool")
 	Expect(err).NotTo(HaveOccurred())
 
 	data := SuiteData{

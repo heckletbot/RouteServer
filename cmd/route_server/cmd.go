@@ -1,5 +1,5 @@
 /*
- * Copyright 2026 The vLLM-Cloud Authors.
+ * Copyright 2026 The RouteServer Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"infer-dp-scheduler/cmd/route_server/server"
-	"infer-dp-scheduler/pkg/common/logger"
+	"route-server/cmd/route_server/server"
+	"route-server/pkg/common/logger"
 )
 
 var (
