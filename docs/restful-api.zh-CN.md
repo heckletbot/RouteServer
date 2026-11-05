@@ -9,6 +9,7 @@
 - **Service Port**：对应 `deploy.sh` 的 `--port` 选项，用于业务推理请求。
 - **Operations Port**：对应 `deploy.sh` 的 `--ops-port` 选项，用于管理类请求（例如强制设置就绪状态）。
 - 部署时若未指定 `--ops-port`，Operations Port 默认为 **Service Port + 10**。
+- 当 `server.enable-ops-apis-on-service-port` 为 `true` 时，所有运维 API 会**同时**注册在 Service Port 与 Operations Port 上。**生产环境应设为 `false`**，使管理端点仅在 Operations Port 上提供，并将该端口绑定到管理网卡或内部运维子网。
 
 ## 目录
 
@@ -356,7 +357,7 @@
 
 ### POST /schedule
 
-**监听端口**：Operations Port
+**监听端口**：Operations Port 和 Service Port
 
 **功能**：分布式远程调度接口，处理推理任务调度请求，并根据集群状态与负载情况分配推理资源。
 
@@ -565,7 +566,7 @@
 
 ### POST /internal/worker/force-readiness
 
-**监听端口**：Operations Port
+**监听端口**：Operations Port 和 Service Port
 
 **功能**：强制设置 RouteServer worker 节点的就绪状态（应急逃生通道）。当熔断自动判定出现异常时，可通过该接口手动干预 worker 的就绪状态，控制 k8s 是否向该 worker 分发流量。
 
@@ -576,7 +577,7 @@
 **约束/条件**：
 - 仅在熔断启用时生效（`circuit-breaker.enable: true`）
 - 熔断未启用时返回 `disabled` 状态
-- 该接口仅绑定在 Operations Port
+- 监听在 Operations Port；当 `server.enable-ops-apis-on-service-port` 为 `true`（模板随包提供的取值）时，同时监听 Service Port。生产环境应设为 `false`，仅通过运维端口调用该应急开关
 - 除非再次修改或 RouteServer 重启，否则熔断会一直保持该强制模式
 
 **参数**：
@@ -656,7 +657,7 @@
 
 ### POST /internal/abort
 
-**监听端口**：Operations Port
+**监听端口**：Operations Port 和 Service Port
 
 **功能**：中止正在运行的推理请求，用于请求取消与资源释放。
 
@@ -715,7 +716,7 @@
 
 ### GET /internal/running_details
 
-**监听端口**：Operations Port
+**监听端口**：Operations Port 和 Service Port
 
 **功能**：查看指定 RouteServer 进程下各实例的活跃请求信息。
 
@@ -770,7 +771,7 @@
 
 ### POST /cluster/peer/join
 
-**监听端口**：Operations Port
+**监听端口**：Operations Port 和 Service Port
 
 **功能**：处理节点加入集群的请求。
 
@@ -818,7 +819,7 @@
 
 ### POST /cluster/peer/leave
 
-**监听端口**：Operations Port
+**监听端口**：Operations Port 和 Service Port
 
 **功能**：处理节点离开集群的请求。
 
@@ -854,7 +855,7 @@
 
 ### POST /cluster/instance/join
 
-**监听端口**：Operations Port
+**监听端口**：Operations Port 和 Service Port
 
 **功能**：处理实例加入集群的请求。
 
@@ -919,7 +920,7 @@
 
 ### POST /cluster/instance/leave
 
-**监听端口**：Operations Port
+**监听端口**：Operations Port 和 Service Port
 
 **功能**：处理实例离开集群的请求。
 
@@ -963,7 +964,7 @@
 
 ### POST /cluster/abort
 
-**监听端口**：Operations Port
+**监听端口**：Operations Port 和 Service Port
 
 **功能**：在整个 RouteServer 集群范围内中止指定请求。
 
@@ -1185,7 +1186,7 @@
 
 ### GET /cluster/running_details
 
-**监听端口**：Operations Port
+**监听端口**：Operations Port 和 Service Port
 
 **功能**：获取集群中运行中任务的明细。
 
@@ -1577,7 +1578,7 @@ HTTP 500
 
 ### POST /request_event
 
-**监听端口**：Operations Port
+**监听端口**：Operations Port 和 Service Port
 
 **功能**：分布式请求事件同步接口，用于请求生命周期管理。worker 向 Leader 发送请求/实例事件，供追踪与健康监控使用。
 

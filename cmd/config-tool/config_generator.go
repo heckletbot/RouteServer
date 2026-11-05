@@ -976,7 +976,7 @@ func parseArgs() {
 	flag.StringVar(&EtcdCertFile, "etcd-cert-file", "", "path to etcd client TLS certificate file (e.g. /etc/certs/etcd-client.crt)")
 	flag.StringVar(&EtcdKeyFile, "etcd-key-file", "", "path to etcd client TLS private key file (e.g. /etc/certs/etcd-client.key)")
 	flag.StringVar(&EtcdCaCertFile, "etcd-ca-cert-file", "", "path to etcd CA certificate file (e.g. /etc/certs/etcd-ca.crt)")
-	flag.StringVar(&EnableOpsAPIsOnServicePort, "enable-ops-apis-on-service-port", "", "register ops APIs on service port as well. true/false (default: false)")
+	flag.StringVar(&EnableOpsAPIsOnServicePort, "enable-ops-apis-on-service-port", "", "register ops APIs on service port as well. true/false (default: true)")
 	flag.Parse()
 }
 
