@@ -51,7 +51,7 @@ server:
     ca-cert-file:
     skip-verify: false
     enable-mtls: true
-  enable-ops-apis-on-service-port: false
+  enable-ops-apis-on-service-port: true
 logger:
   enabled: true
   filename: <dir_to_log>/route-server.log

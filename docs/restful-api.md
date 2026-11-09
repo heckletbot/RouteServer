@@ -9,6 +9,7 @@ The **Listen Port** in each API description indicates which port the API listens
 - **Service Port**: Corresponds to the `--port` option of `deploy.sh`, used for business inference requests.
 - **Operations Port**: Corresponds to the `--ops-port` option of `deploy.sh`, used for management-related requests (e.g., force readiness setting).
 - If `--ops-port` is not specified during deployment, the Operations Port defaults to **Service Port + 10**.
+- With `server.enable-ops-apis-on-service-port: true` (the value shipped in the template), every Ops API is registered on **both** the Service Port and the Operations Port. **For production, set it to `false`** so management endpoints are served only on the Operations Port, which should be bound to a management interface or an internal O&M subnet.
 
 ## Table of Contents
 
@@ -356,7 +357,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 
 ### POST /schedule
 
-**Listen Port**: Operations Port
+**Listen Port**: Operations Port & Service Port
 
 **Functionality**: Distributed remote scheduling interface, processes inference task scheduling requests, and allocates inference resources based on cluster status and load conditions.
 
@@ -565,7 +566,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 
 ### POST /internal/worker/force-readiness
 
-**Listen Port**: Operations Port
+**Listen Port**: Operations Port & Service Port
 
 **Functionality**: Force-set the readiness state of the RouteServer Worker node (emergency escape channel). When the circuit breaker auto-judgment behaves abnormally, this interface can be used to manually intervene in the Worker's readiness state, controlling whether k8s distributes traffic to this Worker.
 
@@ -576,7 +577,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 **Constraints/Conditions**:
 - Only effective when the circuit breaker is enabled (`circuit-breaker.enable: true`)
 - When circuit breaker is not enabled, returns `disabled` status
-- This interface is only bound to the Operations Port
+- Served on the Operations Port, and also on the Service Port while `server.enable-ops-apis-on-service-port` is `true` . Production deployments should set it to `false` and drive this emergency switch through the Operations Port only
 - The circuit breaker maintains the forced mode until changed again or RouteServer restarts
 
 **Parameters**:
@@ -656,7 +657,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 
 ### POST /internal/abort
 
-**Listen Port**: Operations Port
+**Listen Port**: Operations Port & Service Port
 
 **Functionality**: Abort running inference requests, used for request cancellation and resource release.
 
@@ -715,7 +716,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 
 ### GET /internal/running_details
 
-**Listen Port**: Operations Port
+**Listen Port**: Operations Port & Service Port
 
 **Functionality**: View active request information for each instance under the specified RouteServer process.
 
@@ -770,7 +771,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 
 ### POST /cluster/peer/join
 
-**Listen Port**: Operations Port
+**Listen Port**: Operations Port & Service Port
 
 **Functionality**: Handle node joining cluster requests.
 
@@ -818,7 +819,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 
 ### POST /cluster/peer/leave
 
-**Listen Port**: Operations Port
+**Listen Port**: Operations Port & Service Port
 
 **Functionality**: Handle node leaving cluster requests.
 
@@ -854,7 +855,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 
 ### POST /cluster/instance/join
 
-**Listen Port**: Operations Port
+**Listen Port**: Operations Port & Service Port
 
 **Functionality**: Handle instance joining cluster requests.
 
@@ -919,7 +920,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 
 ### POST /cluster/instance/leave
 
-**Listen Port**: Operations Port
+**Listen Port**: Operations Port & Service Port
 
 **Functionality**: Handle instance leaving cluster requests.
 
@@ -963,7 +964,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 
 ### POST /cluster/abort
 
-**Listen Port**: Operations Port
+**Listen Port**: Operations Port & Service Port
 
 **Functionality**: Abort specified requests across the entire RouteServer cluster.
 
@@ -1185,7 +1186,7 @@ The inference endpoints support the OpenAI-standard API format. RouteServer prox
 
 ### GET /cluster/running_details
 
-**Listen Port**: Operations Port
+**Listen Port**: Operations Port & Service Port
 
 **Functionality**: Get details of running tasks in the cluster.
 
@@ -1577,7 +1578,7 @@ HTTP 500
 
 ### POST /request_event
 
-**Listen Port**: Operations Port
+**Listen Port**: Operations Port & Service Port 
 
 **Functionality**: Distributed request event synchronization interface, used for request lifecycle management. Workers send request/instance events to the Leader for tracking and health monitoring.
 
