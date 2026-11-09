@@ -79,42 +79,44 @@ server:
     cert-file:
     key-file:
     ca-cert-file:
+  enable-ops-apis-on-service-port: true
 ```
 
-| 参数 | 类型 | 说明 | 约束 |
-| --- | --- | --- | --- |
-| `server.name` | string | 在集群内唯一标识该 RouteServer 节点的名称 | 必须在集群内唯一；重名会覆盖既有状态，并可能导致数据不一致 |
-| `server.addr` | string | RouteServer 监听 IP 地址 | 必须是合法的 IP 地址 |
-| `server.http-port` | int | RouteServer 监听 HTTP 端口 | 必须是合法且可用的端口 |
-| `server.infer-mode` | string | 影响请求处理流程的推理部署模式 | 默认值：`PD`。取值必须为以下之一：`PD`、`EPD`、`PD-AM`、`Hybrid`、`E-Hybrid`、`Layerwise-CDCP`、`Layerwise-CPCD`、`MetaServer-CDCP`、`MetaServer-CPCD`<br />详见部署文档。 |
-| `server.inference-module-type` | string | 流水线调度模式：`v0` 为基本线性调度，`pipeline` 为可配置的流水线调度 | 默认值：`v0`。必须为 `v0` 或 `pipeline` |
-| `server.v1-stream-writing-enabled` | bool | 启用 v1 流式写入模式 | 模板默认值：`true` |
-| `server.client-write-timeout-ms` | int | 客户端写超时，单位毫秒（0 = 不超时） | 模板默认值：`0` |
-| `server.rewrite-request-id` | bool | 启用 X-Request-Id 请求头重写 | 模板默认值：`true` |
-| `server.trace.enable-trace-token-log` | bool | 启用概要链路追踪日志（TTFT、TPOT、prompt token 等） | 默认值：`false`；模板默认值：`true` |
-| `server.trace.type` | List | 链路追踪能力类型：`log`、`otel`、`none`、`compose`。`log` 打印 reqId、span_id 与执行阶段；`otel` 通过 Jaeger 采集完整请求生命周期；`none` 关闭链路追踪 | 模板默认值：`["log"]` |
-| `server.trace.otel-config.jaeger-endpoint` | string | OpenTelemetry 链路追踪所用的 Jaeger/OTLP 端点，格式为 `IP:Port`（例如 `127.0.0.1:4317`） | 模板默认值：空 |
-| `server.trace.otel-config.jaeger-service-name` | string | Jaeger 服务名 | 默认值：`RouteServer` |
-| `server.trace.otel-config.span-update-seconds` | int | 向 Jaeger 发送 span 数据的间隔（秒） | 默认值：`5`。一次完整请求约产生 7 个 span；该值设置过大时，高并发下可能堆积过多本地 span 数据 |
-| `server.trace.otel-config.trace-sample-rate` | float | 链路追踪采样率。若上游父级已决定采样，则以其决定为准；否则按该采样率执行 | 必须位于 `[0.0, 1.0]` 区间 |
-| `server.response-header-blacklist[].header` | string | 从转发给客户端的响应中剥离的响应头名称 | 模板默认值：`Date`、`Server`、`X-Pad`、`X-Accel-` |
-| `server.response-header-blacklist[].prefix-matching` | bool | 是否按前缀匹配响应头名称 | 模板默认值：精确匹配的响应头为 `false`，`X-Accel-` 为 `true` |
-| `server.rate-limit.max-concurrent-requests` | int | RouteServer 可处理的最大并发活跃请求数 | 默认值：`5000`；模板默认值：`10000` |
-| `server.rate-limit.non-reference-apis.enabled` | bool | 对非参考 API 端点启用限流；令牌桶按 API 路径共享 | 模板默认值：`true` |
-| `server.rate-limit.non-reference-apis.requests-per-minute` | int | 非参考 API 每个 API 路径每分钟的最大请求数 | 模板默认值：`60` |
-| `server.rate-limit.non-reference-apis.exempt-paths` | List | 免于限流的 API 路径 | 模板默认值：`/v1/chat/completions`、`/v1/completions`、`/v1/metaserver` |
-| `server.rate-limit.non-reference-apis.cleanup-interval-minutes` | int | 清理过期限流记录的间隔 | 模板默认值：`5` |
-| `server.tls.enable-https` | bool | 为主服务端口启用 HTTPS | 模板默认值：`false` |
-| `server.tls.cert-file` | string | TLS 证书文件路径 | 模板默认值：空 |
-| `server.tls.key-file` | string | TLS 私钥文件路径 | 模板默认值：空 |
-| `server.tls.ca-cert-file` | string | 用于 mTLS 的 CA 证书文件路径 | 模板默认值：空 |
-| `server.tls.skip-verify` | bool | 跳过 TLS 证书校验（不建议用于生产环境） | 模板默认值：`false` |
-| `server.tls.enable-mtls` | bool | 为主服务端口启用双向 TLS（mTLS） | 模板默认值：`true` |
-| `server.ops-tls.enable-https` | bool | 为 OPS（管理）端口启用 HTTPS | 模板默认值：`false` |
-| `server.ops-tls.cert-file` | string | OPS TLS 证书文件路径 | 模板默认值：空 |
-| `server.ops-tls.key-file` | string | OPS TLS 私钥文件路径 | 模板默认值：空 |
-| `server.ops-tls.ca-cert-file` | string | 用于 mTLS 的 OPS CA 证书文件路径 | 模板默认值：空 |
-| `server.ops-port` | / | 未在 yaml 中列出，使用 `deploy.sh --ops-port` 设置，详见部署文档。 | |
+| 参数 | 类型 | 说明                                                                                                            | 约束                                                                                                                                           |
+| --- | --- |---------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| `server.name` | string | 在集群内唯一标识该 RouteServer 节点的名称                                                                                   | 必须在集群内唯一；重名会覆盖既有状态，并可能导致数据不一致                                                                                                                |
+| `server.addr` | string | RouteServer 监听 IP 地址                                                                                          | 必须是合法的 IP 地址                                                                                                                                 |
+| `server.http-port` | int | RouteServer 监听 HTTP 端口                                                                                        | 必须是合法且可用的端口                                                                                                                                  |
+| `server.infer-mode` | string | 影响请求处理流程的推理部署模式                                                                                               | 默认值：`PD`。取值必须为以下之一：`PD`、`EPD`、`PD-AM`、`Hybrid`、`E-Hybrid`、`Layerwise-CDCP`、`Layerwise-CPCD`、`MetaServer-CDCP`、`MetaServer-CPCD`<br />详见部署文档。 |
+| `server.inference-module-type` | string | 流水线调度模式：`v0` 为基本线性调度，`pipeline` 为可配置的流水线调度                                                                    | 默认值：`v0`。必须为 `v0` 或 `pipeline`                                                                                                               |
+| `server.v1-stream-writing-enabled` | bool | 启用 v1 流式写入模式                                                                                                  | 模板默认值：`true`                                                                                                                                 |
+| `server.client-write-timeout-ms` | int | 客户端写超时，单位毫秒（0 = 不超时）                                                                                          | 模板默认值：`0`                                                                                                                                    |
+| `server.rewrite-request-id` | bool | 启用 X-Request-Id 请求头重写                                                                                         | 模板默认值：`true`                                                                                                                                 |
+| `server.trace.enable-trace-token-log` | bool | 启用概要链路追踪日志（TTFT、TPOT、prompt token 等）                                                                          | 默认值：`false`；模板默认值：`true`                                                                                                                     |
+| `server.trace.type` | List | 链路追踪能力类型：`log`、`otel`、`none`、`compose`。`log` 打印 reqId、span_id 与执行阶段；`otel` 通过 Jaeger 采集完整请求生命周期；`none` 关闭链路追踪 | 模板默认值：`["log"]`                                                                                                                              |
+| `server.trace.otel-config.jaeger-endpoint` | string | OpenTelemetry 链路追踪所用的 Jaeger/OTLP 端点，格式为 `IP:Port`（例如 `127.0.0.1:4317`）                                       | 模板默认值：空                                                                                                                                      |
+| `server.trace.otel-config.jaeger-service-name` | string | Jaeger 服务名                                                                                                    | 默认值：`RouteServer`                                                                                                                            |
+| `server.trace.otel-config.span-update-seconds` | int | 向 Jaeger 发送 span 数据的间隔（秒）                                                                                     | 默认值：`5`。一次完整请求约产生 7 个 span；该值设置过大时，高并发下可能堆积过多本地 span 数据                                                                                      |
+| `server.trace.otel-config.trace-sample-rate` | float | 链路追踪采样率。若上游父级已决定采样，则以其决定为准；否则按该采样率执行                                                                          | 必须位于 `[0.0, 1.0]` 区间                                                                                                                         |
+| `server.response-header-blacklist[].header` | string | 从转发给客户端的响应中剥离的响应头名称                                                                                           | 模板默认值：`Date`、`Server`、`X-Pad`、`X-Accel-`                                                                                                     |
+| `server.response-header-blacklist[].prefix-matching` | bool | 是否按前缀匹配响应头名称                                                                                                  | 模板默认值：精确匹配的响应头为 `false`，`X-Accel-` 为 `true`                                                                                                  |
+| `server.rate-limit.max-concurrent-requests` | int | RouteServer 可处理的最大并发活跃请求数                                                                                     | 默认值：`5000`；模板默认值：`10000`                                                                                                                     |
+| `server.rate-limit.non-reference-apis.enabled` | bool | 对非参考 API 端点启用限流；令牌桶按 API 路径共享                                                                                 | 模板默认值：`true`                                                                                                                                 |
+| `server.rate-limit.non-reference-apis.requests-per-minute` | int | 非参考 API 每个 API 路径每分钟的最大请求数                                                                                    | 模板默认值：`60`                                                                                                                                   |
+| `server.rate-limit.non-reference-apis.exempt-paths` | List | 免于限流的 API 路径                                                                                                  | 模板默认值：`/v1/chat/completions`、`/v1/completions`、`/v1/metaserver`                                                                              |
+| `server.rate-limit.non-reference-apis.cleanup-interval-minutes` | int | 清理过期限流记录的间隔                                                                                                   | 模板默认值：`5`                                                                                                                                    |
+| `server.tls.enable-https` | bool | 为主服务端口启用 HTTPS                                                                                                | 模板默认值：`false`                                                                                                                                |
+| `server.tls.cert-file` | string | TLS 证书文件路径                                                                                                    | 模板默认值：空                                                                                                                                      |
+| `server.tls.key-file` | string | TLS 私钥文件路径                                                                                                    | 模板默认值：空                                                                                                                                      |
+| `server.tls.ca-cert-file` | string | 用于 mTLS 的 CA 证书文件路径                                                                                           | 模板默认值：空                                                                                                                                      |
+| `server.tls.skip-verify` | bool | 跳过 TLS 证书校验（不建议用于生产环境）                                                                                        | 模板默认值：`false`                                                                                                                                |
+| `server.tls.enable-mtls` | bool | 为主服务端口启用双向 TLS（mTLS）                                                                                          | 模板默认值：`true`                                                                                                                                 |
+| `server.ops-tls.enable-https` | bool | 为 OPS（管理）端口启用 HTTPS                                                                                           | 模板默认值：`false`                                                                                                                                |
+| `server.ops-tls.cert-file` | string | OPS TLS 证书文件路径                                                                                                | 模板默认值：空                                                                                                                                      |
+| `server.ops-tls.key-file` | string | OPS TLS 私钥文件路径                                                                                                | 模板默认值：空                                                                                                                                      |
+| `server.ops-tls.ca-cert-file` | string | 用于 mTLS 的 OPS CA 证书文件路径                                                                                       | 模板默认值：空                                                                                                                                      |
+| `server.enable-ops-apis-on-service-port` | bool | 在 Ops 端口之外，将全部运维 API 同时注册到主服务端口                                                                               | 模板默认值：`true`。**生产环境推荐 `false`**                                                                                                              |
+| `server.ops-port` | / | 未在 yaml 中列出，使用 `deploy.sh --ops-port` 设置，详见部署文档。                                                              |                                                                                                                                              |
 
 ---
 
