@@ -176,7 +176,7 @@ def get_metric_values(text, metric_name: str):
 
 
 def instance_leave(args):
-    base_url = "http://{}/".format(args.rs_addr)
+    base_url = "http://{}".format(args.rs_addr)
     url = base_url + "/cluster/instance/leave"
     instance_ips = args.instance_ips.replace(" ", "").split(",")
     api_server_ports = args.api_server_ports.replace(" ", "").split(",")

@@ -107,7 +107,7 @@ def generate_instance_name(role, ip, port):
 
 
 def instance_join(args):
-    base_url = "http://{}/".format(args.rs_addr)
+    base_url = "http://{}".format(args.rs_addr)
     url = base_url + "/cluster/instance/join"
     static_infos = parse_static_infos_param(args.static_infos)
     instance_ips = args.instance_ips.replace(" ", "").split(",")
