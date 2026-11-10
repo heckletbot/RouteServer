@@ -557,7 +557,18 @@ func initMetricsCollector(app *App, metricsYamlPath string) (*metrics_collector.
 	metrics_collector.SetRunningFun(app.managers.clusterService.IsLeader)
 	metrics_collector.SetGetLatestInstancesFun(app.GetInstances)
 
-	collect, err := metrics_collector.NewMetricsCollector(collectInstances, metricsYamlPath)
+	peerTarget, err := metrics_collector.NewTargetClient(options.GetConfig().PeerClientCfg.HttpCfg,
+		constant.TLSPrivateKeyPasswordEnv)
+	if err != nil {
+		return nil, fmt.Errorf("fail to build metrics collector target for scheduler, err = %w", err)
+	}
+	instanceHttpCfg := options.GetConfig().HttpConfig
+	instanceTarget, err := metrics_collector.NewTargetClient(&instanceHttpCfg, constant.ClientKeyPasswordEnv)
+	if err != nil {
+		return nil, fmt.Errorf("fail to build metrics collector target for infer instances, err = %w", err)
+	}
+
+	collect, err := metrics_collector.NewMetricsCollector(collectInstances, metricsYamlPath, peerTarget, instanceTarget)
 	if err != nil {
 		logger.Log().Errorf("fail to init metrics collecctor, error: %s", err.Error())
 		return collect, err
