@@ -92,7 +92,8 @@ func main() {
 		os.Exit(1)
 	}
 	collectInterval := 5 * time.Second
-	collector, err := metrics_collector.NewMetricsCollector(instances, *metricsConfigYamlPath)
+	collector, err := metrics_collector.NewMetricsCollector(instances, *metricsConfigYamlPath,
+		metrics_collector.TargetClient{}, metrics_collector.TargetClient{})
 	if err != nil {
 		os.Exit(1)
 	}
