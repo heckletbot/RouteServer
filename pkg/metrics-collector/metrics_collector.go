@@ -17,7 +17,6 @@
 package metrics_collector
 
 import (
-	"crypto/tls"
 	"fmt"
 	"io"
 	"math"
@@ -115,10 +114,8 @@ type Collector struct {
 	aggregatedCounterMetrics   map[string]*prometheus.CounterVec
 	aggregatedHistogramMetrics map[string]*CustomHistogram
 	metricsConfig              MetricsConfig
-
-	peerClientTlsCfg     *tls.Config
-	instanceClientTlsCfg *tls.Config
-	selfName             string
+	peerTransport              TargetClient
+	instanceTransport          TargetClient
 }
 
 var isRunning func() bool
@@ -148,7 +145,7 @@ func SetGetLatestInstancesFun(customizeGetLatestInstances func() map[string]Inst
 	}
 }
 
-func NewMetricsCollector(instances []Instance, yamlPath string) (*Collector, error) {
+func NewMetricsCollector(instances []Instance, yamlPath string, peerTarget, instanceTarget TargetClient) (*Collector, error) {
 	logger.InitLogger()
 	InitRunning()
 	registry := prometheus.NewRegistry()
@@ -230,6 +227,9 @@ func NewMetricsCollector(instances []Instance, yamlPath string) (*Collector, err
 		aggregatedHistogramMetrics: aggregatedHistogramMetrics,
 		// Aggregation configuration
 		metricsConfig: *metricsConfig,
+		// transport and scheme for tls
+		peerTransport:     peerTarget,
+		instanceTransport: instanceTarget,
 	}
 	logger.Logger().Infof("init metrics collector successful and interval time is %d seconds", interval)
 	SetGetLatestInstancesFun(metricsCollector.getAllInstances)
@@ -437,11 +437,11 @@ func (c *Collector) fetchMetrics(instance Instance) (string, error) {
 	// build request with port and ip
 	var url string
 	if instance.Role == "Scheduler" {
-		client.Transport = &http.Transport{TLSClientConfig: c.peerClientTlsCfg}
-		url = fmt.Sprintf("http://%s:%d/internal/metrics", instance.IP, instance.Port)
+		client.Transport = c.peerTransport.Transport
+		url = fmt.Sprintf("%s://%s:%d/internal/metrics", c.peerTransport.scheme, instance.IP, instance.Port)
 	} else {
-		client.Transport = &http.Transport{TLSClientConfig: c.instanceClientTlsCfg}
-		url = fmt.Sprintf("http://%s:%d/metrics", instance.IP, instance.Port)
+		client.Transport = c.instanceTransport.Transport
+		url = fmt.Sprintf("%s://%s:%d/metrics", c.instanceTransport.scheme, instance.IP, instance.Port)
 	}
 
 	req, err := http.NewRequest("GET", url, nil)
