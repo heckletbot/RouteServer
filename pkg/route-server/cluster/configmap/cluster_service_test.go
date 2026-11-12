@@ -17,7 +17,9 @@
 package configmap
 
 import (
+	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"route-server/pkg/common/cluster"
@@ -27,6 +29,11 @@ import (
 	"route-server/pkg/route-server/metrics"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 // ===================== IsSingleton =====================
@@ -82,8 +89,71 @@ func TestConfigMapClusterService_Init_WithNamespace(t *testing.T) {
 	assert.Equal(t, "my-namespace", cs.namespace)
 	assert.NotNil(t, cs.cmCfg)
 	assert.NotNil(t, cs.stopChan)
-	assert.NotNil(t, cs.resignChan)
+	assert.NotNil(t, cs.campaignReady)
 	assert.NotNil(t, cs.informerStopChan)
+}
+
+func TestConfigMapClusterService_CampaignFollowsConfigMapMembership(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		metrics.InitMetrics(nil)
+		cs := &ConfigMapClusterService{}
+		cfg := config.ClusterConfig{ConfigMapCfg: &config.ConfigMapConfig{
+			Namespace: "test", TopologyKey: "rank_table.json",
+		}}
+		cs.Init(cfg, nil, &utils.Peer{
+			Addr: utils.PeerAddr{Host: "10.0.0.1", HttpPort: 9800}, IsCandidate: true,
+		}, nil)
+		cs.kubeClient = fake.NewSimpleClientset()
+		defer cs.Close()
+		leases := cs.kubeClient.CoordinationV1().Leases(cs.namespace)
+		ctx := context.Background()
+		const topology = `{"server_group_list":[{"group_type":"master","server_list":[{"server_ip":"10.0.0.1"}]}]}`
+		present := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{ResourceVersion: "2"},
+			Data:       map[string]string{cfg.ConfigMapCfg.TopologyKey: topology},
+		}
+		absent := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{ResourceVersion: "1"}}
+
+		cs.onConfigMapAdd(absent)
+		fallback, err := ParseTopology(topology)
+		require.NoError(t, err)
+		cs.applyTopology(fallback, cluster.StateUpdateReasonPodListReconcile)
+		go cs.startLeaderCampaign()
+		synctest.Wait()
+		_, err = leases.Get(ctx, cluster.LeaderElectionKey, metav1.GetOptions{})
+		require.True(t, errors.IsNotFound(err), "candidate outside the ConfigMap must not acquire the lease")
+
+		cs.onConfigMapUpdate(absent, present)
+		synctest.Wait()
+		require.True(t, cs.IsLeader())
+		before, err := leases.Get(ctx, cluster.LeaderElectionKey, metav1.GetOptions{})
+		require.NoError(t, err)
+		require.Equal(t, cs.LocalNode().Name, *before.Spec.HolderIdentity)
+
+		time.Sleep(time.Duration(defaultRetryPeriodSec+1) * time.Second)
+		synctest.Wait()
+		renewed, err := leases.Get(ctx, cluster.LeaderElectionKey, metav1.GetOptions{})
+		require.NoError(t, err)
+		require.True(t, renewed.Spec.RenewTime.After(before.Spec.RenewTime.Time))
+
+		removed := absent.DeepCopy()
+		removed.ResourceVersion = "3"
+		cs.onConfigMapUpdate(present, removed)
+		synctest.Wait()
+		require.False(t, cs.IsLeader())
+		time.Sleep(time.Duration(defaultLeaseDurationSec+1) * time.Second)
+		synctest.Wait()
+		expired, err := leases.Get(ctx, cluster.LeaderElectionKey, metav1.GetOptions{})
+		require.NoError(t, err)
+		require.Equal(t, renewed.Spec.RenewTime, expired.Spec.RenewTime)
+		require.Equal(t, renewed.Spec.HolderIdentity, expired.Spec.HolderIdentity)
+
+		readded := present.DeepCopy()
+		readded.ResourceVersion = "4"
+		cs.onConfigMapUpdate(removed, readded)
+		synctest.Wait()
+		require.True(t, cs.IsLeader())
+	})
 }
 
 func TestConfigMapClusterService_Init_NamespaceFromEnv(t *testing.T) {

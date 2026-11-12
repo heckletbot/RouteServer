@@ -131,8 +131,12 @@ type ConfigMapClusterService struct {
 	statusInformerStopChan  chan struct{}
 	informerStarted         atomic.Bool
 
-	leaderElector *leaderelection.LeaderElector
-	resignChan    chan struct{}
+	// Eligibility comes from the topology ConfigMap. Keep it and the active
+	// cancellation function under one lock so a removal cannot miss a campaign.
+	campaignMu       sync.Mutex
+	campaignEligible bool
+	campaignReady    chan struct{}
+	campaignCancel   context.CancelFunc
 
 	// atomicState holds *cluster.ClusterState built from the latest topology.
 	atomicState atomic.Value
@@ -182,7 +186,7 @@ func (cs *ConfigMapClusterService) Init(cfg config.ClusterConfig, initRoute *con
 	cs.peerClient = peerClient
 	cs.stateChangeListeners = make([]cluster.StateApplier, 0)
 	cs.stopChan = make(chan struct{})
-	cs.resignChan = make(chan struct{}, 1)
+	cs.campaignReady = make(chan struct{}, 1)
 	cs.informerStopChan = make(chan struct{})
 
 	// ConfigMapConfig is loaded by InitClusterConfig in pkg/common/cluster/utils.go
@@ -452,7 +456,7 @@ func (cs *ConfigMapClusterService) onConfigMapDelete(obj interface{}) {
 // and are NOT read here — they are fetched on demand via GetHealthStats and
 // restoreFailuresFromConfigMap.
 func (cs *ConfigMapClusterService) applyConfigMap(cm *corev1.ConfigMap, reason string) {
-	if cm == nil || cm.Data == nil {
+	if cm == nil {
 		return
 	}
 	topologyData := cm.Data[cs.cmCfg.TopologyKey]
@@ -484,6 +488,11 @@ func (cs *ConfigMapClusterService) applyTopology(topo *Topology, reason string) 
 		localOpsPort = cs.localNode.Addr.OpsPort
 	}
 	newPeers, newInstances := BuildPeersAndInstances(topo, cs.cmCfg, localHttpPort, localOpsPort)
+	if reason != cluster.StateUpdateReasonPodListReconcile && cs.localNode != nil && cs.localNode.IsCandidate {
+		localPeerName := EndpointName(effectiveRouterGroupType(cs.cmCfg), cs.localNode.Addr.Host, localHttpPort)
+		_, eligible := newPeers[localPeerName]
+		cs.setCampaignEligible(eligible)
+	}
 
 	oldPeers, oldInstances := cs.peekOldPeersAndInstances()
 	addedPeers, removedPeers := DiffPeers(oldPeers, newPeers)
@@ -564,6 +573,25 @@ func (cs *ConfigMapClusterService) notifyStateChangeListeners(newState *cluster.
 
 // ---- Leader election ----
 
+func (cs *ConfigMapClusterService) setCampaignEligible(eligible bool) {
+	cs.campaignMu.Lock()
+	defer cs.campaignMu.Unlock()
+	if cs.campaignEligible == eligible {
+		return
+	}
+	cs.campaignEligible = eligible
+	if !eligible {
+		if cs.campaignCancel != nil {
+			cs.campaignCancel()
+		}
+		return
+	}
+	select {
+	case cs.campaignReady <- struct{}{}:
+	default:
+	}
+}
+
 func (cs *ConfigMapClusterService) startLeaderCampaign() {
 	leaseDuration := time.Duration(defaultLeaseDurationSec) * time.Second
 	renewDeadline := time.Duration(defaultRenewDeadlineSec) * time.Second
@@ -609,54 +637,78 @@ func (cs *ConfigMapClusterService) startLeaderCampaign() {
 			continue
 		}
 
-		campaignCtx, campaignCancel := context.WithCancel(context.Background())
+		// client-go starts the leading callback in a goroutine. Let step-down
+		// finish after any recovery that already started.
+		var leadershipMu sync.Mutex
 		elector, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
 			Lock:          lock,
 			LeaseDuration: leaseDuration,
 			RenewDeadline: renewDeadline,
 			RetryPeriod:   retryPeriod,
 			Callbacks: leaderelection.LeaderCallbacks{
-				OnStartedLeading: cs.onStartedLeading,
-				OnStoppedLeading: cs.onStoppedLeading,
-				OnNewLeader:      cs.onNewLeader,
+				OnStartedLeading: func(ctx context.Context) {
+					leadershipMu.Lock()
+					defer leadershipMu.Unlock()
+					if ctx.Err() == nil {
+						cs.onStartedLeading(ctx)
+					}
+				},
+				OnStoppedLeading: func() {
+					leadershipMu.Lock()
+					defer leadershipMu.Unlock()
+					cs.onStoppedLeading()
+				},
+				OnNewLeader: cs.onNewLeader,
 			},
 			Name: lockName,
 		})
 		if err != nil {
-			campaignCancel()
 			logger.Log().Warnf("configmap failed to create leader elector: %v, retrying", err)
 			time.Sleep(retryPeriod)
 			continue
 		}
-		cs.leaderElector = elector
+
+		cs.campaignMu.Lock()
+		if !cs.campaignEligible {
+			cs.campaignMu.Unlock()
+			select {
+			case <-cs.stopChan:
+				return
+			case <-cs.campaignReady:
+				continue
+			}
+		}
+		campaignCtx, campaignCancel := context.WithCancel(context.Background())
+		cs.campaignCancel = campaignCancel
+		cs.campaignMu.Unlock()
 
 		go func() {
 			select {
-			case _, _ = <-cs.stopChan:
+			case <-cs.stopChan:
 				campaignCancel()
-				return
-			case _, _ = <-cs.resignChan:
-				logger.Log().Warnf("configmap leader resigning due to recovery failure")
-				campaignCancel()
-				return
-			case _, _ = <-campaignCtx.Done():
-				return
+			case <-campaignCtx.Done():
 			}
 		}()
 
 		elector.Run(campaignCtx)
+		cs.campaignMu.Lock()
+		canceled := campaignCtx.Err() != nil
 		campaignCancel()
+		cs.campaignCancel = nil
+		cs.campaignMu.Unlock()
 
 		select {
 		case <-cs.stopChan:
 			return
 		default:
 		}
-		if !cs.isLeader.Load() {
-			logger.Log().Warnf("configmap leader resigned or lost lease, re-campaigning with backoff")
-			time.Sleep(resignBackoffDelay)
-		} else {
-			logger.Log().Infof("configmap leader elector exited, re-campaigning")
+		if !canceled {
+			logger.Log().Warnf("configmap leader lost lease, re-campaigning with backoff")
+			select {
+			case <-cs.stopChan:
+				return
+			case <-time.After(resignBackoffDelay):
+			}
 		}
 	}
 }
@@ -754,7 +806,7 @@ func (cs *ConfigMapClusterService) onStoppedLeading() {
 	}
 	cs.isLeader.Store(false)
 	cs.leaderId.Store("")
-	logger.Log().Warnf("configmap leader election: lost leadership, reason=lease_expired")
+	logger.Log().Warnf("configmap leader election: stopped leading")
 	cs.setConnStatus(false)
 	rsmetrics.RecordETCDConnectionsRetries()
 	rsmetrics.RecordLeaderChange(cs.localNode.Name, "false")
@@ -767,11 +819,6 @@ func (cs *ConfigMapClusterService) onStoppedLeading() {
 	// Stop the Pod List reconciliation ticker — only the Leader runs it.
 	if cs.reconciler != nil {
 		cs.reconciler.stop()
-	}
-
-	select {
-	case cs.resignChan <- struct{}{}:
-	default:
 	}
 }
 
