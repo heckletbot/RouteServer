@@ -1,0 +1,71 @@
+# Created by .ignore support plugin (hsz.mobi)
+### Maven template
+target/
+
+# Eclipse
+.project
+.settings/
+.classpath
+
+### Java template
+*.class
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package Files #
+*.jar
+*.war
+*.ear
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*
+
+
+### JetBrains template
+# Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion
+
+*.iml
+
+## Directory-based project format:
+.idea/
+# if you remove the above rule, at least ignore the following:
+
+## File-based project format:
+*.ipr
+*.iws
+
+## Plugin-specific files:
+
+# IntelliJ
+/out/
+scalastyle-result.xml
+
+# mpeltonen/sbt-idea plugin
+.idea_modules/
+
+# JIRA plugin
+atlassian-ide-plugin.xml
+
+# Crashlytics plugin (for Android Studio and IntelliJ)
+com_crashlytics_export_strings.xml
+crashlytics.properties
+crashlytics-build.properties
+
+## meta
+*job_db
+
+# vscode
+.vscode
+.env
+
+.idea/
+*.iml
+go.sum
+
+cmd/route_server/route_server
+cmd/perf-tool/perf-tool
+e2etest/report/
+e2etest/environment/
+.codemate
+.worktrees/

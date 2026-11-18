@@ -1,0 +1,45 @@
+infer_modes:
+  - Hybrid
+description: pipeline for hybrid mode where encode\prefill\decode is aggregate in the same infer instance.
+pipeline_cfg:
+  api_endpoints:
+    - path: "/v1/chat/completions"
+      methods: [ "POST" ]
+      handler: chat_completions_infer
+    - path: "/v1/completions"
+      methods: [ "POST" ]
+      handler: completions_infer
+    - path: "/v1/messages"
+      methods: [ "POST" ]
+      handler: messages_infer
+  phases:
+    - name: req_schedule
+      type: Schedule
+      span_name: decode_stage
+      stage_name: Decode
+      schedule_params:
+        instance_type: decode
+        request_load:
+          - usage
+          - text
+          - bytes
+    - name: req_execute
+      type: Execute
+      span_name: decode_stage
+      stage_name: Decode
+      execute_params:
+        instance_type: decode
+        pre_process_request_funcs:
+          - decode_prepare_request
+        post_process_funcs:
+          - decode_post_response
+        post_phase_funcs:
+          - complete_post_phase
+      dependsOn:
+        - req_schedule
+  success_phase:
+    name: success
+    type: default_success
+  error_phase:
+    name: failure
+    type: default_fail

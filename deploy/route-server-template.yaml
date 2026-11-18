@@ -1,0 +1,303 @@
+server:
+  addr: <ip>
+  http-port: <port>
+  name: <name>
+  infer-mode: PD
+  inference-module-type: v0
+  v1-stream-writing-enabled: true
+  client-write-timeout-ms: 0
+  max-request-body-size-mb: 0  # Request body size limit in MB; 0 means no limit
+  rewrite-request-id: true
+  anthropic-error-type-config-file-name: anthropic_error_type_config.yaml
+  trace:
+    enable-trace-token-log: true
+    type:
+      - log
+    otel-config:
+      jaeger-endpoint:
+      jaeger-service-name: RouteServer
+      span-update-seconds: 5
+      trace-sample-rate: 1.0
+  response-header-blacklist:
+  - header: "Date"
+    prefix-matching: false
+  - header: "Server"
+    prefix-matching: false
+  - header: "X-Pad"
+    prefix-matching: false
+  - header: "X-Accel-"
+    prefix-matching: true
+  rate-limit:
+    max-concurrent-requests: 10000
+    non-reference-apis:
+      enabled: false  # Enable rate limiting for non-reference APIs (default off: no rate limiting)
+      requests-per-minute: 60  # 60 RPM
+      exempt-paths:  # Reference APIs exempt from rate limiting
+        - "/v1/chat/completions"
+        - "/v1/completions"
+        - "/v1/metaserver"
+      cleanup-interval-minutes: 5  # Cleanup expired entries every 5 minutes
+  tls:
+    enable-https: false
+    cert-file:
+    key-file:
+    ca-cert-file:
+    skip-verify: false
+    enable-mtls: true
+  ops-tls:
+    enable-https: false
+    cert-file:
+    key-file:
+    ca-cert-file:
+    skip-verify: false
+    enable-mtls: true
+  enable-ops-apis-on-service-port: true
+logger:
+  enabled: true
+  filename: <dir_to_log>/route-server.log
+  max-size: 1024
+  max-age: 15
+  max-backups: 10
+  local-time: true
+  compress: true
+  level: info
+  write-format: text
+http:
+  global-client-en: true
+  request-timeout: 54000
+  max-conns-per-host: 2048
+  max-idle-conns: 40960
+  max-idle-conns-per-host: 1800
+  idle-conn-timeout: 110
+  connection-retry: 3
+  dialer-timeout: 600
+  dialer-keepalive: 5
+  tls:
+    enable-https: false
+    enable-mtls: true
+    cert-file:
+    key-file:
+    ca-cert-file:
+    skip-verify: false
+instance-manager:
+  required-roles:
+    - prefill
+    - decode
+  instance-client-type: vllm
+  health-check-config:
+    event-threshold-interval-ms: 1000
+    probe-infer-request-timeout-ms: 10000
+    rest-health-common-config:
+      interval-ms: 10000
+      health-check-timeout-ms: 10000
+      max-concurrency: 1000
+      batch-size: 1
+    fallback-health-checker:
+      enable: true
+      resume-check-interval-ms: 1000
+      resume-time-ms: 90000
+    available-checkers:
+      rest-health:
+        enable: true
+        fail-on-500-directly: true
+        consecutive-time: 3
+      request-failures:
+        enable: true
+        consecutive-failure: false
+        time-window-ms: 90000
+        max-failures: 3
+        failure-conditions:
+          request-timeout: true
+          status-codes:
+            - 500
+            - 501
+            - 502
+            - 503
+        fake-request:
+          enable: true
+          time-interval-ms: 12000
+          max-fake-request-time: 5
+          failure-threshold: 3
+      link-down-failures:
+        enable: false
+        time-window-ms: 90000
+        max-failures: 3
+      link-blacklist-config:
+        enable: true
+        link-block-threshold: 3
+        entry-gc-interval-ms: 1000
+        link-block-windows-ms: 180000
+        link-block-tag-valid-time-ms: 600000
+        instance-block-ratio: 70
+      hang-checker:
+        enable: true
+        leader-check-interval-ms: 1000
+        worker-hang-tag-valid-time-ms: 10000
+        enable-probe-before-hang-check: true
+        hang-probe-interval-ms: 60000
+        hang-probe-timeout-ms: 10000
+        max-consecutive-invalid-probes: 3
+        hang-message-keywords:
+          - "KV cache load failed"
+        hang-thresholds:
+          - role: encode
+            max-non-active-time-ms: -1
+            skip-non-stream: false
+          - role: prefill
+            max-non-active-time-ms: -1
+            skip-non-stream: false
+          - role: decode
+            max-non-active-time-ms: 60000
+            skip-non-stream: true
+    unavailable-checkers:
+      rest-health:
+        enable: true
+        consecutive-time: 9
+        enable-probe-infer-request: true
+  broadcast-request-whitelist:
+    - path: "/version"
+      methods: ["GET"]
+    - path: "/v1/models"
+      methods: [ "GET" ]
+    - path: "/server_info"
+      methods: [ "GET" ]
+    - path: "/load"
+      methods: [ "GET" ]
+    - path: "/ping"
+      methods: [ "GET","POST" ]
+    - path: "/tokenize"
+      methods: [ "POST" ]
+    - path: "/detokenize"
+      methods: [ "POST" ]
+    - path: "/v1/embeddings"
+      methods: [ "POST" ]
+    - path: "/pooling"
+      methods: [ "POST" ]
+    - path: "/classify"
+      methods: [ "POST" ]
+    - path: "/score"
+      methods: [ "POST" ]
+    - path: "/v1/score"
+      methods: [ "POST" ]
+    - path: "/v1/audio/transcriptions"
+      methods: [ "POST" ]
+    - path: "/rerank"
+      methods: [ "POST" ]
+    - path: "/v1/rerank"
+      methods: [ "POST" ]
+    - path: "/v2/rerank"
+      methods: [ "POST" ]
+    - path: "/reset_prefix_cache"
+      methods: [ "POST" ]
+    - path: "/sleep"
+      methods: [ "POST" ]
+    - path: "/wake_up"
+      methods: [ "POST" ]
+    - path: "/is_sleeping"
+      methods: [ "GET" ]
+    - path: "/invocations"
+      methods: [ "POST" ]
+    - path: "/v1/load_lora_adapter"
+      methods: [ "POST" ]
+    - path: "/v1/unload_lora_adapter"
+      methods: [ "POST" ]
+    - path: "/v1/messages/count_tokens"
+      methods: ["POST"]
+monitor:
+  monitor-client-type: none
+metrics:
+  enable: true
+  duration: 60
+  metrics-collector-config-file-name: metrics_config_vllm_0.11.0.yaml
+  fine-grained-tpot: false
+apc-manager:
+  enable: true
+  strategies:
+    hash:
+      block-size-bytes: 8000 # byte size of one hash block
+      max-blocks: 32 # maximum number of blocks
+      match-threshold: 0.0 # matching ratio threshold, apc scheduling will be performed when greater than this threshold
+
+      # Algorithm common configuration (memory management)
+      max-entries: 32768 # maximum number of entries
+      max-memory-mb: 512 # maximum memory usage
+      cache-ttl-sec: 3600 # timeout duration, unit: seconds
+scheduler-manager:
+  system-prompt-length: 100
+  slo-scheduling:
+    slo-enable: false
+    slo-fallback-enable: true
+    slo-group-healthy-threshold: 1
+  schedulers:
+    - instance-role: encode
+      scheduler-name: least-total-load
+      params:
+        verbose: false
+    - instance-role: prefill
+      scheduler-name: apc # use APC scheduling
+      params:
+        default-batch-size: 64 # default batch-size, will be used when prefill instance return invalid batch-size
+        prefix-load-base: 1 # additional base load added when predicting with this request, when set to 0, prefix completely matched predictions will have 0 added to p instance
+    - instance-role: decode
+      scheduler-name: abc6
+      params:
+        metrics-overdue-interval-ms: 100 # metrics overdue interval, when syncing metrics, metrics older than this time will be discarded
+        update-interval-ms: -1 # metrics update interval, needs to be configured after enabling prometheus, default is -1, meaning no metrics update
+        needStats: "vllm:num_requests_running,vllm:num_requests_waiting" # metrics type, needs to be configured after enabling prometheus
+  remote-schedule:
+    enabled: true
+    remote-type: endpoint
+    remote-endpoint: <remote_endpoint>
+    need-content: false
+    timeout-ms: 1000
+    cleanup-interval-ms: 60000
+cluster:
+  type: singleton
+  verbose: true
+  role_candidate: true
+  etcd:
+    etcd-endpoints:
+      - <etcd_endpoint1>
+      - <etcd_endpoint2>
+      - <etcd_endpoint3>
+    dial-timeout-ms: 5000
+    retry-time: 10
+    retry-interval-sec: 5
+    lease-ttl-sec: 3
+    lease-refresh-interval-ms: 1000
+    auto-sync-interval-sec: 10
+    tls:
+      enable-https: false
+      enable-mtls: true
+      cert-file:
+      key-file:
+      ca-cert-file:
+      skip-verify: false
+probe:
+  readiness:
+    prefill: 1
+    decode: 1
+  circuit-breaker:
+    enable: true # whether to enable the circuit breaker function
+    failure-rate-threshold: 0.8 # failure rate threshold, circuit breaker will be triggered when failure rate exceeds this value (0.0-1.0)
+    min-request-count: 10 # minimum request count, only judge whether to trigger circuit breaker when the number of requests in the circuit breaker window reaches this value
+    check-window-sec: 600 # circuit breaker window time, unit: seconds
+
+peer-client:
+  http:
+    request-timeout: 14400
+    max-conns-per-host: 2048
+    max-idle-conns: 40960
+    max-idle-conns-per-host: 1800
+    idle-conn-timeout: 110
+    dialer-timeout: 600
+    dialer-keepalive: 5
+    tls:
+      enable-https: false
+      enable-mtls: true
+      cert-file:
+      key-file:
+      ca-cert-file:
+      skip-verify: false
+  send-with-domain: false
+  domain: leader_domain
