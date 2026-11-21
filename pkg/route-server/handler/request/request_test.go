@@ -17,6 +17,7 @@
 package request
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -524,5 +525,52 @@ func TestParseMaxTokens(t *testing.T) {
 				assert.NoError(t, err, "expected no error but got: %v", err)
 			}
 		})
+	}
+}
+
+// TestParseSchedulingMetadata_ConflictErrorNoSessionIDLeak checks that a
+// conflicting session_id fails request creation and the returned error carries
+// no session id fragment that could reach the client.
+func TestParseSchedulingMetadata_ConflictErrorNoSessionIDLeak(t *testing.T) {
+	metrics.InitMetrics(nil)
+
+	const dynamoSess = "dynamo-secret-session-1234"
+	const codexSess = "codex-secret-session-5678"
+
+	request := openai.ChatCompletionRequest{
+		Model: "deepseek-r1",
+		Messages: []openai.ChatCompletionMessage{
+			{Content: "huawei"},
+		},
+		MaxTokens: 100,
+	}
+	bytes, _ := utils.SonicApi.Marshal(request)
+
+	httpRequest := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(string(bytes)))
+	httpRequest.Header.Set("X-Dynamo-Session-ID", dynamoSess)
+	httpRequest.Header.Set("thread-id", codexSess)
+
+	_, err := NewGenerateRequestImpl(httpRequest, constant.Prefill, true)
+	if err == nil {
+		t.Fatal("expected conflict error from NewGenerateRequestImpl, got nil")
+	}
+
+	wrappedMsg := fmt.Sprintf("fail to create generate request: %v", err)
+
+	for _, fragment := range []string{
+		dynamoSess,
+		codexSess,
+		"dynamo-secret",
+		"codex-secret",
+		"dyna",
+		"code",
+	} {
+		if strings.Contains(wrappedMsg, fragment) {
+			t.Errorf("wrapped error message leaks session_id fragment %q: %s", fragment, wrappedMsg)
+		}
+	}
+
+	if !strings.Contains(wrappedMsg, "conflict") {
+		t.Errorf("error should mention conflict, got: %s", wrappedMsg)
 	}
 }
