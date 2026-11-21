@@ -222,6 +222,14 @@ apc-manager:
       max-entries: 32768 # maximum number of entries
       max-memory-mb: 512 # maximum memory usage
       cache-ttl-sec: 3600 # timeout duration, unit: seconds
+conductor:
+  enabled: false # enable Mooncake Conductor registration and prefix-hit queries
+  base-url: http://127.0.0.1:13333 # absolute http/https URL of the Conductor service
+  request-timeout-ms: 1000 # timeout of one /register or /unregister call
+  query-timeout-ms: 100 # timeout of one /query call, kept short because it is on the request path
+  retry-interval-ms: 30000 # low-frequency retry period for failed registrations
+  block-size: 128 # must equal the inference engine's actual KV cache block size
+  register-roles: prefill # comma separated roles: prefill,decode
 scheduler-manager:
   system-prompt-length: 100
   slo-scheduling:

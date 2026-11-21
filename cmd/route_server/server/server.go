@@ -130,6 +130,13 @@ func RunServerLoop(cfg *commoncfg.Config, managers *Managers) error {
 	})
 	registerOpsDirectAPIs(opsEngine, adminHandler, &scheduleHandler, managers)
 
+	// Conductor hit query is a diagnostics/read-only API; it lives only on the ops
+	// port and is absent when the integration is disabled.
+	if managers.conductorQuerier != nil {
+		queryHandler := NewConductorQueryHandler(managers.conductorQuerier, managers.conductorBlockSize)
+		opsEngine.POST(utils.InternalConductorQueryPath, queryHandler.Handle)
+	}
+
 	opsLeaderApi := opsEngine.Group("")
 	opsLeaderApi.Use(adminHandler.adminLeaderProxyMiddleware())
 	registerOpsLeaderAPIs(opsLeaderApi, adminHandler)
