@@ -255,8 +255,12 @@ func (s *SchedulersManager) ClearAlgorithmLoadsAndEvents() {
 }
 
 func (s *SchedulersManager) GetStatsRegistrations() map[string][]string {
-	res := make(map[string][]string)
+	// GetStatsRegistrations returns, per role, the union of the metrics required by
+	// every SLO group, de-duplicated and sorted.
+	res := make(map[string][]string, len(s.roleLookUp))
 	for role, tagLookUp := range s.roleLookUp {
+		res[role] = make([]string, 0)
+		seen := make(map[string]struct{})
 		for sloTag, ctx := range tagLookUp {
 			needStats := make([]string, 0)
 			algoStats := ctx.Algorithm.NeedStatsList()
@@ -272,8 +276,16 @@ func (s *SchedulersManager) GetStatsRegistrations() map[string][]string {
 					}
 				}
 			}
-			res[role] = needStats
+
+			for _, stat := range needStats {
+				if _, ok := seen[stat]; ok {
+					continue
+				}
+				seen[stat] = struct{}{}
+				res[role] = append(res[role], stat)
+			}
 		}
+		sort.Strings(res[role])
 	}
 	return res
 }

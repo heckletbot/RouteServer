@@ -842,3 +842,45 @@ func (r *TestReq) GetType() string {
 func (r *TestReq) GetTokenCount() int32 {
 	return 10
 }
+
+// TestGetStatsRegistrationsUnionAcrossSLOTags checks that several SLO groups of
+// one role contribute the union of their NeedStatsList. Before the fix the last
+// group iterated overwrote the previous ones, so the other groups' metrics were
+// never scraped.
+func TestGetStatsRegistrationsUnionAcrossSLOTags(t *testing.T) {
+	smallAlgo := &TestScheduler{
+		NeedStats: []string{constant.MetricNumRequestsRunning, constant.MetricKVCacheUsagePerc},
+	}
+	largeAlgo := &TestScheduler{
+		NeedStats: []string{constant.MetricNumRequestsRunning, constant.MetricPromptTokensTotal},
+	}
+	sm := &SchedulersManager{
+		roleLookUp: map[string]map[string]*Context{
+			constant.Prefill: {
+				"small": {
+					TargetInstanceRole: constant.Prefill,
+					SLOTag:             "small",
+					Algorithm:          smallAlgo,
+				},
+				"large": {
+					TargetInstanceRole: constant.Prefill,
+					SLOTag:             "large",
+					Algorithm:          largeAlgo,
+				},
+			},
+		},
+		fallbackAlgo: map[string]map[string]scheduler.ScheduleAlgorithm{},
+	}
+
+	got := sm.GetStatsRegistrations()[constant.Prefill]
+	// Sorted output makes the order deterministic; running is declared twice but
+	// must appear once.
+	want := []string{
+		constant.MetricKVCacheUsagePerc,
+		constant.MetricNumRequestsRunning,
+		constant.MetricPromptTokensTotal,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("GetStatsRegistrations[%s] = %v, want %v", constant.Prefill, got, want)
+	}
+}
