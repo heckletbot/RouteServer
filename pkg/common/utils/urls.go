@@ -29,6 +29,7 @@ const (
 	InternalAbortPath          = "/internal/abort"
 	InternalRunningDetailsPath = "/internal/running_details"
 	InternalMetricsPath        = "/internal/metrics"
+	InternalConductorQueryPath = "/internal/conductor/query"
 	ScheduleRequestPath        = "schedule"
 	RequestEventPath           = "request_event"
 
@@ -67,6 +68,7 @@ var LeaderOperationSet = map[string]interface{}{
 var OpsUrls = map[string]interface{}{
 	unifyUri(InternalAbortPath):          nil,
 	unifyUri(InternalRunningDetailsPath): nil,
+	unifyUri(InternalConductorQueryPath): nil,
 
 	unifyUri(ScheduleRequestPath): nil,
 	unifyUri(RequestEventPath):    nil,
