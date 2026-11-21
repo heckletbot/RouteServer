@@ -17,6 +17,7 @@
 package request
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"io"
@@ -25,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"route-server/cmd/route_server/server/options"
 	"route-server/pkg/common/constant"
 	"route-server/pkg/common/logger"
 	"route-server/pkg/common/openai"
@@ -74,6 +76,13 @@ type GenerateRequestImpl struct {
 	sloInterval *utils.SLOInterval
 
 	BodyReqId string
+
+	// agentic scheduling metadata, parsed from headers and body
+	sessionId       string
+	parentSessionId string
+	priority        int32
+	outputLength    int32
+	scheduleCtx     context.Context
 }
 
 func (req *GenerateRequestImpl) GetPromptString() string {
@@ -158,6 +167,9 @@ func NewGenerateRequestImpl(request *http.Request, inferType string, isChat bool
 
 	impl.header = request.Header
 	impl.isChat = isChat
+	if err := impl.ParseSchedulingMetadata(); err != nil {
+		return nil, err
+	}
 	return impl, nil
 }
 
@@ -529,4 +541,50 @@ func NewMMGenerateRequestImpl(request *http.Request, inferType string, isChat bo
 
 func (req *GenerateRequestImpl) SetRequestId(reqId string) {
 	req.reqId = reqId
+}
+
+// ParseSchedulingMetadata reads the agentic scheduling fields. A conflicting
+// session id across sources is a hard error: silently dropping affinity would
+// just look like a slow scheduler to the caller.
+func (req *GenerateRequestImpl) ParseSchedulingMetadata() error {
+	if req.prefillBody == nil {
+		return nil
+	}
+	sid, parentSid, priority, outputLength, err := parseSchedulingFields(
+		req.prefillBody, req.header,
+		options.GetConfig().ServerConfig.EnableCorrelationIDAsSessionID,
+		req.originMaxTokens,
+	)
+	if err != nil {
+		return err
+	}
+	req.sessionId = sid
+	req.parentSessionId = parentSid
+	req.priority = priority
+	req.outputLength = outputLength
+	return nil
+}
+
+func (req *GenerateRequestImpl) GetSessionId() string {
+	return req.sessionId
+}
+
+func (req *GenerateRequestImpl) GetParentSessionId() string {
+	return req.parentSessionId
+}
+
+func (req *GenerateRequestImpl) GetPriority() int32 {
+	return req.priority
+}
+
+func (req *GenerateRequestImpl) GetOutputLength() int32 {
+	return req.outputLength
+}
+
+func (req *GenerateRequestImpl) GetScheduleContext() context.Context {
+	return req.scheduleCtx
+}
+
+func (req *GenerateRequestImpl) SetScheduleContext(ctx context.Context) {
+	req.scheduleCtx = ctx
 }
