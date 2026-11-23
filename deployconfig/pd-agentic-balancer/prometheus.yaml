@@ -1,0 +1,16 @@
+# agentic-balancer 所需的 vLLM 指标
+# NeedStatsList: num_requests_running / num_requests_waiting /
+#                kv_cache_usage_perc / max_num_seqs(非 prometheus 指标, 自动过滤)
+# kv_cache_usage_perc 为 vLLM >= 0.11 的指标名, agentic-balancer 要求 vLLM >= 0.11;
+# gpu_cache_usage_perc 为 0.9/0.10 的旧名, 一并列出便于兼容
+metrics:
+  guage:
+    - "vllm:num_requests_running"
+    - "vllm:num_requests_waiting"
+    - "vllm:kv_cache_usage_perc"
+    - "vllm:gpu_cache_usage_perc"
+  counter:
+    - "vllm:generation_tokens_total"
+    - "vllm:prompt_tokens_total"
+batch-size: 3
+max-concurrency: 100

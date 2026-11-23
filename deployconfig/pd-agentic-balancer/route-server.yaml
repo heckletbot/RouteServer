@@ -1,0 +1,236 @@
+# =============================================================================
+# PD 分离 + agentic-balancer 配置(基于 origin/agentic-balancer 分支代码构建)
+#
+# 代码基线: agentic-balancer 分支
+#   在 dev 基础上新增会话感知调度器 agentic-balancer(pkg/route-server/scheduler/
+#   agentic_balancer), prefill 调度由它接管; decode 仍为 abc6
+# 参考: D:\agent\DistributedScheduler\local-config-pd-ab\route-server.yaml
+#   (原 D:\agent\ab\DistributedScheduler\local-config-pd-ab)
+#
+# 与基线(pd-baseline)的差异:
+#   1. prefill 调度器: apc -> agentic-balancer(会话亲和 + 过载准入 + 排队老化)
+#   2. 不需要 apc-manager 节(agentic-balancer 不依赖 APC 前缀缓存)
+#   3. prometheus.yaml 需包含 vllm:kv_cache_usage_perc(调度器按 KV 使用率
+#      计算负载, 要求 vLLM >= 0.11)
+#   4. 端口错开(8001/8091), 便于与基线实例(8000/8090)同机并行 A/B 对比
+#
+# 启动: ENV_ROUTE_SERVER_CONFIG_PATH=<本目录> 且进程工作目录设为本目录
+#   (prometheus.yaml 与日志文件按相对路径解析)
+# =============================================================================
+server:
+  addr: 0.0.0.0
+  http-port: 8001
+  # 端口不能与后端实例端口(8010..8023)冲突; 缺省值为 http+10 会撞 8011
+  ops-port: 8091
+  name: rs-pd-agentic-balancer
+  infer-mode: PD
+  inference-module-type: pipeline
+  v1-stream-writing-enabled: true
+  client-write-timeout-ms: 0
+  rewrite-request-id: true
+  # TLS 为必填节; 本地测试使用明文 HTTP
+  tls:
+    enable-https: false
+    cert-file: ""
+    key-file: ""
+    ca-cert-file: ""
+    skip-verify: false
+    enable-mtls: false
+  ops-tls:
+    enable-https: false
+    cert-file: ""
+    key-file: ""
+    ca-cert-file: ""
+    skip-verify: false
+    enable-mtls: false
+  trace:
+    enable-trace-token-log: false
+    type:
+      - log
+  # agentic-balancer 分支新增: 无专用会话头的客户端可用 X-Correlation-ID
+  # 充当 session_id 回退(默认关闭; correlation id 通常为单请求粒度)
+  # enable-correlation-id-as-session-id: false
+logger:
+  enabled: true
+  filename: rs-pd-agentic-balancer.log
+  max-size: 1024
+  max-age: 1
+  max-backups: 10
+  compress: true
+  level: info
+http:
+  dialer-timeout: 30
+  dialer-keepalive: 30
+  request-timeout: 54000
+  max-idle-conns: 10000
+  max-idle-conns-per-host: 2000
+  idle-conn-timeout: 110
+instance-manager:
+  instance-client-type: vllm
+  required-roles:
+    - prefill
+    - decode
+  health-check-config:
+    event-threshold-interval-ms: 1000
+    rest-health-common-config:
+      interval-ms: 10000
+      health-check-timeout-ms: 10000
+      max-concurrency: 1000
+      batch-size: 1
+    fallback-health-checker:
+      enable: true
+      resume-check-interval-ms: 1000
+      resume-time-ms: 90000
+    available-checkers:
+      rest-health:
+        enable: true
+        fail-on-500-directly: true
+        consecutive-time: 3
+      request-failures:
+        enable: true
+        consecutive-failure: false
+        time-window-ms: 90000
+        max-failures: 3
+        failure-conditions:
+          request-timeout: true
+          status-codes: [ 500, 501, 502, 503 ]
+      link-blacklist-config:
+        enable: false
+      hang-checker:
+        enable: true
+        leader-check-interval-ms: 1000
+        worker-hang-tag-valid-time-ms: 10000
+        hang-thresholds:
+          - role: prefill
+            max-non-active-time-ms: -1
+            skip-non-stream: false
+          - role: decode
+            max-non-active-time-ms: 60000
+            skip-non-stream: true
+    unavailable-checkers:
+      rest-health:
+        enable: true
+        consecutive-time: 9
+  route-table:
+    instance-routes:
+      prefill-1:
+        ip: "7.242.105.78"
+        port: 8010
+        role: "prefill"
+        static-infos:
+          max_num_seqs: "32"
+          api-server-count: 1
+      prefill-2:
+        ip: "7.242.105.78"
+        port: 8011
+        role: "prefill"
+        static-infos:
+          max_num_seqs: "32"
+          api-server-count: 1
+      prefill-3:
+        ip: "7.242.105.78"
+        port: 8012
+        role: "prefill"
+        static-infos:
+          max_num_seqs: "32"
+          api-server-count: 1
+      prefill-4:
+        ip: "7.242.105.78"
+        port: 8013
+        role: "prefill"
+        static-infos:
+          max_num_seqs: "32"
+          api-server-count: 1
+      decode-1:
+        ip: "7.242.105.78"
+        port: 8020
+        role: "decode"
+        static-infos:
+          max_num_seqs: "32"
+          api-server-count: 1
+      decode-2:
+        ip: "7.242.105.78"
+        port: 8021
+        role: "decode"
+        static-infos:
+          max_num_seqs: "32"
+          api-server-count: 1
+      decode-3:
+        ip: "7.242.105.78"
+        port: 8022
+        role: "decode"
+        static-infos:
+          max_num_seqs: "32"
+          api-server-count: 1
+      decode-4:
+        ip: "7.242.105.78"
+        port: 8023
+        role: "decode"
+        static-infos:
+          max_num_seqs: "32"
+          api-server-count: 1
+
+# =============================================================================
+# agentic-balancer 分支的调度器组合: prefill=agentic-balancer, decode=abc6
+# 参数与参考配置(local-config-pd-ab)一致
+# =============================================================================
+scheduler-manager:
+  system-prompt-length: 100
+  slo-scheduling:
+    slo-enable: false
+    slo-fallback-enable: true
+    slo-group-healthy-threshold: 1
+  schedulers:
+    - instance-role: prefill
+      scheduler-name: agentic-balancer # 会话感知调度器(仅该分支注册)
+      params:
+        target-role: "prefill"          # 候选 worker 的角色过滤(Hybrid 模式可设 decode)
+        # lambda: 亲和收益相对负载成本的权重(legacy gamma/beta = 0.1/0.5 = 0.2)
+        affinity-weight: "0.2"
+        # U: 单 worker 准入阈值 u<U 与亲和门 g_U 共用的阈值
+        overload-util: "0.92"
+        # H: acting 时间的亲和衰减半衰期 2^(-delta/H)
+        affinity-half-life: "30s"
+        # eta: 每秒排队等待获得的优先级(legacy 10/60 ~= 0.167)
+        aging-rate: "0.167"
+        dispatch-timeout: "30s"          # 队列等待超时
+        max-queue-size: "1000"           # 优先队列容量
+        max-worker-history: "4"          # 每会话记录的 worker 历史长度
+        session-ttl: "30m"               # 会话表 TTL
+        update-interval-ms: "1000"       # worker 统计刷新间隔(默认 1000)
+    - instance-role: decode
+      scheduler-name: abc6
+      params:
+        max_num_seqs: "32"                 # 对应实例启动参数 max_num_seqs
+        update-interval-ms: "1000"         # 开启 prometheus 后的指标刷新间隔
+        metrics-overdue-interval-ms: "1000" # 同步指标时早于该时间的指标被丢弃
+
+monitor:
+  monitor-client-type: prometheus
+  prometheus:
+    # 相对进程工作目录解析; 建议进程 CWD 设为本目录, 或改为绝对路径
+    # 必须包含 vllm:kv_cache_usage_perc(agentic-balancer 的负载输入)
+    prometheus-config-path: "prometheus.yaml"
+metrics:
+  enable: true
+  duration: 60
+  metrics-collector-config-file-name: metrics_config_vllm_0.11.0.yaml
+
+# peer-client / ops-peer-client 两节必须存在: ApplyDefaultPeerClientConfig
+# 在 ops-peer-client 缺省时空指针解引用 OpsPeerClientCfg.HttpCfg(启动即 panic)
+peer-client:
+  send-with-domain: false
+  domain: ""
+  http: {}
+ops-peer-client:
+  send-with-domain: false
+  domain: ""
+  http: {}
+cluster:
+  type: singleton
+  verbose: true
+  role_candidate: true
+probe:
+  readiness:
+    prefill: 1
+    decode: 1

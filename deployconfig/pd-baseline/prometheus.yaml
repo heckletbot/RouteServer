@@ -1,0 +1,13 @@
+# 基线(abc6 decode / apc prefill)所需的 vLLM 指标
+# abc6 NeedStatsList: num_requests_waiting / num_requests_running /
+#                     prompt_tokens_total / generation_tokens_total
+# apc 的统计项(ActiveRequests 等)不属 prometheus 指标, 会被自动过滤
+metrics:
+  guage:
+    - "vllm:num_requests_running"
+    - "vllm:num_requests_waiting"
+  counter:
+    - "vllm:generation_tokens_total"
+    - "vllm:prompt_tokens_total"
+batch-size: 3
+max-concurrency: 100
