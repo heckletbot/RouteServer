@@ -171,9 +171,10 @@ const (
 	InferStageFinalize InferStage = "Finalize"
 	InferStageMOE      InferStage = "MOE"
 
-	ExecutePhase  = "Execute"
-	SchedulePhase = "Schedule"
-	DummyPhase    = "Dummy"
+	ExecutePhase    = "Execute"
+	SchedulePhase   = "Schedule"
+	DummyPhase      = "Dummy"
+	CoordRoutePhase = "CoordRoute"
 )
 
 // APCStrategyHash apc strategy

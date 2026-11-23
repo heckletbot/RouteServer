@@ -430,6 +430,29 @@ func (p *Pipeline) preparePipeline(ctx *PipelineContext) *errs.RSError {
 	return nil
 }
 
+// phaseByType returns the phase of the given type, or nil when the pipeline
+// config does not contain one.
+func (p *Pipeline) phaseByType(typeName string) Phase {
+	for _, phase := range p.phases {
+		if phase.PhaseTypeName() == typeName {
+			return phase
+		}
+	}
+	return nil
+}
+
+// schedulePhaseFor returns the schedule phase of one instance role, or nil when
+// the pipeline does not schedule that role.
+func (p *Pipeline) schedulePhaseFor(instanceType string) *SchedulePhase {
+	for _, phase := range p.phases {
+		schedulePhase, ok := phase.(*SchedulePhase)
+		if ok && schedulePhase.targetInstanceType == instanceType {
+			return schedulePhase
+		}
+	}
+	return nil
+}
+
 func (p *Pipeline) ExecutePipeline(ctx *PipelineContext) {
 	// prepare for pipeline
 	if errRs := p.preparePipeline(ctx); errRs != nil {

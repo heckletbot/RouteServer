@@ -38,6 +38,7 @@ var (
 		newLayerWiseMetaServerErrorPhase,
 		newLayerWiseMetaServerSuccessPhase,
 		newVllmAscendFailPhase,
+		newCoordRoutePhase,
 	}
 )
 
