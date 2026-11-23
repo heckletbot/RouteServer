@@ -99,6 +99,10 @@ func NewPipelineInferWithMode(inferMode string, isMain bool, instanceMgr instanc
 		return nil, fmt.Errorf("failed to create pipeline for type [%s], error: %v", inferMode, err)
 	}
 
+	if err := configureCoordRouting(pipeline, &cfg); err != nil {
+		return nil, err
+	}
+
 	phasesNameLookUp := make([]string, 0)
 	for _, phase := range pipeline.phases {
 		phasesNameLookUp = append(phasesNameLookUp, phase.PhaseName())
@@ -229,6 +233,12 @@ func (pi *PipelineInfer) doInfer(ctx *PipelineContext) {
 		ctx.SetError(errs.NewRSMaError(errs.EmptyReqErr.BuildArgs(), constant.StagePrepare), nil)
 		return
 	}
+
+	// Release the coord reservation however this request ends: success, failure,
+	// cancellation or timeout. The normal path releases earlier once the
+	// response is written; releasing again is a no-op because the slot is keyed
+	// by the reservation token.
+	defer releaseCoordReservation(ctx)
 
 	metrics.UpdateRunningRequests(constant.RequestSrcUser, 1)
 	defer metrics.UpdateRunningRequests(constant.RequestSrcUser, -1)

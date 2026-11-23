@@ -98,6 +98,34 @@ type AnthropicErrorTypeConfig struct {
 	Mappings []anthropic.ErrorMapping `yaml:"mappings"`
 }
 
+// CoordRoutingConfig controls the PD elastic (coord) routing feature: a request
+// may be served entirely by one idle worker of either role instead of walking
+// the prefill -> decode chain. Thresholds are the decision inputs of the
+// "imbalance" strategy; the per-role inflight caps are also the reservation
+// limits used to guard the single idle worker against a stale-snapshot herd.
+//
+// The feature is switched on by the config section and the CoordRoute phase in
+// the pipeline being present together; either alone refuses to start.
+type CoordRoutingConfig struct {
+	Strategy string `yaml:"strategy" default:"imbalance"`
+	// MetricsStaleSeconds rejects a worker snapshot older than this.
+	MetricsStaleSeconds float64 `yaml:"metrics-stale-seconds" default:"3.0"`
+	// Idle judgment: a worker is idle only when all of these hold.
+	IdleMaxWaiting  int     `yaml:"idle-max-waiting" default:"0"`
+	IdleMaxRunningP int     `yaml:"idle-max-running-p" default:"0"`
+	IdleMaxRunningD int     `yaml:"idle-max-running-d" default:"0"`
+	IdleMaxKVUsage  float64 `yaml:"idle-max-kv-usage" default:"0.50"`
+	// Per-role reservation caps for coord local routing. Idle judgment and the
+	// reservation both use the same field so admission and selection agree.
+	PHybridMaxInflight int `yaml:"p-hybrid-max-inflight" default:"2"`
+	DHybridMaxInflight int `yaml:"d-hybrid-max-inflight" default:"2"`
+	// Requests below this prompt size are not worth local routing.
+	LocalMinInputTokens int `yaml:"local-min-input-tokens" default:"32768"`
+	// Per-role prompt gates: a request above the role cap is not routed to that role.
+	PHybridMaxInputTokens int `yaml:"p-hybrid-max-input-tokens" default:"204800"`
+	DHybridMaxInputTokens int `yaml:"d-hybrid-max-input-tokens" default:"1024"`
+}
+
 type ServerConfig struct {
 	Addr                             string                `yaml:"addr"`
 	HttpPort                         string                `yaml:"http-port"`
@@ -121,6 +149,8 @@ type ServerConfig struct {
 	// fallback for clients that have no dedicated session header. Off by default:
 	// a correlation id is usually per-request rather than per-conversation.
 	EnableCorrelationIDAsSessionID bool `yaml:"enable-correlation-id-as-session-id" default:"false"`
+
+	CoordRouting *CoordRoutingConfig `yaml:"coord-routing,omitempty"`
 }
 
 type HttpConfig struct {
