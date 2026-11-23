@@ -748,7 +748,9 @@ func (s *SessionAwareScheduler) waitForQueued(
 		}
 		logger.Log().Warnf("agentic-balancer: request %s dispatch wait timed out after %s",
 			request.GetRequestId(), timeout)
-		return "", skipped, errs.NewRSMaError(&errs.GatewayTimeoutErr, "agentic-balancer", errs.FailureTypeTimeout)
+		return "", skipped, errs.NewRSMaError(
+			errs.GatewayTimeoutErr.BuildArgs(fmt.Sprintf("dispatch wait timed out after %s", timeout)),
+			"agentic-balancer", errs.FailureTypeTimeout)
 	case <-s.closeChan:
 		s.finalizeAbandon(sm, request, qEntry, resultChan, false)
 		logger.Log().Warnf("agentic-balancer: request %s aborted, scheduler closing", request.GetRequestId())
