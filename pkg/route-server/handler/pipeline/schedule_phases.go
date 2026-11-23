@@ -34,6 +34,7 @@ import (
 	"route-server/pkg/route-server/handler/request"
 	"route-server/pkg/route-server/metrics"
 	"route-server/pkg/route-server/scheduler"
+	"route-server/pkg/route-server/scheduler/coord_disaggregation"
 )
 
 const (
@@ -50,17 +51,19 @@ const (
 )
 
 const (
-	SkipPolicyNoSkip    = "no_skip"
-	SkipPolicyZeroImage = "skip_on_zero_image"
+	SkipPolicyNoSkip         = "no_skip"
+	SkipPolicyZeroImage      = "skip_on_zero_image"
+	SkipPolicySkipCoordLocal = "skip_if_coord_local"
 )
 
 type InitRequestLoadFunc func(ctx *PipelineContext, spanName string, params map[string]interface{}) (load int32, loadType string)
 type SkipPolicyFunc func(ctx *PipelineContext) (skip bool, reason string)
 
 var skipPolicyFuncMap = map[string]SkipPolicyFunc{
-	"":                  noSkip,
-	SkipPolicyNoSkip:    noSkip,
-	SkipPolicyZeroImage: skipOnZeroImage,
+	"":                       noSkip,
+	SkipPolicyNoSkip:         noSkip,
+	SkipPolicyZeroImage:      skipOnZeroImage,
+	SkipPolicySkipCoordLocal: skipIfCoordLocal,
 }
 
 var initRequestLoadFuncMap = map[string]InitRequestLoadFunc{
@@ -300,6 +303,15 @@ func skipOnZeroImage(ctx *PipelineContext) (bool, string) {
 		return true, fmt.Sprintf("request %v will skip encode staged for no image found", ctx.GetRequestCtx().ServingRequestId)
 	}
 
+	return false, ""
+}
+
+// skipIfCoordLocal skips the decode stage when the request was served locally
+// by one worker: a local route has no decode instance to schedule.
+func skipIfCoordLocal(ctx *PipelineContext) (bool, string) {
+	if ctx.RequestContext.CoordDecision.Mode == coord_disaggregation.ModeLocal {
+		return true, "coord_local_route"
+	}
 	return false, ""
 }
 

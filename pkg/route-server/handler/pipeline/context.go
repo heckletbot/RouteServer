@@ -36,6 +36,7 @@ import (
 	"route-server/pkg/common/utils"
 	"route-server/pkg/route-server/handler"
 	"route-server/pkg/route-server/handler/request"
+	"route-server/pkg/route-server/scheduler/coord_disaggregation"
 )
 
 type PipelineContext struct {
@@ -95,6 +96,13 @@ type RequestContext struct {
 
 	// Pre-appointed instance id, used for instance recover probing, shared between pipelines
 	InferMsg *health.InferMsg
+
+	// CoordDecision is the routing outcome written once by the CoordRoute phase;
+	// it is the single source of truth for every mode-aware branch downstream.
+	// CoordReservation owns the one release token of a local route; releasing it
+	// is idempotent, so both the post-response path and the request exit can run.
+	CoordDecision    coord_disaggregation.Decision
+	CoordReservation coord_disaggregation.Reservation
 
 	// Error handling across pipelines (moved from PipelineContext)
 	errorMutex             sync.RWMutex
