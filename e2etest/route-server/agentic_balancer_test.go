@@ -118,6 +118,9 @@ func startMockWorkersForConfig() []*gexec.Session {
 		params := []string{
 			"-addr", instance.Ip,
 			"-port", fmt.Sprintf("%d", instance.Port),
+			// The specs drive KV load through POST /metrics/update, which the
+			// mock exports only when asked to.
+			"-export_kv_metric",
 		}
 		cmd := exec.Command(mockVLLMPath, params...)
 		sess, err := gexec.Start(cmd, io.Discard, os.Stderr)
@@ -199,7 +202,7 @@ var _ = Describe(abHybridCtx, Ordered, func() {
 		By("start route-server")
 		session, err = gexec.Start(exec.Command(rsPath), io.Discard, os.Stderr)
 		Expect(err).NotTo(HaveOccurred())
-		Eventually(session.Out, 10*time.Second).Should(gbytes.Say("Start to listening on"))
+		Eventually(session.Out, 10*time.Second).Should(gbytes.Say("Start HTTP server on"))
 
 		By("wait until both workers are reported running")
 		clientRs = NewRSClient("http://localhost:" + abHybridListenPort)
@@ -445,7 +448,7 @@ var _ = Describe(abPDCtx, Ordered, func() {
 		By("start route-server")
 		session, err = gexec.Start(exec.Command(rsPath), io.Discard, os.Stderr)
 		Expect(err).NotTo(HaveOccurred())
-		Eventually(session.Out, 10*time.Second).Should(gbytes.Say("Start to listening on"))
+		Eventually(session.Out, 10*time.Second).Should(gbytes.Say("Start HTTP server on"))
 
 		By("wait until the prefill workers are reported running")
 		clientRs = NewRSClient("http://localhost:" + abPDListenPort)

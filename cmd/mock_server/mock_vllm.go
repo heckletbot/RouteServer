@@ -41,6 +41,7 @@ var (
 	isLinkDown     bool
 	isHealth       bool
 	tokenSize      int
+	exportKVMetric bool
 	enableHTTPS    bool
 	caCertFile     string
 	certFile       string
@@ -62,6 +63,7 @@ func main() {
 	flag.BoolVar(&isLinkDown, "isLinkDown", false, "indicates if the instance is \"link down\"(faulty status)")
 	flag.BoolVar(&isHealth, "isHealth", true, "indicates if the instance is healthy")
 	flag.IntVar(&tokenSize, "token-size", 0, "size of each token content in bytes, 0 means default short token")
+	flag.BoolVar(&exportKVMetric, "export_kv_metric", false, "export vllm:kv_cache_usage_perc and let /metrics/update set it")
 	flag.BoolVar(&enableHTTPS, "enable_https", false, "enable HTTPS server (mutually exclusive with HTTP)")
 	flag.StringVar(&caCertFile, "ca_cert", "", "CA certificate file path (required for HTTPS)")
 	flag.StringVar(&certFile, "cert", "", "server certificate file path (required for HTTPS)")
@@ -76,7 +78,7 @@ func main() {
 		IsHang:         isHang,
 		IsLinkDown:     isLinkDown,
 		IsHealth:       isHealth,
-		Collector:      server.NewMetricsCollector(),
+		Collector:      server.NewMetricsCollector(exportKVMetric),
 		Addr:           addr,
 		Port:           port,
 		LinkDownList:   make(map[string]struct{}),
