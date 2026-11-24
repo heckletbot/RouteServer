@@ -1106,7 +1106,9 @@ func (s *SessionAwareScheduler) ReportLoads(includeRequests bool, includeUnavail
 			for _, r := range sm.Inflight.GetByWorker(w.WorkerId) {
 				reqs[r.RequestId] = &scheduler.RequestLoadInfo{
 					LoadVal: 1,
-					Desc:    fmt.Sprintf("session=%s estTokens=%d", r.SessionId, r.EstimatedTokens),
+					// The load API shares the service port and has no extra auth.
+					// A full session id would let a caller reuse another user's affinity.
+					Desc: fmt.Sprintf("session=%s estTokens=%d", maskSessionID(r.SessionId), r.EstimatedTokens),
 				}
 			}
 			info.Requests = reqs

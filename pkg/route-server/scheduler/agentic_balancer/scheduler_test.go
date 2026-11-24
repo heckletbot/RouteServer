@@ -1410,3 +1410,31 @@ func TestTimeoutAfterHandoffAdoptedNoLeak(t *testing.T) {
 		t.Fatal("adopted request must be the reserved one")
 	}
 }
+
+func TestReportLoadsMasksSessionID(t *testing.T) {
+	const fullSession = "dynamo-secret-session-1234"
+	sm, cleanup := setupSM(t, prefWorker("w1", 0, 0, 8, 0))
+	defer cleanup()
+	sm.Inflight.Add(&state.InflightRequest{
+		RequestId:       "req-1",
+		WorkerId:        "w1",
+		SessionId:       fullSession,
+		EstimatedTokens: 12,
+	})
+
+	loads := newScheduler().ReportLoads(true, false)
+	if len(loads.Available) != 1 {
+		t.Fatalf("available workers = %d, want 1", len(loads.Available))
+	}
+	info := loads.Available[0].Requests["req-1"]
+	if info == nil {
+		t.Fatal("include_requests must return the in-flight request")
+	}
+	if strings.Contains(info.Desc, fullSession) {
+		t.Fatalf("load desc leaks the full session id: %s", info.Desc)
+	}
+	want := fmt.Sprintf("session=%s estTokens=12", maskSessionID(fullSession))
+	if info.Desc != want {
+		t.Fatalf("desc = %q, want %q", info.Desc, want)
+	}
+}
