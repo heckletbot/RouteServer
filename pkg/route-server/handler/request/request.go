@@ -536,6 +536,12 @@ func NewMMGenerateRequestImpl(request *http.Request, inferType string, isChat bo
 
 	impl.header = request.Header
 	impl.isChat = isChat
+	// Parsing runs after originMaxTokens is known: it is the fallback for
+	// output length. The PD encode path uses this constructor, so skipping it
+	// would drop session affinity and accept conflicting session headers.
+	if err := impl.ParseSchedulingMetadata(); err != nil {
+		return nil, err
+	}
 	return impl, nil
 }
 
