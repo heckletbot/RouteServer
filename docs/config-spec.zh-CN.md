@@ -452,6 +452,46 @@ apc-manager:
 
 ---
 
+## conductor
+
+`conductor` 段配置可选的 [Mooncake Conductor](https://github.com/kvcache-ai/Mooncake) 集成。
+启用后，RouteServer leader 会把选定角色的推理实例注册到 Conductor，并构建前缀命中查询客户端。
+Conductor 维护所有已注册实例发布的 KV cache block 索引，回答每个实例已经持有多长的前缀。
+
+本分支只提供注册与查询能力，尚未把命中结果接入调度决策。查询通过仅监听 ops 端口的诊断接口暴露：
+
+```
+POST /internal/conductor/query
+Content-Type: application/json
+
+{"model":"qwen3-0.6b","token_ids":[1,2,3,4],"cache_salt":"可选"}
+```
+
+响应给出每个实例的 `device`、`cpu_local`、`cpu_share`、`disk` 累计命中。集成未启用时该接口不存在。
+
+```yaml
+conductor:
+  enabled: false
+  base-url: http://127.0.0.1:13333
+  request-timeout-ms: 1000
+  query-timeout-ms: 100
+  retry-interval-ms: 30000
+  block-size: 128
+  register-roles: prefill
+```
+
+| 参数 | 类型 | 说明 | 约束 |
+| --- | --- | --- | --- |
+| `conductor.enabled` | bool | 启用 Conductor 注册与命中查询 | 默认值：`false`；模板默认值：`false` |
+| `conductor.base-url` | string | Conductor 服务的绝对 HTTP(S) URL | 默认值：`http://127.0.0.1:13333`。必须包含 scheme 与 host，不能带 userinfo、query 或 fragment |
+| `conductor.request-timeout-ms` | int | 单次 `/register` 或 `/unregister` 的超时 | 默认值：`1000`；`0` 表示使用默认值，负数报错 |
+| `conductor.query-timeout-ms` | int | 单次 `/query` 的超时。该调用位于请求路径上，应保持较短 | 默认值：`100`；`0` 表示使用默认值，负数报错 |
+| `conductor.retry-interval-ms` | int | 非瞬时错误导致注册失败后的低频重试周期 | 默认值：`30000`；`0` 表示使用默认值，负数报错 |
+| `conductor.block-size` | int | 注册和前缀查询共用的 KV cache block size | 默认值：`128`。**必须与推理实例实际值一致**；混合注意力模型可能是 `1024` |
+| `conductor.register-roles` | string | 需要注册的角色，逗号分隔；空值等价于 `prefill` | 允许值：`prefill`、`decode`；未知角色启动报错 |
+
+---
+
 ## scheduler-manager
 
 `scheduler-manager` 段配置面向不同实例角色的请求调度策略，包括基于 SLO 的调度与远程调度。

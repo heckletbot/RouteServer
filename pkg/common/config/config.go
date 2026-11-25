@@ -200,9 +200,32 @@ type Config struct {
 	MetricsCfg         MetricsCfg         `yaml:"metrics"`
 	ClusterCfg         ClusterConfig      `yaml:"cluster"`
 	ProbeCfg           ProbeCfg           `yaml:"probe"`
+	ConductorCfg       ConductorConfig    `yaml:"conductor"`
 	PeerClientCfg      *PeerClientConfig  `yaml:"peer-client,omitempty"`
 	OpsPeerClientCfg   *PeerClientConfig  `yaml:"ops-peer-client,omitempty"`
 	MetaCleanupCfg     *MetaCleanupConfig `yaml:"meta-cleanup,omitempty"`
+}
+
+// ConductorConfig configures the Mooncake Conductor integration. Conductor indexes
+// the KV cache of registered inference instances and answers prefix-hit queries.
+type ConductorConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// BaseURL is the absolute http/https URL of the Conductor service.
+	BaseURL string `yaml:"base-url"`
+	// RequestTimeoutMs bounds one /register or /unregister call.
+	RequestTimeoutMs int `yaml:"request-timeout-ms"`
+	// QueryTimeoutMs bounds one /query call. It sits close to the request path, so
+	// keep it much shorter than the registration timeout.
+	QueryTimeoutMs int `yaml:"query-timeout-ms"`
+	// RetryIntervalMs is the low-frequency retry period for failed registrations.
+	RetryIntervalMs int `yaml:"retry-interval-ms"`
+	// BlockSize is the KV cache block size the inference instances actually use.
+	// 0 falls back to the default; mixed-attention models must set it explicitly
+	// because vllm-ascend recomputes it from the mamba state shape.
+	BlockSize int `yaml:"block-size"`
+	// RegisterRoles lists which instance roles to register with Conductor, comma
+	// separated. Empty means "prefill".
+	RegisterRoles string `yaml:"register-roles"`
 }
 
 type MetaCleanupConfig struct {

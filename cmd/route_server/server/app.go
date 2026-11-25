@@ -40,6 +40,7 @@ import (
 	metrics_collector "route-server/pkg/metrics-collector"
 	metrics_logger "route-server/pkg/metrics-collector/logger"
 	"route-server/pkg/route-server/apc"
+	"route-server/pkg/route-server/conductor"
 	"route-server/pkg/route-server/handler"
 	"route-server/pkg/route-server/handler/infer"
 	"route-server/pkg/route-server/handler/pipeline"
@@ -67,6 +68,9 @@ type Managers struct {
 	schedulerManager       scheduler.Manager
 	messageCenter          utils.MessageCenter
 	apcManager             *apc.Manager // New: independent APC manager
+	conductorManager       *conductor.RegistrationManager
+	conductorQuerier       conductor.HitQuerier
+	conductorBlockSize     int
 }
 
 func (m *Managers) Close() {
@@ -84,6 +88,10 @@ func (m *Managers) Close() {
 
 	if m.apcManager != nil {
 		m.apcManager.Close()
+	}
+
+	if m.conductorManager != nil {
+		m.conductorManager.Close()
 	}
 
 	if m.clusterService != nil {
@@ -215,6 +223,16 @@ func (a *App) initManagers() (*Managers, error) {
 		clusterService.RegisterStateApplier(stateApplier)
 	}
 	logger.Log().Infof("Cluster service registered appliers %v successfully.", clusterService.GetApplierNames())
+
+	conductorManager, conductorQuerier, err := buildConductorManager(options.GetConfig().ConductorCfg, instanceManager)
+	if err != nil {
+		return managers, err
+	}
+	if conductorManager != nil {
+		clusterService.RegisterStateApplier(conductorManager)
+		logger.Log().Infof("Cluster service registered appliers %v successfully.", clusterService.GetApplierNames())
+	}
+
 	workerEventSyncer := health.NewWorkerEventSyncer(options.GetConfig(), peerClient, managers.WorkerBootId, messageCenter, clusterService)
 	if stateApplier, ok := workerEventSyncer.(cluster.StateApplier); ok {
 		clusterService.RegisterStateApplier(stateApplier)
@@ -257,6 +275,11 @@ func (a *App) initManagers() (*Managers, error) {
 	managers.schedulerManager = schedulerManager
 	managers.instanceManager = instanceManager
 	managers.apcManager = apcManager
+	managers.conductorManager = conductorManager
+	managers.conductorQuerier = conductorQuerier
+	if conductorManager != nil {
+		managers.conductorBlockSize = conductorManager.BlockSize()
+	}
 	managers.workerEventCollector = workerEventCollector
 	managers.runningRequestsManager = runningRequestsManager
 	managers.pdInferHandlers = pdInferHandlers
