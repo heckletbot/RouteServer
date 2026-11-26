@@ -60,6 +60,12 @@ const (
 
 	RegularPostPhase  = "regular_post_phase"
 	CompletePostPhase = "complete_post_phase"
+
+	// CoordPostPhaseFuncs are the mode-aware variants of the prefill hooks: they
+	// keep the PD path identical and only divert when the request is local.
+	CoordPrepareRequest  = "coord_prepare_request"
+	CoordProcessResponse = "coord_post_response"
+	CoordPostPhase       = "coord_post_phase"
 )
 
 var (
@@ -72,6 +78,7 @@ var (
 		KVPrepareRequest:            PrepareRequestBodyWithKV,
 		VllmAscendPrepareRequest:    PrepareVllmAscendRequestBody,
 		RemoveMessages:              RemoveMessageRequestBody,
+		CoordPrepareRequest:         PrepareCoordRequestBody,
 	}
 	postProcessFuncMap = map[string]postProcessFunc{
 		EncodeProcessResponse:        PostEncodeProcessResponse,
@@ -81,10 +88,12 @@ var (
 		FirstTokenPost:               FirstTokenReport,
 		WaitFirstToken:               FirstTokenWait,
 		CheckKVTransferParamsKey:     CheckKVTransferParams,
+		CoordProcessResponse:         PostCoordProcessResponse,
 	}
 	postPhaseFuncMap = map[string]postPhaseFunc{
 		RegularPostPhase:  PostPhaseProcess,
 		CompletePostPhase: PostDecodePhaseProcess,
+		CoordPostPhase:    PostCoordPhaseProcess,
 	}
 )
 

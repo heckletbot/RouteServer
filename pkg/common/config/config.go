@@ -98,6 +98,46 @@ type AnthropicErrorTypeConfig struct {
 	Mappings []anthropic.ErrorMapping `yaml:"mappings"`
 }
 
+// CoordRoutingConfig controls the PD elastic (coord) routing feature: a request
+// may be served entirely by one idle worker of either role instead of walking
+// the prefill -> decode chain. Thresholds are the decision inputs of the
+// "imbalance" strategy; the per-role inflight caps are also the reservation
+// limits used to guard the single idle worker against a stale-snapshot herd.
+//
+// The feature is switched on by the config section and the CoordRoute phase in
+// the pipeline being present together; either alone refuses to start.
+type CoordRoutingConfig struct {
+	// Strategy is the registered decision name. Recommended: imbalance.
+	Strategy string `yaml:"strategy"`
+	// MetricsStaleSeconds rejects a worker snapshot older than this.
+	// Recommended: 3. Omitted or 0 fails startup.
+	MetricsStaleSeconds float64 `yaml:"metrics-stale-seconds"`
+	// Idle judgment: a worker is idle only when all of these hold.
+	// Recommended waiting/running: 0. Omitted 0 means the worker must have no
+	// queue and no in-flight requests.
+	IdleMaxWaiting  int `yaml:"idle-max-waiting"`
+	IdleMaxRunningP int `yaml:"idle-max-running-p"`
+	IdleMaxRunningD int `yaml:"idle-max-running-d"`
+	// IdleMaxKVUsage is the inclusive KV ceiling. Recommended: 0.50.
+	// Omitted 0 means only a worker reporting zero KV usage counts as idle.
+	IdleMaxKVUsage float64 `yaml:"idle-max-kv-usage"`
+	// Per-role reservation caps. Recommended: 2. A role whose prompt window is
+	// open must set this to at least 1.
+	PHybridMaxInflight int `yaml:"p-hybrid-max-inflight"`
+	DHybridMaxInflight int `yaml:"d-hybrid-max-inflight"`
+	// Per-role prompt windows, both ends inclusive in config. A gate of 0
+	// disables that role. Recommended prefill [32768, 204800], decode [0, 1024].
+	// A prompt of 0 tokens stays on PD even when the decode minimum is 0.
+	PLocalMinInputTokens  int `yaml:"p-local-min-input-tokens"`
+	DLocalMinInputTokens  int `yaml:"d-local-min-input-tokens"`
+	PHybridMaxInputTokens int `yaml:"p-hybrid-max-input-tokens"`
+	DHybridMaxInputTokens int `yaml:"d-hybrid-max-input-tokens"`
+
+	// LocalMinInputTokens is the retired global minimum.
+	// Deprecated: renamed to p-local-min-input-tokens / d-local-min-input-tokens.
+	LocalMinInputTokens *int `yaml:"local-min-input-tokens"`
+}
+
 type ServerConfig struct {
 	Addr                             string                `yaml:"addr"`
 	HttpPort                         string                `yaml:"http-port"`
@@ -121,6 +161,8 @@ type ServerConfig struct {
 	// fallback for clients that have no dedicated session header. Off by default:
 	// a correlation id is usually per-request rather than per-conversation.
 	EnableCorrelationIDAsSessionID bool `yaml:"enable-correlation-id-as-session-id" default:"false"`
+
+	CoordRouting *CoordRoutingConfig `yaml:"coord-routing,omitempty"`
 }
 
 type HttpConfig struct {

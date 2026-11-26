@@ -73,6 +73,7 @@ type Manager interface {
 	GetInstanceClient(id string) (instanceclient.InstanceClient, error)
 	Stop()
 	GetAllInstance() []*config.Route
+	GetAllInstanceStats() map[string]map[string]instance_metrics.WorkerStats
 	SnapshotUnhealthyInstances()
 	GetCurrentStage() string
 	GetBroadCastURIWhitelist() []config.WhitelistEntry
@@ -225,6 +226,16 @@ func (m *InstanceManager) getAllInstanceStatsNoLock() map[string]map[string]inst
 	}
 
 	return allInstancesStats
+}
+
+// GetAllInstanceStats returns the latest worker stats of every role, grouped by
+// role and worker id. The maps are a fresh copy on each call and can be read
+// without holding the instance manager lock.
+func (m *InstanceManager) GetAllInstanceStats() map[string]map[string]instance_metrics.WorkerStats {
+	m.routeMapMutex.RLock()
+	defer m.routeMapMutex.RUnlock()
+
+	return m.getAllInstanceStatsNoLock()
 }
 
 func (m *InstanceManager) GetAllInstance() []*config.Route {
