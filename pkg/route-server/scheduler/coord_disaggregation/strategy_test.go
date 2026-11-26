@@ -312,3 +312,26 @@ func TestDisabledDecodeWindowIsNeverChosen(t *testing.T) {
 		t.Fatalf("Decide() = (%q, %q, %v), want a window miss", worker, role, windowMiss)
 	}
 }
+
+func TestDisabledRoleWithZeroInflightStillJoinsImbalance(t *testing.T) {
+	params := shippedParams()
+	params.DInputTokenGate = 0
+	params.DMinTokens = 0
+	params.DMaxInflight = 0
+	strategy, err := NewStrategy(StrategyImbalance, params)
+	if err != nil {
+		t.Fatalf("build strategy: %v", err)
+	}
+
+	bothIdle := []*state.WorkerState{workerState("p1", constant.Prefill), workerState("d1", constant.Decode)}
+	worker, role, windowMiss := strategy.Decide(bothIdle, 40000, NewManager())
+	if worker != "" || role != "" || windowMiss {
+		t.Fatalf("both roles idle: Decide() = (%q, %q, %v), want PD", worker, role, windowMiss)
+	}
+
+	decodeBusy := []*state.WorkerState{workerState("p1", constant.Prefill), busyWorkerState("d1", constant.Decode)}
+	worker, role, windowMiss = strategy.Decide(decodeBusy, 40000, NewManager())
+	if worker != "p1" || role != constant.Prefill || windowMiss {
+		t.Fatalf("decode busy: Decide() = (%q, %q, %v), want prefill local", worker, role, windowMiss)
+	}
+}
