@@ -131,6 +131,12 @@ func (s *ImbalanceStrategy) isIdle(worker *state.WorkerState, reserved *Manager)
 		return false
 	}
 
+	// A closed window never takes a local reservation, so a zero inflight cap
+	// must not make every worker of that role look busy. Idle for the imbalance
+	// check then comes only from the metrics above.
+	if s.params.InputTokenGateFor(worker.Role) <= 0 {
+		return true
+	}
 	return reserved.InFlight(worker.WorkerId) < s.params.MaxInflightFor(worker.Role)
 }
 

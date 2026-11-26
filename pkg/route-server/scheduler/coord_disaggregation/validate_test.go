@@ -29,6 +29,16 @@ func TestValidateAcceptsShippedWindows(t *testing.T) {
 	}
 }
 
+func TestValidateAllowsZeroInflightOnDisabledRole(t *testing.T) {
+	params := shippedParams()
+	params.DInputTokenGate = 0
+	params.DMinTokens = 0
+	params.DMaxInflight = 0
+	if err := params.Validate(); err != nil {
+		t.Fatalf("a closed decode window may omit its inflight cap: %v", err)
+	}
+}
+
 func TestValidateRejectsEachRule(t *testing.T) {
 	cases := []struct {
 		name    string
