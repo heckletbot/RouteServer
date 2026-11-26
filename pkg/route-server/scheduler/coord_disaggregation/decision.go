@@ -38,7 +38,7 @@ type Fallback string
 
 const (
 	FallbackInternalPD      Fallback = "internal_pd_request"
-	FallbackPromptBelowMin  Fallback = "prompt_below_min"
+	FallbackOutsideWindow   Fallback = "outside_role_window"
 	FallbackNoIdleWorker    Fallback = "no_idle_worker"
 	FallbackReservationRace Fallback = "reservation_race"
 )
@@ -66,7 +66,26 @@ type Params struct {
 	DMaxInflight    int
 	PInputTokenGate int
 	DInputTokenGate int
-	LocalMinTokens  int
+	PMinTokens      int
+	DMinTokens      int
+}
+
+// MinTokensFor returns the lower bound of the local-route window for role.
+func (p Params) MinTokensFor(role string) int {
+	if role == constant.Decode {
+		return p.DMinTokens
+	}
+	return p.PMinTokens
+}
+
+// Accepts reports whether a prompt of tokens fits the window of role.
+// A zero gate means the role never takes a local route. A zero token count
+// stays on PD: the decode window starts at 0 in config, but an empty prompt
+// is not a local generation.
+func (p Params) Accepts(role string, tokens int32) bool {
+	gate := p.InputTokenGateFor(role)
+	return gate > 0 && tokens > 0 &&
+		tokens >= int32(p.MinTokensFor(role)) && tokens <= int32(gate)
 }
 
 // MaxInflightFor returns the reservation cap of the given worker role.

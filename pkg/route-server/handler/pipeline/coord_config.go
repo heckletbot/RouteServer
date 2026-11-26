@@ -21,6 +21,7 @@ import (
 
 	commoncfg "route-server/pkg/common/config"
 	"route-server/pkg/common/constant"
+	"route-server/pkg/common/logger"
 	"route-server/pkg/route-server/scheduler/coord_disaggregation"
 )
 
@@ -58,12 +59,26 @@ func configureCoordRouting(pipeline *Pipeline, cfg *commoncfg.ServerConfig) erro
 		return fmt.Errorf("pipeline [%s] has a coord route phase but no prefill schedule phase to take request_load from", pipeline.Name)
 	}
 
+	if cfg.CoordRouting.LocalMinInputTokens != nil {
+		return fmt.Errorf("coord-routing: local-min-input-tokens has been renamed to p-local-min-input-tokens / d-local-min-input-tokens")
+	}
+
 	params := coordRoutingParams(cfg.CoordRouting)
+	if err := params.Validate(); err != nil {
+		return fmt.Errorf("pipeline [%s] has an invalid coord-routing config: %w", pipeline.Name, err)
+	}
 	strategy, err := coord_disaggregation.NewStrategy(cfg.CoordRouting.Strategy, params)
 	if err != nil {
 		return err
 	}
 
 	coordPhase.Configure(params, strategy, loadSource)
+	logger.Log().Infof("coord-routing enabled: strategy=%s p-window=[%d,%d] d-window=[%d,%d] stale=%s idle(kv<=%.2f,wait<=%d,runs p<=%d/d<=%d) inflight(p=%d,d=%d)",
+		strategy.Name(),
+		params.PMinTokens, params.PInputTokenGate,
+		params.DMinTokens, params.DInputTokenGate,
+		params.StaleDuration,
+		params.IdleMaxKVUsage, params.IdleMaxWaiting, params.IdleMaxRunningP, params.IdleMaxRunningD,
+		params.PMaxInflight, params.DMaxInflight)
 	return nil
 }

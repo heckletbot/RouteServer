@@ -36,8 +36,18 @@ func testParams() Params {
 		DMaxInflight:    2,
 		PInputTokenGate: 204800,
 		DInputTokenGate: 1024,
-		LocalMinTokens:  8,
+		PMinTokens:      8,
+		DMinTokens:      0,
 	}
+}
+
+func shippedParams() Params {
+	params := testParams()
+	params.PMinTokens = 32768
+	params.PInputTokenGate = 204800
+	params.DMinTokens = 0
+	params.DInputTokenGate = 1024
+	return params
 }
 
 func workerState(id, role string) *state.WorkerState {
@@ -65,11 +75,12 @@ func TestImbalanceOnlyRoutesWhenOneRoleIsIdle(t *testing.T) {
 	}
 
 	cases := []struct {
-		name       string
-		workers    []*state.WorkerState
-		prompt     int32
-		wantWorker string
-		wantRole   string
+		name           string
+		workers        []*state.WorkerState
+		prompt         int32
+		wantWorker     string
+		wantRole       string
+		wantWindowMiss bool
 	}{
 		{
 			name:       "single idle prefill and busy decode routes to prefill",
@@ -104,14 +115,16 @@ func TestImbalanceOnlyRoutesWhenOneRoleIsIdle(t *testing.T) {
 			wantRole:   constant.Prefill,
 		},
 		{
-			name:    "prompt above prefill gate rejects prefill",
-			workers: []*state.WorkerState{workerState("p1", constant.Prefill), busyWorkerState("d1", constant.Decode)},
-			prompt:  204801,
+			name:           "prompt above prefill gate rejects prefill",
+			workers:        []*state.WorkerState{workerState("p1", constant.Prefill), busyWorkerState("d1", constant.Decode)},
+			prompt:         204801,
+			wantWindowMiss: true,
 		},
 		{
-			name:    "prompt above decode gate rejects decode",
-			workers: []*state.WorkerState{busyWorkerState("p1", constant.Prefill), workerState("d1", constant.Decode)},
-			prompt:  1025,
+			name:           "prompt above decode gate rejects decode",
+			workers:        []*state.WorkerState{busyWorkerState("p1", constant.Prefill), workerState("d1", constant.Decode)},
+			prompt:         1025,
+			wantWindowMiss: true,
 		},
 		{
 			name:       "stale snapshot is not idle",
@@ -123,9 +136,10 @@ func TestImbalanceOnlyRoutesWhenOneRoleIsIdle(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			worker, role := strategy.Decide(tc.workers, tc.prompt, NewManager())
-			if worker != tc.wantWorker || role != tc.wantRole {
-				t.Fatalf("Decide() = (%q, %q), want (%q, %q)", worker, role, tc.wantWorker, tc.wantRole)
+			worker, role, windowMiss := strategy.Decide(tc.workers, tc.prompt, NewManager())
+			if worker != tc.wantWorker || role != tc.wantRole || windowMiss != tc.wantWindowMiss {
+				t.Fatalf("Decide() = (%q, %q, %v), want (%q, %q, %v)",
+					worker, role, windowMiss, tc.wantWorker, tc.wantRole, tc.wantWindowMiss)
 			}
 		})
 	}
@@ -149,7 +163,10 @@ func TestImbalancePicksLowestUtilization(t *testing.T) {
 	idlest := workerState("p2", constant.Prefill)
 
 	workers := []*state.WorkerState{loaded, idlest, busyWorkerState("d1", constant.Decode)}
-	worker, role := strategy.Decide(workers, 100, NewManager())
+	worker, role, windowMiss := strategy.Decide(workers, 100, NewManager())
+	if windowMiss {
+		t.Fatalf("a prompt inside the window must not be a window miss")
+	}
 	if worker != "p2" || role != constant.Prefill {
 		t.Fatalf("Decide() = (%q, %q), want (p2, %q)", worker, role, constant.Prefill)
 	}
@@ -169,7 +186,7 @@ func TestImbalanceRespectsReservationCap(t *testing.T) {
 	}
 
 	workers := []*state.WorkerState{workerState("p1", constant.Prefill), busyWorkerState("d1", constant.Decode)}
-	if worker, _ := strategy.Decide(workers, 100, reserved); worker != "" {
+	if worker, _, _ := strategy.Decide(workers, 100, reserved); worker != "" {
 		t.Fatalf("full worker must not be chosen, got %q", worker)
 	}
 }
@@ -243,5 +260,55 @@ func TestReservationConcurrentAcquireNeverExceedsCap(t *testing.T) {
 func TestNewStrategyRejectsUnknownName(t *testing.T) {
 	if _, err := NewStrategy("nope", testParams()); err == nil {
 		t.Fatalf("unknown strategy must be rejected")
+	}
+}
+
+func TestRoleWindowsUseShippedBounds(t *testing.T) {
+	strategy, err := NewStrategy(StrategyImbalance, shippedParams())
+	if err != nil {
+		t.Fatalf("build strategy: %v", err)
+	}
+
+	prefillIdle := []*state.WorkerState{workerState("p1", constant.Prefill), busyWorkerState("d1", constant.Decode)}
+	decodeIdle := []*state.WorkerState{busyWorkerState("p1", constant.Prefill), workerState("d1", constant.Decode)}
+
+	cases := []struct {
+		name           string
+		workers        []*state.WorkerState
+		prompt         int32
+		wantWorker     string
+		wantRole       string
+		wantWindowMiss bool
+	}{
+		{name: "decode idle and 512 tokens routes to decode", workers: decodeIdle, prompt: 512, wantWorker: "d1", wantRole: constant.Decode},
+		{name: "decode idle and 2048 tokens misses the decode window", workers: decodeIdle, prompt: 2048, wantWindowMiss: true},
+		{name: "prefill idle and 1024 tokens misses the prefill window", workers: prefillIdle, prompt: 1024, wantWindowMiss: true},
+		{name: "prefill idle and 40000 tokens routes to prefill", workers: prefillIdle, prompt: 40000, wantWorker: "p1", wantRole: constant.Prefill},
+		{name: "zero prompt stays outside every window", workers: decodeIdle, prompt: 0, wantWindowMiss: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			worker, role, windowMiss := strategy.Decide(tc.workers, tc.prompt, NewManager())
+			if worker != tc.wantWorker || role != tc.wantRole || windowMiss != tc.wantWindowMiss {
+				t.Fatalf("Decide() = (%q, %q, %v), want (%q, %q, %v)",
+					worker, role, windowMiss, tc.wantWorker, tc.wantRole, tc.wantWindowMiss)
+			}
+		})
+	}
+}
+
+func TestDisabledDecodeWindowIsNeverChosen(t *testing.T) {
+	params := shippedParams()
+	params.DInputTokenGate = 0
+	strategy, err := NewStrategy(StrategyImbalance, params)
+	if err != nil {
+		t.Fatalf("build strategy: %v", err)
+	}
+
+	workers := []*state.WorkerState{busyWorkerState("p1", constant.Prefill), workerState("d1", constant.Decode)}
+	worker, role, windowMiss := strategy.Decide(workers, 512, NewManager())
+	if worker != "" || role != "" || !windowMiss {
+		t.Fatalf("Decide() = (%q, %q, %v), want a window miss", worker, role, windowMiss)
 	}
 }

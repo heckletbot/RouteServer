@@ -133,11 +133,28 @@ func TestConfigureCoordRoutingRejectsConfigWithoutPhase(t *testing.T) {
 	}
 }
 
-func TestConfigureCoordRoutingRejectsUnknownStrategy(t *testing.T) {
-	cfg := &commoncfg.ServerConfig{CoordRouting: &commoncfg.CoordRoutingConfig{Strategy: "does-not-exist"}}
+func validCoordRouting() *commoncfg.CoordRoutingConfig {
+	return &commoncfg.CoordRoutingConfig{
+		Strategy:              coord_disaggregation.StrategyImbalance,
+		MetricsStaleSeconds:   3,
+		IdleMaxKVUsage:        0.5,
+		PHybridMaxInflight:    2,
+		DHybridMaxInflight:    2,
+		PLocalMinInputTokens:  32768,
+		DLocalMinInputTokens:  0,
+		PHybridMaxInputTokens: 204800,
+		DHybridMaxInputTokens: 1024,
+	}
+}
 
-	if err := configureCoordRouting(newCoordPipeline(t), cfg); err == nil {
-		t.Fatalf("unknown strategy must fail startup")
+func TestConfigureCoordRoutingRejectsUnknownStrategy(t *testing.T) {
+	routing := validCoordRouting()
+	routing.Strategy = "does-not-exist"
+	cfg := &commoncfg.ServerConfig{CoordRouting: routing}
+
+	err := configureCoordRouting(newCoordPipeline(t), cfg)
+	if err == nil || !strings.Contains(err.Error(), "does-not-exist") {
+		t.Fatalf("unknown strategy must fail startup, got %v", err)
 	}
 }
 
@@ -167,7 +184,8 @@ func TestConfigureCoordRoutingInjectsParamsAndStrategy(t *testing.T) {
 		IdleMaxKVUsage:        0.4,
 		PHybridMaxInflight:    5,
 		DHybridMaxInflight:    6,
-		LocalMinInputTokens:   4096,
+		PLocalMinInputTokens:  4096,
+		DLocalMinInputTokens:  16,
 		PHybridMaxInputTokens: 100000,
 		DHybridMaxInputTokens: 2048,
 	}}
@@ -187,10 +205,64 @@ func TestConfigureCoordRoutingInjectsParamsAndStrategy(t *testing.T) {
 	if phase.params.PMaxInflight != 5 || phase.params.DMaxInflight != 6 {
 		t.Fatalf("reservation caps not mapped: %+v", phase.params)
 	}
-	if phase.params.LocalMinTokens != 4096 || phase.params.DInputTokenGate != 2048 {
+	if phase.params.PMinTokens != 4096 || phase.params.DMinTokens != 16 || phase.params.DInputTokenGate != 2048 {
 		t.Fatalf("token gates not mapped: %+v", phase.params)
 	}
 	if phase.params.IdleMaxRunningD != 3 || phase.params.IdleMaxKVUsage != 0.4 {
 		t.Fatalf("idle thresholds not mapped: %+v", phase.params)
+	}
+}
+
+func TestConfigureCoordRoutingRejectsInvalidWindows(t *testing.T) {
+	cases := []struct {
+		name    string
+		mutate  func(*commoncfg.CoordRoutingConfig)
+		wantErr string
+	}{
+		{
+			name:    "zero stale duration",
+			mutate:  func(cfg *commoncfg.CoordRoutingConfig) { cfg.MetricsStaleSeconds = 0 },
+			wantErr: "metrics-stale-seconds must be > 0",
+		},
+		{
+			name: "minimum above gate",
+			mutate: func(cfg *commoncfg.CoordRoutingConfig) {
+				cfg.PLocalMinInputTokens = 32768
+				cfg.PHybridMaxInputTokens = 1024
+			},
+			wantErr: "p-local-min-input-tokens (32768) exceeds p-hybrid-max-input-tokens (1024)",
+		},
+		{
+			name: "both windows disabled",
+			mutate: func(cfg *commoncfg.CoordRoutingConfig) {
+				cfg.PLocalMinInputTokens = 0
+				cfg.PHybridMaxInputTokens = 0
+				cfg.DLocalMinInputTokens = 0
+				cfg.DHybridMaxInputTokens = 0
+			},
+			wantErr: "both role windows are disabled",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			routing := validCoordRouting()
+			tc.mutate(routing)
+			err := configureCoordRouting(newCoordPipeline(t), &commoncfg.ServerConfig{CoordRouting: routing})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("configureCoordRouting() = %v, want substring %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestConfigureCoordRoutingRejectsRenamedMinimum(t *testing.T) {
+	routing := validCoordRouting()
+	old := 32768
+	routing.LocalMinInputTokens = &old
+
+	err := configureCoordRouting(newCoordPipeline(t), &commoncfg.ServerConfig{CoordRouting: routing})
+	if err == nil || !strings.Contains(err.Error(), "local-min-input-tokens has been renamed") {
+		t.Fatalf("configureCoordRouting() = %v, want the renamed-key error", err)
 	}
 }

@@ -37,8 +37,9 @@ const (
 type Strategy interface {
 	Name() string
 	// Decide returns the chosen worker and its role. An empty worker id means
-	// the request must walk the regular PD chain.
-	Decide(workers []*state.WorkerState, promptTokens int32, reserved *Manager) (workerID string, role string)
+	// the request must walk the regular PD chain. windowMiss is set only when
+	// exactly one role is idle and that role's token window rejects the prompt.
+	Decide(workers []*state.WorkerState, promptTokens int32, reserved *Manager) (workerID string, role string, windowMiss bool)
 }
 
 // StrategyFactory builds a strategy for the given decision inputs.
@@ -82,7 +83,7 @@ func (s *ImbalanceStrategy) Name() string {
 	return StrategyImbalance
 }
 
-func (s *ImbalanceStrategy) Decide(workers []*state.WorkerState, promptTokens int32, reserved *Manager) (string, string) {
+func (s *ImbalanceStrategy) Decide(workers []*state.WorkerState, promptTokens int32, reserved *Manager) (string, string, bool) {
 	var idlePrefill, idleDecode []*state.WorkerState
 	for _, worker := range workers {
 		if !s.isIdle(worker, reserved) {
@@ -95,15 +96,19 @@ func (s *ImbalanceStrategy) Decide(workers []*state.WorkerState, promptTokens in
 		}
 	}
 
-	if len(idlePrefill) > 0 && len(idleDecode) == 0 &&
-		promptTokens <= int32(s.params.InputTokenGateFor(constant.Prefill)) {
-		return pickLowestUtil(idlePrefill), constant.Prefill
+	if len(idlePrefill) > 0 && len(idleDecode) == 0 {
+		if !s.params.Accepts(constant.Prefill, promptTokens) {
+			return "", "", true
+		}
+		return pickLowestUtil(idlePrefill), constant.Prefill, false
 	}
-	if len(idleDecode) > 0 && len(idlePrefill) == 0 &&
-		promptTokens <= int32(s.params.InputTokenGateFor(constant.Decode)) {
-		return pickLowestUtil(idleDecode), constant.Decode
+	if len(idleDecode) > 0 && len(idlePrefill) == 0 {
+		if !s.params.Accepts(constant.Decode, promptTokens) {
+			return "", "", true
+		}
+		return pickLowestUtil(idleDecode), constant.Decode, false
 	}
-	return "", ""
+	return "", "", false
 }
 
 // isIdle reports whether the worker can take another local request: its

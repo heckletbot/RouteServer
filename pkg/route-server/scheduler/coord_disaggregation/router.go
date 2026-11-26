@@ -26,10 +26,10 @@ type RouteRequest struct {
 
 // Router turns a request plus a worker snapshot into a decision.
 //
-// The decision order is fixed: request gates, then the strategy, then admission.
-// Every step that cannot produce a local route returns ModePD with the reason
-// recorded, which is the designed behaviour of the feature rather than a
-// recovery path.
+// The decision order is fixed: the request-level gate, then the strategy, then
+// admission. Role windows are decided inside the strategy. Every step that
+// cannot produce a local route returns ModePD with the reason recorded, which
+// is the designed behaviour of the feature rather than a recovery path.
 type Router struct {
 	params       Params
 	strategy     Strategy
@@ -60,13 +60,14 @@ func (r *Router) Route(req RouteRequest) Decision {
 	if req.HasKVTransferParams {
 		return Decision{Mode: ModePD, Strategy: strategyName, Fallback: FallbackInternalPD}
 	}
-	if req.PromptTokens < int32(r.params.LocalMinTokens) {
-		return Decision{Mode: ModePD, Strategy: strategyName, Fallback: FallbackPromptBelowMin}
-	}
 
-	workerID, role := r.strategy.Decide(r.provider.Snapshots(), req.PromptTokens, r.reservations)
+	workerID, role, windowMiss := r.strategy.Decide(r.provider.Snapshots(), req.PromptTokens, r.reservations)
 	if workerID == "" {
-		return Decision{Mode: ModePD, Strategy: strategyName, Fallback: FallbackNoIdleWorker}
+		fallback := FallbackNoIdleWorker
+		if windowMiss {
+			fallback = FallbackOutsideWindow
+		}
+		return Decision{Mode: ModePD, Strategy: strategyName, Fallback: fallback}
 	}
 
 	reservation, admitted := r.reservations.TryAcquire(workerID, r.params.MaxInflightFor(role))

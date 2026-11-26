@@ -120,6 +120,47 @@ server:
 
 ---
 
+## coord-routing
+
+`coord-routing` 是可选项。只有本节和 pipeline 里的 `CoordRoute` 阶段同时存在才开启；只写其中一个，启动失败。没有结构体标签默认值：没写的数字是 0，半填的配置在启动期失败，而不是悄悄变成永不命中。
+
+恰好一个角色空闲，且 prompt 长度落在该角色窗口内时，请求由那个空闲 worker 整段服务。`*-hybrid-max-input-tokens: 0` 表示该角色不参与本地路由，此时对应的 `*-local-min-input-tokens` 必须为 0。长度为 0 的 prompt 仍走原来的 PD。decode 下限配 0 时，实际命中区间是 `(0, 1024]`。
+
+旧键 `local-min-input-tokens` 会在启动时报错。改用下面的分角色下限。
+
+```yaml
+coord-routing:
+  strategy: imbalance
+  metrics-stale-seconds: 3
+  idle-max-waiting: 0
+  idle-max-running-p: 0
+  idle-max-running-d: 0
+  idle-max-kv-usage: 0.50
+  p-hybrid-max-inflight: 2
+  d-hybrid-max-inflight: 2
+  p-local-min-input-tokens: 32768
+  d-local-min-input-tokens: 0
+  p-hybrid-max-input-tokens: 204800
+  d-hybrid-max-input-tokens: 1024
+```
+
+| 参数 | 类型 | 说明 | 约束 |
+| --- | --- | --- | --- |
+| `coord-routing.strategy` | string | 决策名 | 已注册的名字。推荐 `imbalance` |
+| `coord-routing.metrics-stale-seconds` | float | 超过该秒数的快照不算空闲 | 必须 `> 0`。推荐 `3` |
+| `coord-routing.idle-max-waiting` | int | 空闲 worker 允许的排队请求数 | 必须 `>= 0`。推荐 `0` |
+| `coord-routing.idle-max-running-p` | int | 空闲 prefill 允许的在飞请求数 | 必须 `>= 0`。推荐 `0` |
+| `coord-routing.idle-max-running-d` | int | 空闲 decode 允许的在飞请求数 | 必须 `>= 0`。推荐 `0` |
+| `coord-routing.idle-max-kv-usage` | float | 空闲 worker 允许的 KV 占用 | 必须在 `[0, 1]`。推荐 `0.50`。省略为 `0` 时，只有 KV 占用为 0 才算空闲 |
+| `coord-routing.p-hybrid-max-inflight` | int | 单个 prefill 上的本地在飞上限 | prefill 窗口打开时必须 `>= 1`。推荐 `2` |
+| `coord-routing.d-hybrid-max-inflight` | int | 单个 decode 上的本地在飞上限 | decode 窗口打开时必须 `>= 1`。推荐 `2` |
+| `coord-routing.p-local-min-input-tokens` | int | prefill 窗口下限，含本数 | `>= 0` 且不超过 prefill 上限。推荐 `32768` |
+| `coord-routing.d-local-min-input-tokens` | int | decode 窗口下限，含本数 | `>= 0` 且不超过 decode 上限。推荐 `0`。长度为 0 仍走 PD |
+| `coord-routing.p-hybrid-max-input-tokens` | int | prefill 窗口上限，含本数。`0` 表示 prefill 不参与本地路由 | `>= 0`。推荐 `204800` |
+| `coord-routing.d-hybrid-max-input-tokens` | int | decode 窗口上限，含本数。`0` 表示 decode 不参与本地路由 | `>= 0`。推荐 `1024`，实际命中 `(0, 1024]` |
+
+---
+
 ## meta-cleanup
 
 `meta-cleanup` 段控制如何自动清理集群状态中陈旧的 instance 与 worker 元数据。该段为**可选项**，单机部署的默认模板中不包含。
