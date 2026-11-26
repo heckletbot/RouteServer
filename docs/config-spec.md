@@ -120,6 +120,47 @@ server:
 
 ---
 
+## coord-routing
+
+`coord-routing` is optional. It is on only when this section and a pipeline `CoordRoute` phase are both present. Either one alone fails startup. There are no struct-tag defaults: an omitted number is zero, and a half-filled section fails startup instead of never matching.
+
+A request is served on one idle worker only when exactly one role is idle and the prompt length falls inside that role's window. `*-hybrid-max-input-tokens: 0` disables that role, and the matching `*-local-min-input-tokens` must then be 0. A prompt of 0 tokens stays on the regular PD path. The decode minimum of 0 therefore matches lengths `(0, 1024]`.
+
+The old key `local-min-input-tokens` is rejected at startup. Use the per-role minimums below.
+
+```yaml
+coord-routing:
+  strategy: imbalance
+  metrics-stale-seconds: 3
+  idle-max-waiting: 0
+  idle-max-running-p: 0
+  idle-max-running-d: 0
+  idle-max-kv-usage: 0.50
+  p-hybrid-max-inflight: 2
+  d-hybrid-max-inflight: 2
+  p-local-min-input-tokens: 32768
+  d-local-min-input-tokens: 0
+  p-hybrid-max-input-tokens: 204800
+  d-hybrid-max-input-tokens: 1024
+```
+
+| Parameter | Type | Description | Constraints |
+| --- | --- | --- | --- |
+| `coord-routing.strategy` | string | Decision name | Registered name. Recommended: `imbalance` |
+| `coord-routing.metrics-stale-seconds` | float | Snapshot older than this is not idle | Must be `> 0`. Recommended: `3` |
+| `coord-routing.idle-max-waiting` | int | Maximum queued requests for an idle worker | Must be `>= 0`. Recommended: `0` |
+| `coord-routing.idle-max-running-p` | int | Maximum in-flight requests for an idle prefill worker | Must be `>= 0`. Recommended: `0` |
+| `coord-routing.idle-max-running-d` | int | Maximum in-flight requests for an idle decode worker | Must be `>= 0`. Recommended: `0` |
+| `coord-routing.idle-max-kv-usage` | float | Maximum KV usage for an idle worker | Must be within `[0, 1]`. Recommended: `0.50`. Omitted `0` means only zero KV usage is idle |
+| `coord-routing.p-hybrid-max-inflight` | int | Local in-flight cap on one prefill worker | `>= 1` when the prefill window is open. Recommended: `2` |
+| `coord-routing.d-hybrid-max-inflight` | int | Local in-flight cap on one decode worker | `>= 1` when the decode window is open. Recommended: `2` |
+| `coord-routing.p-local-min-input-tokens` | int | Inclusive lower bound of the prefill window | `>= 0` and `<=` the prefill gate. Recommended: `32768` |
+| `coord-routing.d-local-min-input-tokens` | int | Inclusive lower bound of the decode window | `>= 0` and `<=` the decode gate. Recommended: `0`. Length 0 still stays on PD |
+| `coord-routing.p-hybrid-max-input-tokens` | int | Inclusive upper bound of the prefill window. `0` disables prefill local routing | `>= 0`. Recommended: `204800` |
+| `coord-routing.d-hybrid-max-input-tokens` | int | Inclusive upper bound of the decode window. `0` disables decode local routing | `>= 0`. Recommended: `1024`, so the hit range is `(0, 1024]` |
+
+---
+
 ## meta-cleanup
 
 The `meta-cleanup` section controls automatic cleanup of stale instance and worker metadata from the cluster state. This is an **optional** section and is not present in the default template for singleton deployments.

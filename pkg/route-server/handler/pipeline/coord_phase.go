@@ -100,6 +100,7 @@ func coordRoutingParams(cfg *config.CoordRoutingConfig) coord_disaggregation.Par
 		DMaxInflight:    cfg.DHybridMaxInflight,
 		PInputTokenGate: cfg.PHybridMaxInputTokens,
 		DInputTokenGate: cfg.DHybridMaxInputTokens,
-		LocalMinTokens:  cfg.LocalMinInputTokens,
+		PMinTokens:      cfg.PLocalMinInputTokens,
+		DMinTokens:      cfg.DLocalMinInputTokens,
 	}
 }
