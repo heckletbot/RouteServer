@@ -82,6 +82,18 @@ const (
 	UpdateIntervalMs         string = "update-interval-ms"
 	MetricsOverdueIntervalMs string = "metrics-overdue-interval-ms"
 
+	// vLLM metric names are defined once here so scheduling algorithms, the worker
+	// state tables and the monitor client share one definition instead of keeping
+	// their own literals. A metric is scraped only when a scheduler declares it in
+	// NeedStatsList and the prometheus config lists it as well.
+	// kv_cache_usage_perc is the vLLM 0.11+ name; 0.9/0.10 only export
+	// vllm:gpu_cache_usage_perc, so an agentic scheduler needs vLLM >= 0.11.
+	MetricNumRequestsRunning    string = "vllm:num_requests_running"
+	MetricNumRequestsWaiting    string = "vllm:num_requests_waiting"
+	MetricKVCacheUsagePerc      string = "vllm:kv_cache_usage_perc"
+	MetricPromptTokensTotal     string = "vllm:prompt_tokens_total"
+	MetricGenerationTokensTotal string = "vllm:generation_tokens_total"
+
 	FirstTokenLatencyMs   = "FirstTokenLatencyMs"
 	FirstDTokenLatencyMs  = "FirstDTokenLatencyMs"
 	SecondDTokenLatencyMs = "SecondDTokenLatencyMs"

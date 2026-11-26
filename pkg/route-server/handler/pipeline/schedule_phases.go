@@ -17,6 +17,7 @@
 package pipeline
 
 import (
+	"errors"
 	"fmt"
 	"html"
 	"strconv"
@@ -239,6 +240,13 @@ func ScheduleInstanceRequest(ctx *PipelineContext, instanceType string, stageNam
 	}
 
 	if err != nil {
+		// The scheduler already classified the failure (status, code, stage and
+		// failure type). Wrapping it in InternalErr would replace a 503/504 the
+		// client can act on with a generic 500.
+		var schedulerErr *errs.RSError
+		if errors.As(err, &schedulerErr) {
+			return instanceId, false, schedulerErr
+		}
 		rsError = errs.NewRSMaError(errs.InternalErr.BuildArgs(
 			fmt.Sprintf("fail to schedule %s instances: %v", instanceType, err)), stageName)
 		return instanceId, false, rsError

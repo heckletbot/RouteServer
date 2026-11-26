@@ -17,12 +17,14 @@
 package request
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"strconv"
 
+	"route-server/cmd/route_server/server/options"
 	"route-server/pkg/common/anthropic"
 	"route-server/pkg/common/openai"
 	"route-server/pkg/common/utils"
@@ -54,6 +56,13 @@ type GenerateRequestImplV1 struct {
 	apcStrategyType string
 
 	BodyReqId string
+
+	// agentic scheduling metadata, parsed from headers and body
+	sessionId       string
+	parentSessionId string
+	priority        int32
+	outputLength    int32
+	scheduleCtx     context.Context
 }
 
 func (req *GenerateRequestImplV1) GetModel() string {
@@ -101,6 +110,12 @@ func NewBasicRequestImplForPipeline(request *http.Request) (*GenerateRequestImpl
 
 	if validateErr != nil {
 		return nil, validateErr
+	}
+
+	// Parsing runs after validation so originMaxTokens is known: it is the
+	// fallback prediction for the output length.
+	if err := impl.ParseSchedulingMetadata(); err != nil {
+		return nil, err
 	}
 
 	return impl, nil
@@ -265,4 +280,50 @@ func (req *GenerateRequestImplV1) SetFirstTokenBody(body []byte) {
 
 func (req *GenerateRequestImplV1) GetFirstTokenBody() []byte {
 	return req.firstTokenBody
+}
+
+// ParseSchedulingMetadata reads the agentic scheduling fields. A conflicting
+// session id across sources is a hard error: silently dropping affinity would
+// just look like a slow scheduler to the caller.
+func (req *GenerateRequestImplV1) ParseSchedulingMetadata() error {
+	if req.RawBody == nil {
+		return nil
+	}
+	sid, parentSid, priority, outputLength, err := parseSchedulingFields(
+		req.RawBody, req.header,
+		options.GetConfig().ServerConfig.EnableCorrelationIDAsSessionID,
+		req.originMaxTokens,
+	)
+	if err != nil {
+		return err
+	}
+	req.sessionId = sid
+	req.parentSessionId = parentSid
+	req.priority = priority
+	req.outputLength = outputLength
+	return nil
+}
+
+func (req *GenerateRequestImplV1) GetSessionId() string {
+	return req.sessionId
+}
+
+func (req *GenerateRequestImplV1) GetParentSessionId() string {
+	return req.parentSessionId
+}
+
+func (req *GenerateRequestImplV1) GetPriority() int32 {
+	return req.priority
+}
+
+func (req *GenerateRequestImplV1) GetOutputLength() int32 {
+	return req.outputLength
+}
+
+func (req *GenerateRequestImplV1) GetScheduleContext() context.Context {
+	return req.scheduleCtx
+}
+
+func (req *GenerateRequestImplV1) SetScheduleContext(ctx context.Context) {
+	req.scheduleCtx = ctx
 }

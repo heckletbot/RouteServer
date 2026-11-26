@@ -34,12 +34,17 @@ type Collector struct {
 	registry           *prometheus.Registry
 	RunningRequests    *prometheus.GaugeVec
 	WaitingRequests    *prometheus.GaugeVec
+	KVCacheUsage       *prometheus.GaugeVec
 	TimeToFirstTime    *prometheus.HistogramVec
 	TimePerOutputToken *prometheus.HistogramVec
 	End2EndTime        *prometheus.HistogramVec
 }
 
-func NewMetricsCollector() *Collector {
+// NewMetricsCollector builds the metrics exported by a mock worker. exportKVMetric
+// adds vllm:kv_cache_usage_perc, which real vLLM >= 0.11 exports and which the
+// agentic-balancer e2e drives through POST /metrics/update. It stays opt-in so
+// suites that predate that metric keep the exact stats they had before.
+func NewMetricsCollector(exportKVMetric bool) *Collector {
 	registry := prometheus.NewRegistry()
 	timeToFirstToken := newTimeToFirstTokenHistogram()
 	registry.MustRegister(timeToFirstToken)
@@ -52,10 +57,17 @@ func NewMetricsCollector() *Collector {
 	waitingRequests := newWaitingRequestsGauge()
 	registry.MustRegister(waitingRequests)
 
+	var kvCacheUsage *prometheus.GaugeVec
+	if exportKVMetric {
+		kvCacheUsage = newKVCacheUsageGauge()
+		registry.MustRegister(kvCacheUsage)
+	}
+
 	return &Collector{
 		registry:           registry,
 		RunningRequests:    runningRequests,
 		WaitingRequests:    waitingRequests,
+		KVCacheUsage:       kvCacheUsage,
 		TimeToFirstTime:    timeToFirstToken,
 		TimePerOutputToken: timePerOutputToken,
 		End2EndTime:        endToEndTime,
@@ -73,6 +85,13 @@ func newWaitingRequestsGauge() *prometheus.GaugeVec {
 	return promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "vllm:num_requests_waiting",
 		Help: "vllm:num_requests_waiting Number of requests waiting to be processed.",
+	}, []string{"model_name", "engine"})
+}
+
+func newKVCacheUsageGauge() *prometheus.GaugeVec {
+	return promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "vllm:kv_cache_usage_perc",
+		Help: "vllm:kv_cache_usage_perc KV-cache usage. 1 means 100% usage.",
 	}, []string{"model_name", "engine"})
 }
 
@@ -109,8 +128,9 @@ func (c *Collector) HandleMetricsRequest(ctx *gin.Context) {
 }
 
 type UpdateMetricsRequest struct {
-	RunningRequest int `json:"running_request"`
-	WaitingRequest int `json:"waiting_request"`
+	RunningRequest int     `json:"running_request"`
+	WaitingRequest int     `json:"waiting_request"`
+	KVCacheUsage   float64 `json:"kv_cache_usage"`
 }
 
 func (c *Collector) UpdateMetricsValue(ctx *gin.Context) {
@@ -128,4 +148,7 @@ func (c *Collector) UpdateMetricsValue(ctx *gin.Context) {
 	}
 	c.RunningRequests.WithLabelValues(Model, "0").Set(float64(request.RunningRequest))
 	c.WaitingRequests.WithLabelValues(Model, "0").Set(float64(request.WaitingRequest))
+	if c.KVCacheUsage != nil {
+		c.KVCacheUsage.WithLabelValues(Model, "0").Set(request.KVCacheUsage)
+	}
 }

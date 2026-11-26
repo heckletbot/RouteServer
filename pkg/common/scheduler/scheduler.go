@@ -40,6 +40,15 @@ type ScheduleAlgorithm interface {
 	ReportLoads(includeRequests bool, includeUnavailable bool) *AllInstanceLoads
 }
 
+// LifecycleAlgorithm is an optional interface that scheduler algorithms may
+// implement to manage background goroutines. SchedulersManager detects it via a
+// type assertion, calls StartBackgroundLoops after initialization and Close on
+// shutdown; algorithms without it keep their previous behavior.
+type LifecycleAlgorithm interface {
+	StartBackgroundLoops()
+	Close()
+}
+
 type AlgoLoadInfo struct {
 	AlgorithmName string            `json:"algorithm,omitempty"`
 	InstanceLoads *AllInstanceLoads `json:"instance_loads,omitempty"`

@@ -18,6 +18,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -31,6 +32,7 @@ import (
 	"route-server/pkg/common/cluster"
 	"route-server/pkg/common/config"
 	"route-server/pkg/common/constant"
+	"route-server/pkg/common/errs"
 	"route-server/pkg/common/health"
 	instance_metrics "route-server/pkg/common/instance-metrics"
 	"route-server/pkg/common/logger"
@@ -255,8 +257,12 @@ func (s *SchedulersManager) ClearAlgorithmLoadsAndEvents() {
 }
 
 func (s *SchedulersManager) GetStatsRegistrations() map[string][]string {
-	res := make(map[string][]string)
+	// GetStatsRegistrations returns, per role, the union of the metrics required by
+	// every SLO group, de-duplicated and sorted.
+	res := make(map[string][]string, len(s.roleLookUp))
 	for role, tagLookUp := range s.roleLookUp {
+		res[role] = make([]string, 0)
+		seen := make(map[string]struct{})
 		for sloTag, ctx := range tagLookUp {
 			needStats := make([]string, 0)
 			algoStats := ctx.Algorithm.NeedStatsList()
@@ -272,8 +278,16 @@ func (s *SchedulersManager) GetStatsRegistrations() map[string][]string {
 					}
 				}
 			}
-			res[role] = needStats
+
+			for _, stat := range needStats {
+				if _, ok := seen[stat]; ok {
+					continue
+				}
+				seen[stat] = struct{}{}
+				res[role] = append(res[role], stat)
+			}
 		}
+		sort.Strings(res[role])
 	}
 	return res
 }
@@ -341,6 +355,7 @@ func (s *SchedulersManager) setAlgorithm(algorithm scheduler.ScheduleAlgorithm, 
 	}
 	if existingCtx, exists := s.roleLookUp[role][sloTag]; !exists {
 		s.roleLookUp[role][sloTag] = ctx
+		startLifecycleIfNeeded(algorithm, role, sloTag)
 	} else {
 		return fmt.Errorf("found 2 algo [%s, %s] for 1 slo group [%s:%s], which is not allowed",
 			ctx.Algorithm.GetName(), existingCtx.Algorithm.GetName(), ctx.TargetInstanceRole, sloTag)
@@ -373,6 +388,16 @@ func getAlgoConfigs(managerCfg *config.SchedulersCfg, cfgMap map[string]string) 
 	}
 	params[config.SystemPromptFieldName] = strconv.Itoa(managerCfg.SystemPromptLength)
 	return params
+}
+
+// startLifecycleIfNeeded launches background loops for algorithms that opt into
+// the optional LifecycleAlgorithm interface. Algorithms without it are unchanged.
+func startLifecycleIfNeeded(algorithm scheduler.ScheduleAlgorithm, role string, sloTag string) {
+	if lifecycle, ok := algorithm.(scheduler.LifecycleAlgorithm); ok {
+		lifecycle.StartBackgroundLoops()
+		logger.Log().Infof("started background loops for scheduler algo [%s] role [%s] sloTag [%s]",
+			algorithm.GetName(), role, sloTag)
+	}
 }
 
 func (s *SchedulersManager) init() error {
@@ -754,6 +779,16 @@ func (s *SchedulersManager) DispatchRequest(reqCtx context.Context, request util
 	// worker only maintains FallbackAlgo stats(See UpdateFallbackAlgoStats), it doesn't UpdateStats for Algorithm(e.g. ABC6).
 	// Cause requests will be dispatched to leader, only if leader throws error, then worker falls back to FallbackAlgo and do it locally.
 	if err != nil {
+		// Canceled/timeout RS errors (e.g. from agentic-balancer) reflect the
+		// user's own intent; re-dispatching via fallback would resurrect a
+		// request the client has already abandoned.
+		var rsErr *errs.RSError
+		if errors.As(err, &rsErr) &&
+			(rsErr.FailureType == errs.FailureTypeCanceled || rsErr.FailureType == errs.FailureTypeTimeout) {
+			logger.Log().Warnf("request %s schedule failed with %s, skip fallback (code=%s, stage=%s)",
+				request.GetRequestId(), rsErr.FailureType, rsErr.MaErr.Code, rsErr.ErrorStage)
+			return nil, err
+		}
 		if remoteRequestInfo.IsLocal {
 			return s.doFallbackDispatch(request, params, err, blackId)
 		}
@@ -914,6 +949,11 @@ func (s *SchedulersManager) doFallbackDispatch(request utils.GenerateRequest,
 // only leader do dispatch locally
 func (s *SchedulersManager) doDispatch(reqCtx context.Context, request utils.GenerateRequest,
 	params map[string]string, tracer trace.RequestTracer, blackId string) (*ScheduleResponse, error) {
+	// Inject the user HTTP context so algorithms implementing
+	// utils.ScheduleContextCarrier can observe client cancellation.
+	if carrier, ok := request.(utils.ScheduleContextCarrier); ok {
+		carrier.SetScheduleContext(reqCtx)
+	}
 	local, err := s.shouldDispatchLocally()
 	if err != nil {
 		return nil, err
@@ -969,6 +1009,14 @@ func (s *SchedulersManager) dispatchLocally(request utils.GenerateRequest, param
 
 func (s *SchedulersManager) Close() {
 	s.shouldServe.Store(false)
+	for _, tagLookUp := range s.roleLookUp {
+		for _, ctx := range tagLookUp {
+			if lifecycle, ok := ctx.Algorithm.(scheduler.LifecycleAlgorithm); ok {
+				lifecycle.Close()
+				logger.Log().Infof("closed background loops for scheduler algo [%s]", ctx.Algorithm.GetName())
+			}
+		}
+	}
 	if s.fallbackHealthChecker != nil {
 		s.fallbackHealthChecker.Close()
 	}
