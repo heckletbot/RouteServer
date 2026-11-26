@@ -116,6 +116,11 @@ type ServerConfig struct {
 	MaxRequestBodySizeMB             int64                 `yaml:"max-request-body-size-mb"`
 	EnableOpsAPIsOnServicePort       bool                  `yaml:"enable-ops-apis-on-service-port"`
 	AnthropicErrorTypeConfigFileName string                `yaml:"anthropic-error-type-config-file-name"`
+
+	// EnableCorrelationIDAsSessionID lets X-Correlation-ID act as the session_id
+	// fallback for clients that have no dedicated session header. Off by default:
+	// a correlation id is usually per-request rather than per-conversation.
+	EnableCorrelationIDAsSessionID bool `yaml:"enable-correlation-id-as-session-id" default:"false"`
 }
 
 type HttpConfig struct {

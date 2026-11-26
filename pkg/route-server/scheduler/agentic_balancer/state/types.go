@@ -1,0 +1,40 @@
+/*
+ * Copyright 2026 The RouteServer Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package state
+
+// SessionPhase distinguishes the Reasoning / Acting phase of a session.
+type SessionPhase int
+
+const (
+	PhaseReasoning SessionPhase = iota
+	PhaseActing
+)
+
+func (p SessionPhase) String() string {
+	switch p {
+	case PhaseReasoning:
+		return "Reasoning"
+	case PhaseActing:
+		return "Acting"
+	default:
+		return "Unknown"
+	}
+}
+
+// Worker metric keys are defined in pkg/common/constant (constant.Metric*)
+// so the scheduler, these state tables and the monitor client share one
+// definition instead of keeping per-package copies.

@@ -17,6 +17,7 @@
 package utils
 
 import (
+	"context"
 	"strconv"
 )
 
@@ -58,6 +59,10 @@ type RemoteRequestWrapper struct {
 	PromptTokens    int32          `json:"prompt-tokens"`
 	Stream          bool           `json:"stream"`
 	Model           string         `json:"model"`
+	SessionId       string         `json:"session-id,omitempty"`
+	Priority        int32          `json:"priority,omitempty"`
+	OutputLength    int32          `json:"output-length,omitempty"`
+	scheduleCtx     context.Context
 }
 
 func WrapRequest(request GenerateRequest, needContent bool) *RemoteRequestWrapper {
@@ -69,6 +74,7 @@ func WrapRequest(request GenerateRequest, needContent bool) *RemoteRequestWrappe
 		co := request.GetChat()
 		content = &co
 	}
+	sessionId, priority, outputLength := ExtractSchedulingMetadata(request)
 
 	return &RemoteRequestWrapper{
 		Id:              request.GetRequestId(),
@@ -82,6 +88,9 @@ func WrapRequest(request GenerateRequest, needContent bool) *RemoteRequestWrappe
 		PromptTokens:    request.GetPromptTokenCount(),
 		Stream:          request.IsStream(),
 		Model:           request.GetModel(),
+		SessionId:       sessionId,
+		Priority:        priority,
+		OutputLength:    outputLength,
 	}
 }
 
@@ -141,6 +150,26 @@ func (r *RemoteRequestWrapper) SetPromptLen(promptLen int32) {
 	r.SLOInterval = &SLOInterval{PromptStrLengthMax: strconv.Itoa(int(promptLen))}
 }
 
+func (r *RemoteRequestWrapper) GetSessionId() string {
+	return r.SessionId
+}
+
+func (r *RemoteRequestWrapper) GetPriority() int32 {
+	return r.Priority
+}
+
+func (r *RemoteRequestWrapper) GetOutputLength() int32 {
+	return r.OutputLength
+}
+
+func (r *RemoteRequestWrapper) GetScheduleContext() context.Context {
+	return r.scheduleCtx
+}
+
+func (r *RemoteRequestWrapper) SetScheduleContext(ctx context.Context) {
+	r.scheduleCtx = ctx
+}
+
 type ChatContent struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -158,4 +187,46 @@ type GenerateRequest interface {
 	GetModel() string // model in req
 	GetPromptCacheKey() string
 	GetApcStrategyType() string
+}
+
+// SchedulingMetadata is an optional interface implemented by request types that
+// carry agentic scheduling fields. Only schedulers that need them (e.g.
+// agentic-balancer) type-assert, so other schedulers and test doubles are
+// unaffected by this capability.
+type SchedulingMetadata interface {
+	GetSessionId() string   // session id for affinity scheduling; empty means no session binding
+	GetPriority() int32     // higher value = higher priority, used for overload queueing, default 0
+	GetOutputLength() int32 // predicted output length in tokens for load estimation, 0 means unknown
+}
+
+// ScheduleContextCarrier is an optional interface allowing the dispatch layer to
+// inject the user HTTP context so a scheduler can observe client cancellation.
+type ScheduleContextCarrier interface {
+	SetScheduleContext(ctx context.Context)
+	GetScheduleContext() context.Context
+}
+
+// ExtractSchedulingMetadata reads scheduling fields through the optional
+// interface, returning zero values when the request implementation does not
+// carry them.
+func ExtractSchedulingMetadata(request GenerateRequest) (sessionId string, priority, outputLength int32) {
+	if request == nil {
+		return "", 0, 0
+	}
+	if meta, ok := request.(SchedulingMetadata); ok {
+		return meta.GetSessionId(), meta.GetPriority(), meta.GetOutputLength()
+	}
+	return "", 0, 0
+}
+
+// ExtractScheduleContext returns the injected dispatch context, or nil when the
+// request implementation does not carry one.
+func ExtractScheduleContext(request GenerateRequest) context.Context {
+	if request == nil {
+		return nil
+	}
+	if carrier, ok := request.(ScheduleContextCarrier); ok {
+		return carrier.GetScheduleContext()
+	}
+	return nil
 }

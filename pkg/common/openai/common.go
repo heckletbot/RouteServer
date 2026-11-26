@@ -35,6 +35,12 @@ const (
 	IncludeUsageKey         = "include_usage"
 	ContinuousUsageStatsKey = "continuous_usage_stats"
 
+	// agentic scheduling metadata keys (request body)
+	SessionIdKey       = "session_id"
+	ParentSessionIdKey = "parent_session_id"
+	PriorityKey        = "priority"
+	OutputLengthKey    = "output_length"
+
 	// vllm-specific
 	RequestId = "request_id"
 )

@@ -78,6 +78,10 @@ func (zcs *ZeroCopyStats) GetWorkerStats() WorkerStats {
 func (zcs *ZeroCopyStats) GetNumericStatKeys() *[]string {
 	zcs.statsMutex.RLock()
 	defer zcs.statsMutex.RUnlock()
+	if zcs.NumericStats == nil {
+		keys := make([]string, 0)
+		return &keys
+	}
 	keys := make([]string, 0, len(*zcs.NumericStats))
 	for k := range *(zcs.NumericStats) {
 		keys = append(keys, k)
@@ -86,10 +90,22 @@ func (zcs *ZeroCopyStats) GetNumericStatKeys() *[]string {
 }
 
 func (zcs *ZeroCopyStats) GetStatus() InstanceStatus {
+	zcs.statsMutex.RLock()
+	defer zcs.statsMutex.RUnlock()
 	return zcs.Status
 }
 
+// GetSLOTag lazily defaults the tag: the read path takes only a read lock, and
+// the write lock is taken just for the one-time initialization.
 func (zcs *ZeroCopyStats) GetSLOTag() string {
+	zcs.statsMutex.RLock()
+	tag := zcs.SLOTag
+	zcs.statsMutex.RUnlock()
+	if tag != "" {
+		return tag
+	}
+	zcs.statsMutex.Lock()
+	defer zcs.statsMutex.Unlock()
 	if zcs.SLOTag == "" {
 		zcs.SLOTag = constant.SLOTagDefault
 	}
@@ -97,22 +113,30 @@ func (zcs *ZeroCopyStats) GetSLOTag() string {
 }
 
 func (zcs *ZeroCopyStats) GetPreStatus() InstanceStatus {
+	zcs.statsMutex.RLock()
+	defer zcs.statsMutex.RUnlock()
 	return zcs.PreStatus
 }
 
 func (zcs *ZeroCopyStats) GetTimeStamp() time.Time {
+	zcs.statsMutex.RLock()
+	defer zcs.statsMutex.RUnlock()
 	return zcs.TimeStamp
 }
 
 func (zcs *ZeroCopyStats) SetStatus(status InstanceStatus) {
+	zcs.statsMutex.Lock()
+	defer zcs.statsMutex.Unlock()
 	zcs.PreStatus = zcs.Status
 	zcs.Status = status
 }
 
+// GetNumericStat returns a slice that is invalidated by the next
+// UpdateNumericStats; callers must only read it.
 func (zcs *ZeroCopyStats) GetNumericStat(statusKey string) []*MetricInfo {
+	zcs.statsMutex.RLock()
+	defer zcs.statsMutex.RUnlock()
 	if zcs.NumericStats != nil {
-		zcs.statsMutex.RLock()
-		defer zcs.statsMutex.RUnlock()
 		if numericStat, exist := (*zcs.NumericStats)[statusKey]; exist {
 			return numericStat
 		}

@@ -24,14 +24,16 @@ import (
 
 	"route-server/pkg/common/logger"
 	"route-server/pkg/common/scheduler"
+	"route-server/pkg/route-server/scheduler/agentic_balancer"
 )
 
 const (
-	RoundRobinAlgoName     = "round-robin"
-	ABC6AlgoName           = "abc6"
-	LeastTotalLoadAlgoName = "least-total-load"
-	APCSchedulerName       = "apc"
-	LeastRequestsAlgoName  = "least-requests"
+	RoundRobinAlgoName      = "round-robin"
+	ABC6AlgoName            = "abc6"
+	LeastTotalLoadAlgoName  = "least-total-load"
+	APCSchedulerName        = "apc"
+	LeastRequestsAlgoName   = "least-requests"
+	AgenticBalancerAlgoName = "agentic-balancer"
 )
 
 type AlreadyRegisterError struct {
@@ -123,6 +125,10 @@ func InitBuiltinScheduleAlgorithms() error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to init builtin least requests scheduler, err: %v", err)
+	}
+	err = Register(AgenticBalancerAlgoName, agentic_balancer.NewSessionAwareScheduler)
+	if err != nil {
+		return fmt.Errorf("failed to init builtin agentic-balancer scheduler, err: %v", err)
 	}
 	return nil
 }

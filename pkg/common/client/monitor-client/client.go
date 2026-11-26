@@ -38,12 +38,13 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+// vLLM metric names live in pkg/common/constant; the aliases below keep existing
+// callers of this package working without a second definition.
 const (
-	// vllm metrics name
-	NumRequestsWaiting    = "vllm:num_requests_waiting"
-	NumRequestsRunning    = "vllm:num_requests_running"
-	PromptTokensTotal     = "vllm:prompt_tokens_total"
-	GenerationTokensTotal = "vllm:generation_tokens_total"
+	NumRequestsWaiting    = constant.MetricNumRequestsWaiting
+	NumRequestsRunning    = constant.MetricNumRequestsRunning
+	PromptTokensTotal     = constant.MetricPromptTokensTotal
+	GenerationTokensTotal = constant.MetricGenerationTokensTotal
 )
 
 type MonitorClient interface {
@@ -116,13 +117,25 @@ func (c *prometheusMonitorClient) Init(roleSubs map[string][]string) error {
 	filteredRoleSubs := make(map[string][]string)
 	for role, metricKeys := range roleSubs {
 		var validMetrics []string
+		var droppedMetrics []string
 		for _, metric := range metricKeys {
 			if _, ok := metricMap[metric]; ok {
 				validMetrics = append(validMetrics, metric)
+			} else {
+				droppedMetrics = append(droppedMetrics, metric)
 			}
+		}
+		if len(droppedMetrics) > 0 {
+			logger.Log().Debugf("metrics %v of role %s are not listed in the prometheus config whitelist, ignored",
+				droppedMetrics, role)
 		}
 		if len(validMetrics) > 0 {
 			filteredRoleSubs[role] = validMetrics
+		} else {
+			// An empty intersection drops the role from subscribeMetrics entirely: its
+			// metrics stay zero and nothing else is logged, so warn loudly.
+			logger.Log().Warnf("no metric subscribed for role %s after whitelist filter, "+
+				"stats of this role will be empty (declared %v)", role, metricKeys)
 		}
 	}
 	c.subscribeMetrics = filteredRoleSubs
