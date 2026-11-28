@@ -71,12 +71,10 @@ const (
 	reasonMissingSuccessField    = "missing_success_field"
 )
 
-// Client 向 Conductor 注册/反注册推理实例，并读取已发布的服务列表。
-// 抽成接口便于上层 Manager 注入 fake。
+// Client 向 Conductor 注册/反注册推理实例。抽成接口便于上层 Manager 注入 fake。
 type Client interface {
 	Register(ctx context.Context, req RegisterRequest) error
 	Unregister(ctx context.Context, req UnregisterRequest) error
-	Services(ctx context.Context) ([]PublishedService, error)
 }
 
 // HTTPClient 基于 MessagePack over HTTP 的 Client 实现。
@@ -124,152 +122,6 @@ func NewHTTPClient(cfg Config) (*HTTPClient, error) {
 // Register 注册一个 Prefill 推理实例。
 func (c *HTTPClient) Register(ctx context.Context, req RegisterRequest) error {
 	return c.post(ctx, pathRegister, req, fieldInstanceID)
-}
-
-// Services reads GET /services. The list is what Conductor currently publishes:
-// each instance's KV event endpoint, block size, and dp rank.
-func (c *HTTPClient) Services(ctx context.Context) ([]PublishedService, error) {
-	url := c.baseURL + pathServices
-	reqCtx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
-
-	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build %s request failed: %w", pathServices, err)
-	}
-	httpReq.Header.Set("Accept", ContentTypeMsgpack)
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("get %s failed: %w", url, err)
-	}
-	defer func() {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxServicesBodyBytes))
-		_ = resp.Body.Close()
-	}()
-
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxServicesBodyBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read %s response body failed: %w", pathServices, err)
-	}
-	if len(respBody) > maxServicesBodyBytes {
-		return nil, fmt.Errorf("%s response exceeds %d bytes", pathServices, maxServicesBodyBytes)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.newStatusError(resp, respBody)
-	}
-	if err := checkContentType(resp); err != nil {
-		return nil, &APIError{
-			StatusCode:  resp.StatusCode,
-			Reason:      reasonUnsupportedContentType,
-			Message:     err.Error(),
-			BodySummary: summarizeBody(respBody),
-			Class:       ClassProtocol,
-		}
-	}
-	var decoded map[string]interface{}
-	if err := codec.NewDecoderBytes(respBody, c.handle).Decode(&decoded); err != nil {
-		return nil, &APIError{
-			StatusCode:  resp.StatusCode,
-			Reason:      reasonInvalidMsgpack,
-			Message:     err.Error(),
-			BodySummary: summarizeBody(respBody),
-			Class:       ClassProtocol,
-		}
-	}
-	return parseServices(decoded)
-}
-
-// parseServices reads the GET /services body. A malformed record fails the whole
-// list: registering from a partial view would miss an endpoint conflict.
-func parseServices(decoded map[string]interface{}) ([]PublishedService, error) {
-	raw, ok := decoded["services"]
-	if !ok {
-		return nil, fmt.Errorf("services response has no \"services\"")
-	}
-	items, ok := raw.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("services response field \"services\" has type %T", raw)
-	}
-	out := make([]PublishedService, 0, len(items))
-	for i, item := range items {
-		entry, ok := item.(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("services[%d] has type %T", i, item)
-		}
-		svc, err := readPublishedService(entry)
-		if err != nil {
-			return nil, fmt.Errorf("services[%d]: %w", i, err)
-		}
-		out = append(out, svc)
-	}
-	return out, nil
-}
-
-func readPublishedService(entry map[string]interface{}) (PublishedService, error) {
-	id, err := publishedString(entry, "InstanceID")
-	if err != nil {
-		return PublishedService{}, err
-	}
-	if id == "" {
-		return PublishedService{}, fmt.Errorf("InstanceID is empty")
-	}
-	endpoint, err := publishedString(entry, "Endpoint")
-	if err != nil {
-		return PublishedService{}, err
-	}
-	if endpoint == "" {
-		return PublishedService{}, fmt.Errorf("Endpoint is empty")
-	}
-	blockSize, err := publishedInt(entry, "BlockSize")
-	if err != nil {
-		return PublishedService{}, err
-	}
-	if blockSize <= 0 {
-		return PublishedService{}, fmt.Errorf("BlockSize = %d", blockSize)
-	}
-	dpRank, err := publishedInt(entry, "DPRank")
-	if err != nil {
-		return PublishedService{}, err
-	}
-	if dpRank < 0 {
-		return PublishedService{}, fmt.Errorf("DPRank = %d", dpRank)
-	}
-	tenant, err := publishedString(entry, "TenantID")
-	if err != nil {
-		return PublishedService{}, err
-	}
-	return PublishedService{
-		InstanceID: id,
-		Endpoint:   endpoint,
-		BlockSize:  blockSize,
-		DPRank:     dpRank,
-		TenantID:   tenant,
-	}, nil
-}
-
-func publishedString(entry map[string]interface{}, key string) (string, error) {
-	raw, ok := entry[key]
-	if !ok {
-		return "", fmt.Errorf("missing %s", key)
-	}
-	value, ok := raw.(string)
-	if !ok {
-		return "", fmt.Errorf("%s has type %T", key, raw)
-	}
-	return value, nil
-}
-
-func publishedInt(entry map[string]interface{}, key string) (int, error) {
-	raw, ok := entry[key]
-	if !ok {
-		return 0, fmt.Errorf("missing %s", key)
-	}
-	value, ok := asHitInt64(raw)
-	if !ok {
-		return 0, fmt.Errorf("%s has type %T", key, raw)
-	}
-	return int(value), nil
 }
 
 // Unregister 反注册一个推理实例。Conductor 视实现返回 instance_id 或

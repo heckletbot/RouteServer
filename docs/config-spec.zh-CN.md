@@ -528,10 +528,10 @@ conductor:
 | --- | --- | --- | --- |
 | `conductor.enabled` | bool | 启用 Conductor 注册与命中查询 | 默认值：`false`；模板默认值：`false` |
 | `conductor.base-url` | string | Conductor 服务的绝对 HTTP(S) URL | 默认值：`http://127.0.0.1:13333`。必须包含 scheme 与 host，不能带 userinfo、query 或 fragment |
-| `conductor.request-timeout-ms` | int | 单次 `/register`、`/unregister` 或 `/services` 的超时 | 默认值：`1000`；`0` 表示使用默认值，负数报错 |
+| `conductor.request-timeout-ms` | int | 单次 `/register` 或 `/unregister` 的超时 | 默认值：`1000`；`0` 表示使用默认值，负数报错 |
 | `conductor.query-timeout-ms` | int | 单次 `/query` 的超时。该调用位于请求路径上，应保持较短 | 默认值：`100`；`0` 表示使用默认值，负数报错 |
 | `conductor.retry-interval-ms` | int | 非瞬时错误导致注册失败后的低频重试周期 | 默认值：`30000`；`0` 表示使用默认值，负数报错 |
-| `conductor.block-size` | int | 前缀查询切块用的 KV cache block size | 默认值：`128`。**必须与推理实例实际值一致**；混合注意力模型可能是 `1024`。注册时的 endpoint、block size、dp rank 来自 `GET /services` |
+| `conductor.block-size` | int | 注册和前缀查询共用的 KV cache block size | 默认值：`128`。**必须与推理实例实际值一致**；混合注意力模型可能是 `1024` |
 | `conductor.register-roles` | string | 需要注册的角色，逗号分隔；空值等价于 `prefill` | 允许值：`prefill`、`decode`；未知角色启动报错 |
 | `conductor.token-source` | string | 聊天请求取 token id 的接口 | `render` 或 `tokenize`。空值等价于 `render`。其他值启动报错。`tokenize` 的请求体只保留分词字段 |
 
