@@ -17,13 +17,31 @@
 package pipeline
 
 import (
+	"strings"
 	"testing"
 
 	utils2 "route-server/pkg/common/infer"
 	"route-server/pkg/common/openai"
 	"route-server/pkg/common/utils"
+	"route-server/pkg/route-server/conductor"
 	"route-server/pkg/route-server/handler/request"
 )
+
+func TestApplyPrefixHitsUsesTotalHit(t *testing.T) {
+	ids := make([]int32, 100)
+	hits := map[string]conductor.RankMatch{
+		"p1": {Device: 10, CPULocal: 20, CPUShare: 40, Disk: 70},
+		"d1": {Device: 5, CPULocal: 5, CPUShare: 5, Disk: 5},
+	}
+
+	remaining, line := applyPrefixHits(ids, hits)
+	if remaining["p1"] != 30 || remaining["d1"] != 95 {
+		t.Fatalf("remaining = %v, want p1=30 d1=95", remaining)
+	}
+	if !strings.Contains(line, "d1:total_hit=5,unmatched=95") || !strings.Contains(line, "p1:total_hit=70,unmatched=30") {
+		t.Fatalf("replacement log = %q", line)
+	}
+}
 
 func TestParseRenderTokenIDs(t *testing.T) {
 	cases := []struct {

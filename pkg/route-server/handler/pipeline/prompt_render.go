@@ -24,6 +24,8 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"route-server/pkg/common/constant"
@@ -153,7 +155,10 @@ func resolveRenderedPrompt(ctx *PipelineContext) {
 				ctx.RequestId(), model, len(ids), queryErr)
 		} else if hits != nil {
 			prompt.Queried = true
-			prompt.Remaining = remainingTokens(ids, hits)
+			remaining, replacement := applyPrefixHits(ids, hits)
+			prompt.Remaining = remaining
+			logger.Log().Infof("conductor replace: request %s tokens=%d %s",
+				ctx.RequestId(), len(ids), replacement)
 		}
 	}
 	ctx.RequestContext.RenderedPrompt = prompt
@@ -161,17 +166,23 @@ func resolveRenderedPrompt(ctx *PipelineContext) {
 		ctx.RequestId(), len(ids), prompt.Queried, len(prompt.Remaining), instanceID)
 }
 
-func remainingTokens(ids []int32, hits map[string]conductor.RankMatch) map[string]int32 {
+// applyPrefixHits replaces the prompt length with the tokens each worker still
+// has to compute. The hit subtracted is that worker's total prefix hit: Disk
+// already includes the faster tiers, so the tiers are not added together.
+func applyPrefixHits(ids []int32, hits map[string]conductor.RankMatch) (map[string]int32, string) {
 	full := int64(len(ids))
 	remaining := make(map[string]int32, len(hits))
+	parts := make([]string, 0, len(hits))
 	for id, match := range hits {
 		units := conductor.ComputeRequestUnits(match, full)
 		if units > math.MaxInt32 {
 			units = math.MaxInt32
 		}
 		remaining[id] = int32(units)
+		parts = append(parts, fmt.Sprintf("%s:total_hit=%d,unmatched=%d", id, full-units, units))
 	}
-	return remaining
+	sort.Strings(parts)
+	return remaining, strings.Join(parts, " ")
 }
 
 // cacheSaltFromRequest reads the salt from the client body. The renderer must

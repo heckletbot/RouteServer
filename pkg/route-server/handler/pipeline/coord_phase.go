@@ -93,9 +93,13 @@ func (p *CoordRoutePhase) ExecutePhase(ctx *PipelineContext) *errs.RSError {
 	if decision.WorkerID != "" && ctx.RequestContext.RenderedPrompt != nil {
 		computeTokens = ctx.RequestContext.RenderedPrompt.WorkFor(decision.WorkerID)
 	}
-	logger.Log().Infof("coord-route: request %s mode=%s fallback=%q worker=%q role=%q strategy=%s prompt_tokens=%d compute_tokens=%d cost_ms=%.3f",
+	basis := "tokens"
+	if tokensFor != nil {
+		basis = "unmatched"
+	}
+	logger.Log().Infof("coord-route: request %s mode=%s fallback=%q worker=%q role=%q strategy=%s basis=%s tokens=%d compute_tokens=%d cost_ms=%.3f",
 		ctx.RequestId(), decision.Mode, decision.Fallback, decision.WorkerID, decision.Role,
-		decision.Strategy, promptTokens, computeTokens, float64(time.Since(start).Microseconds())/1000)
+		decision.Strategy, basis, promptTokens, computeTokens, float64(time.Since(start).Microseconds())/1000)
 
 	return nil
 }
