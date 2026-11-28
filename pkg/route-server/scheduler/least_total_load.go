@@ -270,7 +270,7 @@ func (l *LeastTotalLoad) UpdateCluster(available map[string]instance_metrics.Wor
 func (l *LeastTotalLoad) addLoad(instanceId string, request utils.GenerateRequest) {
 	// Lock already held by DispatchRequest caller, no need to lock again
 	reqId := request.GetRequestId()
-	reqLen := request.GetPromptTokenCount()
+	reqLen := requestWorkTokens(request, instanceId)
 	if loadInfo, exists := l.instLoads[instanceId]; exists {
 		// Increment request count and add request length to instance load
 		loadInfo[0] += 1

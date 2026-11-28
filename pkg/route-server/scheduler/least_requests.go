@@ -272,7 +272,7 @@ func (lr *LeastRequests) DispatchRequest(request utils.GenerateRequest, params m
 	lr.instRequestCounts[selectedInst]++
 	lr.instLastAssignedTime[selectedInst] = time.Now().UnixNano()
 	reqId := request.GetRequestId()
-	reqLen := request.GetPromptTokenCount()
+	reqLen := requestWorkTokens(request, selectedInst)
 	lr.reqDispatchInfo[reqId] = &lrRequestInfo{
 		instId: selectedInst,
 		load:   int64(reqLen),

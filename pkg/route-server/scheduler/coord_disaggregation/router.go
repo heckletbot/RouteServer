@@ -16,11 +16,16 @@
 
 package coord_disaggregation
 
+import "route-server/pkg/route-server/scheduler/agentic_balancer/state"
+
 // RouteRequest is everything a routing decision depends on. The caller resolves
 // the request properties once; the router never reads the pipeline context.
 type RouteRequest struct {
-	RequestID           string
-	PromptTokens        int32
+	RequestID    string
+	PromptTokens int32
+	// TokensFor is the per-worker compute length. Nil means every worker is
+	// judged with PromptTokens.
+	TokensFor           func(workerID string) int32
 	HasKVTransferParams bool
 }
 
@@ -61,7 +66,7 @@ func (r *Router) Route(req RouteRequest) Decision {
 		return Decision{Mode: ModePD, Strategy: strategyName, Fallback: FallbackInternalPD}
 	}
 
-	workerID, role, windowMiss := r.strategy.Decide(r.provider.Snapshots(), req.PromptTokens, r.reservations)
+	workerID, role, windowMiss := r.decide(req)
 	if workerID == "" {
 		fallback := FallbackNoIdleWorker
 		if windowMiss {
@@ -82,4 +87,18 @@ func (r *Router) Route(req RouteRequest) Decision {
 		Strategy:    strategyName,
 		Reservation: reservation,
 	}
+}
+
+// perWorkerDecider scores each worker with its own remaining token count.
+type perWorkerDecider interface {
+	DecidePerWorker(workers []*state.WorkerState, tokens func(workerID string) int32, reserved *Manager) (workerID string, role string, windowMiss bool)
+}
+
+func (r *Router) decide(req RouteRequest) (string, string, bool) {
+	if req.TokensFor != nil {
+		if decider, ok := r.strategy.(perWorkerDecider); ok {
+			return decider.DecidePerWorker(r.provider.Snapshots(), req.TokensFor, r.reservations)
+		}
+	}
+	return r.strategy.Decide(r.provider.Snapshots(), req.PromptTokens, r.reservations)
 }

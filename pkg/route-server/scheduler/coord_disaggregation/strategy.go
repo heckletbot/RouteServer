@@ -84,6 +84,15 @@ func (s *ImbalanceStrategy) Name() string {
 }
 
 func (s *ImbalanceStrategy) Decide(workers []*state.WorkerState, promptTokens int32, reserved *Manager) (string, string, bool) {
+	return s.DecidePerWorker(workers, func(string) int32 { return promptTokens }, reserved)
+}
+
+// DecidePerWorker applies each worker's own compute length to its role window.
+// A role that is idle but has no worker inside the window is a window miss.
+func (s *ImbalanceStrategy) DecidePerWorker(workers []*state.WorkerState, tokens func(workerID string) int32, reserved *Manager) (string, string, bool) {
+	if tokens == nil {
+		tokens = func(string) int32 { return 0 }
+	}
 	var idlePrefill, idleDecode []*state.WorkerState
 	for _, worker := range workers {
 		if !s.isIdle(worker, reserved) {
@@ -97,18 +106,25 @@ func (s *ImbalanceStrategy) Decide(workers []*state.WorkerState, promptTokens in
 	}
 
 	if len(idlePrefill) > 0 && len(idleDecode) == 0 {
-		if !s.params.Accepts(constant.Prefill, promptTokens) {
-			return "", "", true
-		}
-		return pickLowestUtil(idlePrefill), constant.Prefill, false
+		return s.pickInWindow(idlePrefill, constant.Prefill, tokens)
 	}
 	if len(idleDecode) > 0 && len(idlePrefill) == 0 {
-		if !s.params.Accepts(constant.Decode, promptTokens) {
-			return "", "", true
-		}
-		return pickLowestUtil(idleDecode), constant.Decode, false
+		return s.pickInWindow(idleDecode, constant.Decode, tokens)
 	}
 	return "", "", false
+}
+
+func (s *ImbalanceStrategy) pickInWindow(workers []*state.WorkerState, role string, tokens func(workerID string) int32) (string, string, bool) {
+	fitting := make([]*state.WorkerState, 0, len(workers))
+	for _, worker := range workers {
+		if s.params.Accepts(role, tokens(worker.WorkerId)) {
+			fitting = append(fitting, worker)
+		}
+	}
+	if len(fitting) == 0 {
+		return "", "", true
+	}
+	return pickLowestUtil(fitting), role, false
 }
 
 // isIdle reports whether the worker can take another local request: its

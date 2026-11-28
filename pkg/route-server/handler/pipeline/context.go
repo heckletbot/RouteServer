@@ -104,6 +104,10 @@ type RequestContext struct {
 	CoordDecision    coord_disaggregation.Decision
 	CoordReservation coord_disaggregation.Reservation
 
+	// RenderedPrompt is the one render of this chat request. Nil means render did
+	// not run or failed, and scheduling keeps the existing length estimate.
+	RenderedPrompt *RenderedPrompt
+
 	// Error handling across pipelines (moved from PipelineContext)
 	errorMutex             sync.RWMutex
 	RsErr                  *errs.RSError

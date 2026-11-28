@@ -63,6 +63,9 @@ type RemoteRequestWrapper struct {
 	Priority        int32          `json:"priority,omitempty"`
 	OutputLength    int32          `json:"output-length,omitempty"`
 	scheduleCtx     context.Context
+
+	renderedQueried   bool
+	renderedRemaining map[string]int32
 }
 
 func WrapRequest(request GenerateRequest, needContent bool) *RemoteRequestWrapper {
@@ -148,6 +151,43 @@ func (r *RemoteRequestWrapper) GetModel() string {
 func (r *RemoteRequestWrapper) SetPromptLen(promptLen int32) {
 	r.PromptTokens = promptLen
 	r.SLOInterval = &SLOInterval{PromptStrLengthMax: strconv.Itoa(int(promptLen))}
+}
+
+// SetRenderedWork records the rendered token count and, when Conductor answered,
+// the per-instance tokens still left to compute.
+func (r *RemoteRequestWrapper) SetRenderedWork(full int32, queried bool, remaining map[string]int32) {
+	r.SetPromptLen(full)
+	r.renderedQueried = queried
+	r.renderedRemaining = remaining
+}
+
+// WorkTokens reports the tokens instanceID still has to compute.
+// The bool is false when this request has no Conductor hit map.
+func (r *RemoteRequestWrapper) WorkTokens(instanceID string) (int32, bool) {
+	if r == nil || !r.renderedQueried {
+		if r == nil {
+			return 0, false
+		}
+		return r.PromptTokens, false
+	}
+	if n, ok := r.renderedRemaining[instanceID]; ok {
+		return n, true
+	}
+	return r.PromptTokens, true
+}
+
+// InstanceWorkTokens reads a per-instance compute length when the request
+// carries one. Callers that only have the full prompt length get false.
+func InstanceWorkTokens(request GenerateRequest, instanceID string) (int32, bool) {
+	if request == nil {
+		return 0, false
+	}
+	if worker, ok := request.(interface {
+		WorkTokens(instanceID string) (int32, bool)
+	}); ok {
+		return worker.WorkTokens(instanceID)
+	}
+	return request.GetPromptTokenCount(), false
 }
 
 func (r *RemoteRequestWrapper) GetSessionId() string {

@@ -275,8 +275,48 @@ func (s *SchedulePhase) setSkipFlag(ctx *PipelineContext, stageName, instanceTyp
 	}
 }
 
+func isPromptLoad(loadType string) bool {
+	switch loadType {
+	case LoadTypeUsage, LoadTypeText, LoadTypeBytes, LoadTypeTextAndImage:
+		return true
+	default:
+		return false
+	}
+}
+
+// applyRenderedPrompt replaces the character-length estimate with the rendered
+// token count on this span. Image loads are left alone so encode can still see
+// how many images the request carries.
+func applyRenderedPrompt(ctx *PipelineContext, spanName string) bool {
+	prompt := ctx.RequestContext.RenderedPrompt
+	if prompt == nil || prompt.TokenCount() <= 0 {
+		return false
+	}
+	sub := ctx.GetSubRequests(spanName)
+	if sub == nil {
+		return false
+	}
+	sub.SetRenderedWork(prompt.TokenCount(), prompt.Queried, prompt.Remaining)
+	return true
+}
+
 func (s *SchedulePhase) InitRequestLoad(ctx *PipelineContext, spanName string) {
+	rendered := false
 	for _, loadType := range s.phaseCfg.ScheduleParams.RequestLoad {
+		if isPromptLoad(loadType) {
+			rendered = applyRenderedPrompt(ctx, spanName)
+			break
+		}
+	}
+	for _, loadType := range s.phaseCfg.ScheduleParams.RequestLoad {
+		if rendered && isPromptLoad(loadType) {
+			count := ctx.GetSubRequests(spanName).GetPromptTokenCount()
+			ctx.GetRequestCtx().RequestLoadsCount.Store(loadType, count)
+			if count > 0 {
+				break
+			}
+			continue
+		}
 		initRequestLoadFunc, exist := initRequestLoadFuncMap[loadType]
 		if !exist {
 			logger.Log().Tracef("no reload type [%v] init func found", loadType)

@@ -383,6 +383,7 @@ func PreparePrefillRequestBody(ctx *PipelineContext, copiedBody *utils.JSONModif
 	if ecParams := ctx.RequestContext.ParsedRequest.EcTransferParams; ecParams != nil {
 		copiedBody.Set(openai.EcTransferParamsKey, ecParams)
 	}
+	attachPrefillPromptIDs(ctx, copiedBody)
 
 	return copiedBody
 }
@@ -463,6 +464,7 @@ func PreparePrefillStreamRequestBody(ctx *PipelineContext, copiedBody *utils.JSO
 	if ecParams := ctx.RequestContext.ParsedRequest.EcTransferParams; ecParams != nil {
 		copiedBody.Set(openai.EcTransferParamsKey, ecParams)
 	}
+	attachPrefillPromptIDs(ctx, copiedBody)
 
 	return copiedBody
 }

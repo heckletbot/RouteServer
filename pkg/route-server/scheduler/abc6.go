@@ -449,7 +449,7 @@ func (a *ABC6) addLoads(instanceId string, request utils.GenerateRequest, sortLo
 	defer a.mu.Unlock()
 
 	reqId := request.GetRequestId()
-	reqLen := request.GetPromptTokenCount()
+	reqLen := requestWorkTokens(request, instanceId)
 
 	loads, exists := a.DPLoads[instanceId]
 	if !exists {

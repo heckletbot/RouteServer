@@ -60,3 +60,30 @@ func TestRouterLeavesWindowDecisionToStrategy(t *testing.T) {
 		t.Fatalf("fallback = %q, want no_idle_worker when neither role is idle", decision.Fallback)
 	}
 }
+
+func TestRouterUsesPerWorkerComputeLength(t *testing.T) {
+	strategy, err := NewStrategy(StrategyImbalance, shippedParams())
+	if err != nil {
+		t.Fatalf("build strategy: %v", err)
+	}
+	router := NewRouter(shippedParams(), strategy, staticSnapshots{
+		workers: []*state.WorkerState{
+			busyWorkerState("p1", constant.Prefill),
+			workerState("d1", constant.Decode),
+		},
+	}, NewManager())
+
+	// The full prompt is outside the decode window. The remaining work on d1 is not.
+	decision := router.Route(RouteRequest{
+		PromptTokens: 8000,
+		TokensFor: func(workerID string) int32 {
+			if workerID == "d1" {
+				return 100
+			}
+			return 8000
+		},
+	})
+	if decision.Mode != ModeLocal || decision.WorkerID != "d1" || decision.Role != constant.Decode {
+		t.Fatalf("Route() = mode %q worker %q role %q, want local d1 decode", decision.Mode, decision.WorkerID, decision.Role)
+	}
+}

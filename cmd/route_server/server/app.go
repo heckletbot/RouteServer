@@ -252,6 +252,11 @@ func (a *App) initManagers() (*Managers, error) {
 	if err != nil {
 		return managers, fmt.Errorf("fail to create inference, err = %v", err)
 	}
+	for _, inferHandler := range pdInferHandlers {
+		if pipelineInfer, ok := inferHandler.(*pipeline.PipelineInfer); ok {
+			pipelineInfer.SetPrefixQuerier(conductorQuerier)
+		}
+	}
 	instanceManager.InitHealthyModule(pdInferHandlers[options.GetConfig().ServerConfig.InferMode].TestInstance, clusterService, pdLinkBlacklistManager)
 
 	// Inject health stats updater to WorkerEventSyncer

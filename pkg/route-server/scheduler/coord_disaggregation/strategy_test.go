@@ -335,3 +335,23 @@ func TestDisabledRoleWithZeroInflightStillJoinsImbalance(t *testing.T) {
 		t.Fatalf("decode busy: Decide() = (%q, %q, %v), want prefill local", worker, role, windowMiss)
 	}
 }
+
+func TestDecidePerWorkerUsesEachWorkersRemaining(t *testing.T) {
+	strategy := &ImbalanceStrategy{params: shippedParams()}
+	workers := []*state.WorkerState{
+		busyWorkerState("p1", constant.Prefill),
+		workerState("d-long", constant.Decode),
+		workerState("d-short", constant.Decode),
+	}
+	tokens := func(id string) int32 {
+		if id == "d-short" {
+			return 100
+		}
+		return 8000
+	}
+
+	worker, role, windowMiss := strategy.DecidePerWorker(workers, tokens, NewManager())
+	if worker != "d-short" || role != constant.Decode || windowMiss {
+		t.Fatalf("DecidePerWorker() = (%q, %q, %v), want the decode worker whose remaining tokens fit", worker, role, windowMiss)
+	}
+}

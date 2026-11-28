@@ -34,9 +34,8 @@ import (
 func PrepareDecodeRequestBody(context *PipelineContext, copiedBody *utils.JSONModifier) *utils.JSONModifier {
 	parsedReq := context.RequestContext.ParsedRequest
 
-	if parsedReq.KvTransferParams != nil {
-		copiedBody.Set(openai.KvTransferParamsKey, parsedReq.KvTransferParams)
-	}
+	// Rebuild from the client body. Prefill's max_tokens=1 must not leak here.
+	attachDecodePromptIDs(context, copiedBody)
 
 	if parsedReq.IsStream() {
 		request.PrepareStreamOptions(copiedBody)

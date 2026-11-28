@@ -60,6 +60,10 @@ func (p *CoordRoutePhase) ExecutePhase(ctx *PipelineContext) *errs.RSError {
 
 	p.loadSource.InitRequestLoad(ctx, p.SpanName())
 	promptTokens := ctx.GetSubRequests(p.SpanName()).GetPromptTokenCount()
+	var tokensFor func(string) int32
+	if rendered := ctx.RequestContext.RenderedPrompt; rendered != nil && rendered.Queried {
+		tokensFor = rendered.WorkFor
+	}
 
 	router := coord_disaggregation.NewRouter(
 		p.params,
@@ -70,6 +74,7 @@ func (p *CoordRoutePhase) ExecutePhase(ctx *PipelineContext) *errs.RSError {
 	decision := router.Route(coord_disaggregation.RouteRequest{
 		RequestID:           ctx.RequestId(),
 		PromptTokens:        promptTokens,
+		TokensFor:           tokensFor,
 		HasKVTransferParams: ctx.RequestContext.ParsedRequest.KvTransferParams != nil,
 	})
 
@@ -81,9 +86,13 @@ func (p *CoordRoutePhase) ExecutePhase(ctx *PipelineContext) *errs.RSError {
 		ctx.RequestContext.InferMsg.SetInstance(constant.Prefill, decision.WorkerID)
 	}
 
-	logger.Log().Infof("coord-route: request %s mode=%s fallback=%q worker=%q role=%q strategy=%s prompt_tokens=%d cost_ms=%.3f",
+	computeTokens := promptTokens
+	if decision.WorkerID != "" && ctx.RequestContext.RenderedPrompt != nil {
+		computeTokens = ctx.RequestContext.RenderedPrompt.WorkFor(decision.WorkerID)
+	}
+	logger.Log().Infof("coord-route: request %s mode=%s fallback=%q worker=%q role=%q strategy=%s prompt_tokens=%d compute_tokens=%d cost_ms=%.3f",
 		ctx.RequestId(), decision.Mode, decision.Fallback, decision.WorkerID, decision.Role,
-		decision.Strategy, promptTokens, float64(time.Since(start).Microseconds())/1000)
+		decision.Strategy, promptTokens, computeTokens, float64(time.Since(start).Microseconds())/1000)
 
 	return nil
 }

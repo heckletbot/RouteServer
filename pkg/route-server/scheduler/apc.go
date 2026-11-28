@@ -284,7 +284,7 @@ func (a *APCScheduler) GetUpdateInterval() int64 {
 func (a *APCScheduler) addLoadUnsafe(instanceId string, request utils.GenerateRequest, matchedRatio float64) {
 	promptTokenCount := request.GetPromptTokenCount()
 	load := a.availableInstanceLoads[instanceId]
-	unmatchedBytes := float64(promptTokenCount) * (1 - matchedRatio)
+	unmatchedBytes := unmatchedPromptTokens(request, instanceId, matchedRatio)
 	reqLen := uint64(unmatchedBytes) + uint64(a.prefixLoadBase)
 	load.PromptTotalLen += reqLen
 	load.RequestsTotalCnt += 1
@@ -611,9 +611,9 @@ func (a *APCScheduler) selectBestInstanceByLoad(request utils.GenerateRequest, m
 func (a *APCScheduler) predictLoadAfterAddRequest(request utils.GenerateRequest, currentLoad apc.InstanceLoad, instanceID string, matchedRatio float64) float64 {
 	promptTokenCount := request.GetPromptTokenCount()
 
-	// Calculate total length after adding request
-	// Note: Perform floating point calculation for unmatched bytes first, convert to uint64 at the end
-	unmatchedBytes := float64(promptTokenCount) * (1 - matchedRatio)
+	// Calculate total length after adding request.
+	// A Conductor hit is already the remaining work, so it is not discounted again.
+	unmatchedBytes := unmatchedPromptTokens(request, instanceID, matchedRatio)
 	reqLen := currentLoad.PromptTotalLen + uint64(unmatchedBytes) + uint64(a.prefixLoadBase)
 	reqNum := currentLoad.RequestsTotalCnt + 1
 

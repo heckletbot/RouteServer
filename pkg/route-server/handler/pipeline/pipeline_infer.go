@@ -28,6 +28,7 @@ import (
 	"route-server/pkg/common/errs"
 	"route-server/pkg/common/health"
 	"route-server/pkg/common/logger"
+	"route-server/pkg/route-server/conductor"
 	"route-server/pkg/route-server/handler"
 	"route-server/pkg/route-server/instances"
 	"route-server/pkg/route-server/metrics"
@@ -47,6 +48,19 @@ type PipelineInfer struct {
 
 	vllmAscendAbortedMu       sync.Mutex
 	vllmAscendAbortedRequests map[string]map[string]struct{}
+
+	// prefixQuerier is set when Conductor is enabled. A chat request then renders
+	// once, and the token ids drive both the prefix-hit query and the backend body.
+	prefixQuerier conductor.HitQuerier
+}
+
+// SetPrefixQuerier wires the Conductor prefix-hit client. Nil leaves prompt
+// length and request bodies on the existing path.
+func (pi *PipelineInfer) SetPrefixQuerier(querier conductor.HitQuerier) {
+	if pi == nil {
+		return
+	}
+	pi.prefixQuerier = querier
 }
 
 func (pi *PipelineInfer) RecordVllmAscendAbortedRequest(prefillerInstanceId string, requestId string) {

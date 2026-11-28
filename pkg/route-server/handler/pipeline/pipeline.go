@@ -427,6 +427,9 @@ func (p *Pipeline) preparePipeline(ctx *PipelineContext) *errs.RSError {
 	if errRS := p.preparePhase.ExecutePhase(ctx); errRS != nil {
 		return errRS
 	}
+	if p.isMain {
+		resolveRenderedPrompt(ctx)
+	}
 	return nil
 }
 
