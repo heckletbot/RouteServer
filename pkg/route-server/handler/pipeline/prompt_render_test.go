@@ -43,6 +43,36 @@ func TestApplyPrefixHitsUsesTotalHit(t *testing.T) {
 	}
 }
 
+func TestTokenizeRequestBodyKeepsTokenFieldsOnly(t *testing.T) {
+	raw, err := utils.NewJSONModifier([]byte(`{"model":"qwen","messages":[{"role":"user","content":"hi"}],"tools":[{"type":"function"}],"max_tokens":128,"stream":true,"temperature":0.2}`))
+	if err != nil {
+		t.Fatalf("parse body: %v", err)
+	}
+	body, err := tokenizeRequestBody(&request.GenerateRequestImplV1{RawBody: raw})
+	if err != nil {
+		t.Fatalf("tokenizeRequestBody() error = %v", err)
+	}
+	parsed, err := utils.NewJSONModifier(body)
+	if err != nil {
+		t.Fatalf("parse tokenize body: %v", err)
+	}
+	if model, ok := parsed.GetString("model"); !ok || model != "qwen" {
+		t.Fatalf("model = %q, %v", model, ok)
+	}
+	if _, ok := parsed.GetArray("messages"); !ok {
+		t.Fatal("tokenize body dropped messages")
+	}
+	if _, ok := parsed.GetArray("tools"); !ok {
+		t.Fatal("tokenize body dropped tools")
+	}
+	if _, ok := parsed.GetInt("max_tokens"); ok {
+		t.Fatal("tokenize body kept max_tokens")
+	}
+	if _, ok := parsed.GetBool("stream"); ok {
+		t.Fatal("tokenize body kept stream")
+	}
+}
+
 func TestParseRenderTokenIDs(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -53,6 +83,7 @@ func TestParseRenderTokenIDs(t *testing.T) {
 		{name: "top level token_ids", body: `{"token_ids":[1,2,3]}`, want: []int32{1, 2, 3}},
 		{name: "nested prompt_token_ids", body: `{"request":{"prompt_token_ids":[4,5]}}`, want: []int32{4, 5}},
 		{name: "array of renders", body: `[{"token_ids":[7]}]`, want: []int32{7}},
+		{name: "tokenize tokens", body: `{"count":3,"max_model_len":2048,"tokens":[9,8,7]}`, want: []int32{9, 8, 7}},
 		{name: "empty", body: `{"token_ids":[]}`, wantErr: true},
 		{name: "negative", body: `{"token_ids":[1,-2]}`, wantErr: true},
 	}

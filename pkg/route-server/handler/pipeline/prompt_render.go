@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	instanceclient "route-server/pkg/common/client/instance-client"
 	"route-server/pkg/common/constant"
 	instance_metrics "route-server/pkg/common/instance-metrics"
 	"route-server/pkg/common/logger"
@@ -41,14 +42,17 @@ import (
 const (
 	promptTokenIDsKey = "prompt_token_ids"
 	renderPathSuffix  = "/render"
+	tokenizePath      = "/tokenize"
 	// renderTimeout bounds tokenization. The user request continues without token
 	// ids when this expires, so a stuck renderer cannot stall scheduling.
 	renderTimeout = 10 * time.Second
 	maxRenderBody = 16 << 20
 )
 
-// RenderedPrompt is one successful call to /v1/chat/completions/render.
-// The same token ids are what Conductor matches and what the backends receive.
+// RenderedPrompt is one tokenization of the original chat body.
+// The ids come from /v1/chat/completions/render, or from POST /tokenize when
+// the engine has no render route. Conductor matches these ids, and the
+// backends receive the same ids.
 type RenderedPrompt struct {
 	TokenIDs []int32
 	// Queried is true when Conductor /query returned a hit map. A skipped or
@@ -114,36 +118,38 @@ func resolveRenderedPrompt(ctx *PipelineContext) {
 
 	renderCtx, cancel := context.WithTimeout(ctx.ClientGinCtx.Request.Context(), renderTimeout)
 	defer cancel()
-	res, rsErr, _ := instanceClient.Generate(
-		renderCtx, parsed.GetHeader(), ctx.RequestPath()+renderPathSuffix,
-		bytes.NewReader(parsed.OriginBodyBytes), instanceID, constant.StagePrepare, ctx.RequestId(), false)
-	if rsErr != nil {
-		logger.Log().Warnf("render: request %s instance %s failed: %v", ctx.RequestId(), instanceID, rsErr)
-		return
-	}
-	if res == nil || res.Body == nil {
-		logger.Log().Warnf("render: request %s instance %s returned an empty response", ctx.RequestId(), instanceID)
-		return
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		snippet, _ := io.ReadAll(io.LimitReader(res.Body, 512))
-		logger.Log().Warnf("render: request %s instance %s status %d body %s",
-			ctx.RequestId(), instanceID, res.StatusCode, snippet)
-		return
-	}
-	body, err := io.ReadAll(io.LimitReader(res.Body, maxRenderBody+1))
+	header := parsed.GetHeader()
+	body, status, err := postTokenEndpoint(renderCtx, instanceClient, header, ctx.RequestPath()+renderPathSuffix,
+		bytes.NewReader(parsed.OriginBodyBytes), instanceID, ctx.RequestId())
 	if err != nil {
-		logger.Log().Warnf("render: request %s read body: %v", ctx.RequestId(), err)
+		logger.Log().Warnf("render: request %s instance %s failed: %v", ctx.RequestId(), instanceID, err)
 		return
 	}
-	if len(body) > maxRenderBody {
-		logger.Log().Warnf("render: request %s response exceeds %d bytes", ctx.RequestId(), maxRenderBody)
+	source := "render"
+	if status == http.StatusNotFound {
+		logger.Log().Infof("render: request %s instance %s has no %s, use %s",
+			ctx.RequestId(), instanceID, renderPathSuffix, tokenizePath)
+		tokenizeBody, buildErr := tokenizeRequestBody(parsed)
+		if buildErr != nil {
+			logger.Log().Warnf("tokenize: request %s %v", ctx.RequestId(), buildErr)
+			return
+		}
+		body, status, err = postTokenEndpoint(renderCtx, instanceClient, header, tokenizePath,
+			bytes.NewReader(tokenizeBody), instanceID, ctx.RequestId())
+		if err != nil {
+			logger.Log().Warnf("tokenize: request %s instance %s failed: %v", ctx.RequestId(), instanceID, err)
+			return
+		}
+		source = "tokenize"
+	}
+	if status != http.StatusOK {
+		logger.Log().Warnf("%s: request %s instance %s status %d body %s",
+			source, ctx.RequestId(), instanceID, status, tokenResponseSnippet(body))
 		return
 	}
 	ids, err := parseRenderTokenIDs(body)
 	if err != nil {
-		logger.Log().Warnf("render: request %s parse token ids: %v", ctx.RequestId(), err)
+		logger.Log().Warnf("%s: request %s parse token ids: %v", source, ctx.RequestId(), err)
 		return
 	}
 
@@ -162,8 +168,56 @@ func resolveRenderedPrompt(ctx *PipelineContext) {
 		}
 	}
 	ctx.RequestContext.RenderedPrompt = prompt
-	logger.Log().Infof("render: request %s tokens=%d queried=%v instances=%d via %s",
-		ctx.RequestId(), len(ids), prompt.Queried, len(prompt.Remaining), instanceID)
+	logger.Log().Infof("render: request %s tokens=%d source=%s queried=%v instances=%d via %s",
+		ctx.RequestId(), len(ids), source, prompt.Queried, len(prompt.Remaining), instanceID)
+}
+
+// postTokenEndpoint reads one tokenization response and closes its body.
+func postTokenEndpoint(ctx context.Context, client instanceclient.InstanceClient, header http.Header, path string, body io.Reader, instanceID, requestID string) ([]byte, int, error) {
+	res, rsErr, _ := client.Generate(ctx, header, path, body, instanceID, constant.StagePrepare, requestID, false)
+	if rsErr != nil {
+		return nil, 0, rsErr
+	}
+	if res == nil || res.Body == nil {
+		return nil, 0, fmt.Errorf("empty response from %s", path)
+	}
+	defer res.Body.Close()
+	payload, err := io.ReadAll(io.LimitReader(res.Body, maxRenderBody+1))
+	if err != nil {
+		return nil, res.StatusCode, err
+	}
+	if len(payload) > maxRenderBody {
+		return nil, res.StatusCode, fmt.Errorf("response from %s exceeds %d bytes", path, maxRenderBody)
+	}
+	return payload, res.StatusCode, nil
+}
+
+// tokenizeRequestBody is the POST /tokenize body. It keeps the fields that
+// change the token sequence and leaves sampling fields such as max_tokens off,
+// because a strict tokenizer rejects them.
+func tokenizeRequestBody(parsed *request.GenerateRequestImplV1) ([]byte, error) {
+	messages, ok := parsed.RawBody.GetRaw("messages")
+	if !ok {
+		return nil, fmt.Errorf("chat request has no messages")
+	}
+	payload := map[string]interface{}{"messages": messages}
+	for _, key := range []string{
+		"model", "tools", "chat_template", "chat_template_kwargs",
+		"add_generation_prompt", "continue_final_message", "add_special_tokens",
+		"mm_processor_kwargs",
+	} {
+		if value, exists := parsed.RawBody.GetRaw(key); exists {
+			payload[key] = value
+		}
+	}
+	return utils.SonicApi.Marshal(payload)
+}
+
+func tokenResponseSnippet(body []byte) string {
+	if len(body) > 512 {
+		return string(body[:512])
+	}
+	return string(body)
 }
 
 // applyPrefixHits replaces the prompt length with the tokens each worker still
@@ -238,7 +292,7 @@ func parseRenderTokenIDs(body []byte) ([]int32, error) {
 	}
 	ids, ok := tokenIDsFrom(raw, 0)
 	if !ok || len(ids) == 0 {
-		return nil, fmt.Errorf("render response has no token_ids")
+		return nil, fmt.Errorf("response has no token ids")
 	}
 	return ids, nil
 }
@@ -258,6 +312,9 @@ func tokenIDsFrom(raw interface{}, depth int) ([]int32, bool) {
 			return ids, true
 		}
 		if ids, ok := readTokenIDs(value, promptTokenIDsKey); ok {
+			return ids, true
+		}
+		if ids, ok := readTokenIDs(value, "tokens"); ok {
 			return ids, true
 		}
 		if nested, exists := value["request"]; exists {
