@@ -355,3 +355,33 @@ func TestDecidePerWorkerUsesEachWorkersRemaining(t *testing.T) {
 		t.Fatalf("DecidePerWorker() = (%q, %q, %v), want the decode worker whose remaining tokens fit", worker, role, windowMiss)
 	}
 }
+
+func TestImbalanceIgnoresNonPDRolesAndStaleSnapshots(t *testing.T) {
+	strategy := &ImbalanceStrategy{params: testParams()}
+	manager := NewManager()
+
+	encode := workerState("e1", constant.Encode)
+	idlePrefill := workerState("p1", constant.Prefill)
+	busyDecode := busyWorkerState("d1", constant.Decode)
+	worker, role, windowMiss := strategy.Decide([]*state.WorkerState{encode, idlePrefill, busyDecode}, 100, manager)
+	if worker != "p1" || role != constant.Prefill || windowMiss {
+		t.Fatalf("encode must stay out of the prefill set: (%q, %q, %v)", worker, role, windowMiss)
+	}
+
+	worker, role, windowMiss = strategy.Decide([]*state.WorkerState{encode, busyDecode}, 100, manager)
+	if worker != "" || role != "" || windowMiss {
+		t.Fatalf("encode plus a busy decode is not a prefill local route: (%q, %q, %v)", worker, role, windowMiss)
+	}
+
+	staleDecode := workerState("d-stale", constant.Decode)
+	staleDecode.UpdatedAt = time.Now().Add(-time.Minute)
+	worker, role, windowMiss = strategy.Decide([]*state.WorkerState{idlePrefill, staleDecode}, 100, manager)
+	if worker != "" || role != "" || windowMiss {
+		t.Fatalf("a stale decode side must not count as busy: (%q, %q, %v)", worker, role, windowMiss)
+	}
+
+	worker, role, windowMiss = strategy.Decide([]*state.WorkerState{idlePrefill}, 100, manager)
+	if worker != "" || role != "" || windowMiss {
+		t.Fatalf("a missing decode side must not count as busy: (%q, %q, %v)", worker, role, windowMiss)
+	}
+}

@@ -21,6 +21,7 @@ import (
 
 	commoncfg "route-server/pkg/common/config"
 	"route-server/pkg/common/constant"
+	common_infer "route-server/pkg/common/infer"
 	"route-server/pkg/common/logger"
 	"route-server/pkg/route-server/scheduler/coord_disaggregation"
 )
@@ -52,11 +53,10 @@ func configureCoordRouting(pipeline *Pipeline, cfg *commoncfg.ServerConfig) erro
 		return fmt.Errorf("phase [%s] is not a coord route phase", phase.PhaseName())
 	}
 
-	// The prompt-token gate must read the same size the prefill schedule reads,
-	// so it borrows that phase instead of carrying a second request_load list.
+	// Local routing writes the chosen worker into the prefill schedule slot.
 	loadSource := pipeline.schedulePhaseFor(constant.Prefill)
 	if loadSource == nil {
-		return fmt.Errorf("pipeline [%s] has a coord route phase but no prefill schedule phase to take request_load from", pipeline.Name)
+		return fmt.Errorf("pipeline [%s] has a coord route phase but no prefill schedule phase", pipeline.Name)
 	}
 
 	if cfg.CoordRouting.LocalMinInputTokens != nil {
@@ -71,6 +71,9 @@ func configureCoordRouting(pipeline *Pipeline, cfg *commoncfg.ServerConfig) erro
 	if err != nil {
 		return err
 	}
+	if err := validateCoordExecution(pipeline, coordPhase); err != nil {
+		return err
+	}
 
 	coordPhase.Configure(params, strategy, loadSource)
 	logger.Log().Infof("coord-routing enabled: strategy=%s p-window=[%d,%d] d-window=[%d,%d] stale=%s idle(kv<=%.2f,wait<=%d,runs p<=%d/d<=%d) inflight(p=%d,d=%d)",
@@ -81,4 +84,118 @@ func configureCoordRouting(pipeline *Pipeline, cfg *commoncfg.ServerConfig) erro
 		params.IdleMaxKVUsage, params.IdleMaxWaiting, params.IdleMaxRunningP, params.IdleMaxRunningD,
 		params.PMaxInflight, params.DMaxInflight)
 	return nil
+}
+
+// validateCoordExecution checks the pipeline edges the local route actually uses.
+// A missing edge is a startup error. The request path does not substitute another one.
+func validateCoordExecution(pipeline *Pipeline, coord Phase) error {
+	coordName := coord.PhaseName()
+	prefillExecute := pipeline.executePhaseFor(constant.Prefill)
+	decodeSchedule := pipeline.schedulePhaseFor(constant.Decode)
+	decodeExecute := pipeline.executePhaseFor(constant.Decode)
+	prefillSchedule := pipeline.schedulePhaseFor(constant.Prefill)
+	if prefillExecute == nil || decodeSchedule == nil || decodeExecute == nil {
+		return fmt.Errorf("pipeline [%s] coord route requires a prefill execute phase and decode schedule and execute phases", pipeline.Name)
+	}
+
+	byName := map[string]Phase{}
+	for _, phase := range pipeline.phases {
+		byName[phase.PhaseName()] = phase
+	}
+	for _, phase := range []Phase{prefillSchedule, prefillExecute, decodeSchedule, decodeExecute} {
+		if !dependsOnPhase(phase, coordName, byName) {
+			return fmt.Errorf("pipeline [%s] phase [%s] must depend on coord route phase [%s]", pipeline.Name, phase.PhaseName(), coordName)
+		}
+	}
+
+	executeCfg := prefillExecute.phaseCfg.ExecuteParams
+	if !containsName(executeCfg.PreProcessRequestFuncs, CoordPrepareRequest) ||
+		containsAnyName(executeCfg.PreProcessRequestFuncs, PrefillPrepareRequest, PrefillStreamPrepareRequest) {
+		return fmt.Errorf("pipeline [%s] prefill execute must prepare the body with %s and without %s or %s",
+			pipeline.Name, CoordPrepareRequest, PrefillPrepareRequest, PrefillStreamPrepareRequest)
+	}
+	if !containsName(executeCfg.PostProcessFuncs, CoordProcessResponse) ||
+		containsAnyName(executeCfg.PostProcessFuncs, PrefillProcessResponse, PrefillStreamProcessResponse, CheckKVTransferParamsKey) {
+		return fmt.Errorf("pipeline [%s] prefill execute must handle the response with %s and without %s, %s, or %s",
+			pipeline.Name, CoordProcessResponse, PrefillProcessResponse, PrefillStreamProcessResponse, CheckKVTransferParamsKey)
+	}
+	if !containsName(executeCfg.PostPhaseFuncs, CoordPostPhase) {
+		return fmt.Errorf("pipeline [%s] prefill execute must finish the phase with %s", pipeline.Name, CoordPostPhase)
+	}
+
+	if decodeSchedule.phaseCfg.ScheduleParams.SkipPolicy != SkipPolicySkipCoordLocal {
+		return fmt.Errorf("pipeline [%s] decode schedule skip_policy must be %s", pipeline.Name, SkipPolicySkipCoordLocal)
+	}
+	if decodeSchedule.StageName() == "" || decodeSchedule.StageName() != decodeExecute.StageName() {
+		return fmt.Errorf("pipeline [%s] decode schedule and decode execute must share one stage name", pipeline.Name)
+	}
+	return nil
+}
+
+func dependsOnPhase(phase Phase, target string, byName map[string]Phase) bool {
+	seen := map[string]bool{}
+	var walk func(name string) bool
+	walk = func(name string) bool {
+		if name == target {
+			return true
+		}
+		if seen[name] {
+			return false
+		}
+		seen[name] = true
+		next, ok := byName[name]
+		if !ok {
+			return false
+		}
+		for _, dep := range phaseDepends(next) {
+			if walk(dep) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, dep := range phaseDepends(phase) {
+		if walk(dep) {
+			return true
+		}
+	}
+	return false
+}
+
+func phaseDepends(phase Phase) []string {
+	cfg := phaseConfig(phase)
+	if cfg == nil {
+		return nil
+	}
+	return cfg.DependsOn
+}
+
+func phaseConfig(phase Phase) *common_infer.PhaseConfig {
+	switch typed := phase.(type) {
+	case *SchedulePhase:
+		return typed.phaseCfg
+	case *MonoRequestPhase:
+		return typed.phaseCfg
+	case *CoordRoutePhase:
+		return typed.phaseCfg
+	}
+	return nil
+}
+
+func containsName(names []string, want string) bool {
+	for _, name := range names {
+		if name == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAnyName(names []string, blocked ...string) bool {
+	for _, name := range names {
+		if containsName(blocked, name) {
+			return true
+		}
+	}
+	return false
 }

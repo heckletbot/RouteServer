@@ -77,15 +77,10 @@ func TestReleaseCoordReservationIsIdempotentAcrossPaths(t *testing.T) {
 	}
 }
 
-func newTestPrefillSchedule(t *testing.T) *SchedulePhase {
+func mustInitPhase(t *testing.T, phase Phase, cfg *common_infer.PhaseConfig) Phase {
 	t.Helper()
-
-	phase := &SchedulePhase{BasePhase: NewBasePhase(constant.SchedulePhase, "")}
-	cfg := &common_infer.PhaseConfig{StageName: "Prefill"}
-	cfg.ScheduleParams.InstanceType = constant.Prefill
-	cfg.ScheduleParams.RequestLoad = []string{LoadTypeText}
 	if err := phase.Init(cfg); err != nil {
-		t.Fatalf("init prefill schedule phase: %v", err)
+		t.Fatalf("init phase %s: %v", cfg.Name, err)
 	}
 	return phase
 }
@@ -96,8 +91,43 @@ func newCoordPipeline(t *testing.T) *Pipeline {
 	return &Pipeline{
 		Name: "pd_coord",
 		phases: []Phase{
-			&CoordRoutePhase{BasePhase: NewBasePhase(constant.CoordRoutePhase, "")},
-			newTestPrefillSchedule(t),
+			mustInitPhase(t, newCoordRoutePhase(), &common_infer.PhaseConfig{
+				Name: "coord_route", Type: constant.CoordRoutePhase, StageName: "Coord",
+			}),
+			mustInitPhase(t, newSchedulePhase(), &common_infer.PhaseConfig{
+				Name: "prefill_schedule", Type: constant.SchedulePhase, StageName: "Prefill",
+				DependsOn: []string{"coord_route"},
+				ScheduleParams: common_infer.ScheduleConfig{
+					InstanceType: constant.Prefill,
+					RequestLoad:  []string{LoadTypeText},
+				},
+			}),
+			mustInitPhase(t, newExecutePhase(), &common_infer.PhaseConfig{
+				Name: "prefill_execute", Type: constant.ExecutePhase, StageName: "Prefill",
+				DependsOn: []string{"prefill_schedule"},
+				ExecuteParams: common_infer.ExecuteConfig{
+					InstanceType:           constant.Prefill,
+					PreProcessRequestFuncs: []string{CoordPrepareRequest},
+					PostProcessFuncs:       []string{CoordProcessResponse},
+					PostPhaseFuncs:         []string{CoordPostPhase},
+				},
+			}),
+			mustInitPhase(t, newSchedulePhase(), &common_infer.PhaseConfig{
+				Name: "decode_schedule", Type: constant.SchedulePhase, StageName: "Decode",
+				DependsOn: []string{"prefill_execute"},
+				ScheduleParams: common_infer.ScheduleConfig{
+					InstanceType: constant.Decode,
+					SkipPolicy:   SkipPolicySkipCoordLocal,
+					RequestLoad:  []string{LoadTypeText},
+				},
+			}),
+			mustInitPhase(t, newExecutePhase(), &common_infer.PhaseConfig{
+				Name: "decode_execute", Type: constant.ExecutePhase, StageName: "Decode",
+				DependsOn: []string{"decode_schedule"},
+				ExecuteParams: common_infer.ExecuteConfig{
+					InstanceType: constant.Decode,
+				},
+			}),
 		},
 	}
 }
@@ -171,6 +201,18 @@ func TestConfigureCoordRoutingRejectsPipelineWithoutPrefillSchedule(t *testing.T
 	}
 	if !strings.Contains(err.Error(), "prefill schedule phase") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfigureCoordRoutingRejectsUnwiredExecution(t *testing.T) {
+	pipeline := newCoordPipeline(t)
+	prefillExecute := pipeline.executePhaseFor(constant.Prefill)
+	prefillExecute.phaseCfg.ExecuteParams.PreProcessRequestFuncs = []string{PrefillPrepareRequest, CoordPrepareRequest}
+	cfg := &commoncfg.ServerConfig{CoordRouting: validCoordRouting()}
+
+	err := configureCoordRouting(pipeline, cfg)
+	if err == nil || !strings.Contains(err.Error(), CoordPrepareRequest) {
+		t.Fatalf("stacked prefill prepare must fail startup, got %v", err)
 	}
 }
 

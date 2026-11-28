@@ -124,7 +124,9 @@ server:
 
 `coord-routing` 是可选项。只有本节和 pipeline 里的 `CoordRoute` 阶段同时存在才开启；只写其中一个，启动失败。没有结构体标签默认值：没写的数字是 0，半填的配置在启动期失败，而不是悄悄变成永不命中。
 
-恰好一个角色空闲，且 prompt 长度落在该角色窗口内时，请求由那个空闲 worker 整段服务。`*-hybrid-max-input-tokens: 0` 表示该角色不参与本地路由，此时对应的 `*-local-min-input-tokens` 必须为 0。被关掉的角色仍参与失衡判断：它的 worker 只按空闲阈值区分忙闲。该角色的 `*-hybrid-max-inflight` 可以为 0；这个 0 不是占槽上限，也不会把该角色算成全忙。长度为 0 的 prompt 仍走原来的 PD。decode 下限配 0 时，实际命中区间是 `(0, 1024]`。
+恰好一个角色空闲，且 prompt 长度落在该角色窗口内时，请求由那个空闲 worker 整段服务。窗口使用的长度是 Render 返回的 token 数；请求没有这组 token 时长度为 0，仍走 PD。某一侧要算作全忙，这一侧必须有 worker，且每个 worker 的快照都未过期、其中没有空闲 worker。角色不是 prefill 或 decode 的 worker 不参与判断。`*-hybrid-max-input-tokens: 0` 表示该角色不参与本地路由，此时对应的 `*-local-min-input-tokens` 必须为 0。被关掉的角色仍参与失衡判断：它的 worker 只按空闲阈值区分忙闲。该角色的 `*-hybrid-max-inflight` 可以为 0；这个 0 不是占槽上限，也不会把该角色算成全忙。decode 下限配 0 时，实际命中区间是 `(0, 1024]`。
+
+`prefill_schedule`、`prefill_execute`、`decode_schedule`、`decode_execute` 都要能顺着 `dependsOn` 到达 `CoordRoute` 阶段的 `name`。`prefill_execute` 使用 `coord_prepare_request`、`coord_post_response`、`coord_post_phase`，并且不挂 `prefill_prepare_request`、`prefill_stream_prepare_request`、`prefill_post_response`、`prefill_stream_post_response`、`check_kv_transfer_params`。`decode_schedule` 的 `skip_policy` 是 `skip_if_coord_local`，它的 `stage_name` 与 `decode_execute` 相同且不为空。少任何一处，启动失败。
 
 旧键 `local-min-input-tokens` 会在启动时报错。改用下面的分角色下限。
 

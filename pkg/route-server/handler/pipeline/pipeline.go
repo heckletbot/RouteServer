@@ -456,6 +456,18 @@ func (p *Pipeline) schedulePhaseFor(instanceType string) *SchedulePhase {
 	return nil
 }
 
+// executePhaseFor returns the execute phase of one instance role, or nil when
+// the pipeline does not execute that role.
+func (p *Pipeline) executePhaseFor(instanceType string) *MonoRequestPhase {
+	for _, phase := range p.phases {
+		executePhase, ok := phase.(*MonoRequestPhase)
+		if ok && executePhase.relatedInstanceType == instanceType {
+			return executePhase
+		}
+	}
+	return nil
+}
+
 func (p *Pipeline) ExecutePipeline(ctx *PipelineContext) {
 	// prepare for pipeline
 	if errRs := p.preparePipeline(ctx); errRs != nil {

@@ -47,8 +47,7 @@ func newCoordRoutePhase() Phase {
 
 // Configure injects the inputs resolved from the server config and pipeline at
 // startup, so a request only does the work of a decision. loadSource is the
-// prefill schedule phase: the phase runs its request-load estimator instead of
-// keeping a second request_load list that could drift away from it.
+// prefill schedule phase that receives the chosen worker.
 func (p *CoordRoutePhase) Configure(params coord_disaggregation.Params, strategy coord_disaggregation.Strategy, loadSource *SchedulePhase) {
 	p.params = params
 	p.strategy = strategy
@@ -58,11 +57,15 @@ func (p *CoordRoutePhase) Configure(params coord_disaggregation.Params, strategy
 func (p *CoordRoutePhase) ExecutePhase(ctx *PipelineContext) *errs.RSError {
 	start := time.Now()
 
-	p.loadSource.InitRequestLoad(ctx, p.SpanName())
-	promptTokens := ctx.GetSubRequests(p.SpanName()).GetPromptTokenCount()
+	// The window compares rendered token ids. Without them the length is 0, and
+	// a zero-length prompt stays on PD.
+	var promptTokens int32
 	var tokensFor func(string) int32
-	if rendered := ctx.RequestContext.RenderedPrompt; rendered != nil && rendered.Queried {
-		tokensFor = rendered.WorkFor
+	if rendered := ctx.RequestContext.RenderedPrompt; rendered != nil {
+		promptTokens = rendered.TokenCount()
+		if rendered.Queried {
+			tokensFor = rendered.WorkFor
+		}
 	}
 
 	router := coord_disaggregation.NewRouter(

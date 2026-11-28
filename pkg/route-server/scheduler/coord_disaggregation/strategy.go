@@ -90,28 +90,45 @@ func (s *ImbalanceStrategy) Decide(workers []*state.WorkerState, promptTokens in
 // DecidePerWorker applies each worker's own compute length to its role window.
 // A role that is idle but has no worker inside the window is a window miss.
 func (s *ImbalanceStrategy) DecidePerWorker(workers []*state.WorkerState, tokens func(workerID string) int32, reserved *Manager) (string, string, bool) {
-	if tokens == nil {
-		tokens = func(string) int32 { return 0 }
-	}
 	var idlePrefill, idleDecode []*state.WorkerState
+	prefillSeen, decodeSeen := 0, 0
+	prefillStale, decodeStale := false, false
 	for _, worker := range workers {
-		if !s.isIdle(worker, reserved) {
-			continue
-		}
-		if worker.Role == constant.Decode {
-			idleDecode = append(idleDecode, worker)
-		} else {
-			idlePrefill = append(idlePrefill, worker)
+		switch worker.Role {
+		case constant.Prefill:
+			prefillSeen++
+			if !s.fresh(worker) {
+				prefillStale = true
+				continue
+			}
+			if s.isIdle(worker, reserved) {
+				idlePrefill = append(idlePrefill, worker)
+			}
+		case constant.Decode:
+			decodeSeen++
+			if !s.fresh(worker) {
+				decodeStale = true
+				continue
+			}
+			if s.isIdle(worker, reserved) {
+				idleDecode = append(idleDecode, worker)
+			}
 		}
 	}
 
-	if len(idlePrefill) > 0 && len(idleDecode) == 0 {
+	// A role is entirely busy only when it has workers, every snapshot is fresh,
+	// and none of those workers are idle. A missing or stale role is unknown.
+	if len(idlePrefill) > 0 && decodeSeen > 0 && !decodeStale && len(idleDecode) == 0 {
 		return s.pickInWindow(idlePrefill, constant.Prefill, tokens)
 	}
-	if len(idleDecode) > 0 && len(idlePrefill) == 0 {
+	if len(idleDecode) > 0 && prefillSeen > 0 && !prefillStale && len(idlePrefill) == 0 {
 		return s.pickInWindow(idleDecode, constant.Decode, tokens)
 	}
 	return "", "", false
+}
+
+func (s *ImbalanceStrategy) fresh(worker *state.WorkerState) bool {
+	return time.Since(worker.UpdatedAt) <= s.params.StaleDuration
 }
 
 func (s *ImbalanceStrategy) pickInWindow(workers []*state.WorkerState, role string, tokens func(workerID string) int32) (string, string, bool) {
