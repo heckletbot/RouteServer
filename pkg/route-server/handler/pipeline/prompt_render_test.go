@@ -17,9 +17,14 @@
 package pipeline
 
 import (
+	"bytes"
+	"context"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
+	"route-server/pkg/common/errs"
 	utils2 "route-server/pkg/common/infer"
 	"route-server/pkg/common/openai"
 	"route-server/pkg/common/utils"
@@ -40,6 +45,74 @@ func TestApplyPrefixHitsUsesTotalHit(t *testing.T) {
 	}
 	if !strings.Contains(line, "d1:total_hit=5,unmatched=95") || !strings.Contains(line, "p1:total_hit=70,unmatched=30") {
 		t.Fatalf("replacement log = %q", line)
+	}
+}
+
+type scriptedTokenClient struct {
+	paths []string
+	steps []int
+	body  []byte
+}
+
+func (c *scriptedTokenClient) Generate(_ context.Context, _ http.Header, path string, _ io.Reader, instanceID, stage, _ string, _ bool) (*http.Response, *errs.RSError, *utils.InstanceFailureDetails) {
+	c.paths = append(c.paths, path)
+	status := http.StatusOK
+	if len(c.steps) > 0 {
+		status = c.steps[0]
+		c.steps = c.steps[1:]
+	}
+	if status != http.StatusOK {
+		return nil, errs.NewRSEngineError(&errs.EngineError{
+			EngineErrBody: c.body,
+			EngineStatus:  status,
+			InstanceID:    instanceID,
+		}, stage), nil
+	}
+	return &http.Response{StatusCode: status, Body: io.NopCloser(bytes.NewReader(c.body))}, nil, nil
+}
+
+func chatParsed(t *testing.T) *request.GenerateRequestImplV1 {
+	t.Helper()
+	rawBody := []byte(`{"model":"qwen","messages":[{"role":"user","content":"hi"}]}`)
+	raw, err := utils.NewJSONModifier(rawBody)
+	if err != nil {
+		t.Fatalf("parse body: %v", err)
+	}
+	return &request.GenerateRequestImplV1{RawBody: raw, OriginBodyBytes: rawBody}
+}
+
+func TestFetchPromptTokenIDsUsesConfiguredEndpoint(t *testing.T) {
+	parsed := chatParsed(t)
+	renderClient := &scriptedTokenClient{body: []byte(`{"token_ids":[1,2]}`)}
+	ids, err := fetchPromptTokenIDs(context.Background(), renderClient, nil, conductor.TokenSourceRender,
+		"/v1/chat/completions/render", parsed, "prefill-4", "req-1")
+	if err != nil {
+		t.Fatalf("render fetch: %v", err)
+	}
+	if len(ids) != 2 || ids[0] != 1 || renderClient.paths[0] != "/v1/chat/completions/render" || len(renderClient.paths) != 1 {
+		t.Fatalf("render ids=%v paths=%v", ids, renderClient.paths)
+	}
+
+	tokenizeClient := &scriptedTokenClient{body: []byte(`{"tokens":[4,5,6]}`)}
+	ids, err = fetchPromptTokenIDs(context.Background(), tokenizeClient, nil, conductor.TokenSourceTokenize,
+		"/v1/chat/completions/render", parsed, "prefill-4", "req-1")
+	if err != nil {
+		t.Fatalf("tokenize fetch: %v", err)
+	}
+	if len(ids) != 3 || ids[0] != 4 || tokenizeClient.paths[0] != tokenizePath || len(tokenizeClient.paths) != 1 {
+		t.Fatalf("tokenize ids=%v paths=%v", ids, tokenizeClient.paths)
+	}
+}
+
+func TestFetchPromptTokenIDsDoesNotSwitchEndpointOn404(t *testing.T) {
+	client := &scriptedTokenClient{steps: []int{http.StatusNotFound}, body: []byte(`{"detail":"Not Found"}`)}
+	_, err := fetchPromptTokenIDs(context.Background(), client, nil, conductor.TokenSourceRender,
+		"/v1/chat/completions/render", chatParsed(t), "prefill-4", "req-1")
+	if err == nil {
+		t.Fatal("render 404 must fail")
+	}
+	if len(client.paths) != 1 || client.paths[0] != "/v1/chat/completions/render" {
+		t.Fatalf("paths = %v, want only the render route", client.paths)
 	}
 }
 

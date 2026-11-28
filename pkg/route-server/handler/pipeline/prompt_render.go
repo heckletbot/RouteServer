@@ -28,8 +28,8 @@ import (
 	"strings"
 	"time"
 
-	instanceclient "route-server/pkg/common/client/instance-client"
 	"route-server/pkg/common/constant"
+	"route-server/pkg/common/errs"
 	instance_metrics "route-server/pkg/common/instance-metrics"
 	"route-server/pkg/common/logger"
 	"route-server/pkg/common/openai"
@@ -50,9 +50,8 @@ const (
 )
 
 // RenderedPrompt is one tokenization of the original chat body.
-// The ids come from /v1/chat/completions/render, or from POST /tokenize when
-// the engine has no render route. Conductor matches these ids, and the
-// backends receive the same ids.
+// The endpoint is selected by conductor.token-source. Conductor matches these
+// ids, and the backends receive the same ids.
 type RenderedPrompt struct {
 	TokenIDs []int32
 	// Queried is true when Conductor /query returned a hit map. A skipped or
@@ -118,38 +117,11 @@ func resolveRenderedPrompt(ctx *PipelineContext) {
 
 	renderCtx, cancel := context.WithTimeout(ctx.ClientGinCtx.Request.Context(), renderTimeout)
 	defer cancel()
-	header := parsed.GetHeader()
-	body, status, err := postTokenEndpoint(renderCtx, instanceClient, header, ctx.RequestPath()+renderPathSuffix,
-		bytes.NewReader(parsed.OriginBodyBytes), instanceID, ctx.RequestId())
+	ids, err := fetchPromptTokenIDs(renderCtx, instanceClient, parsed.GetHeader(),
+		ctx.InferManager.tokenSource, ctx.RequestPath()+renderPathSuffix, parsed, instanceID, ctx.RequestId())
 	if err != nil {
-		logger.Log().Warnf("render: request %s instance %s failed: %v", ctx.RequestId(), instanceID, err)
-		return
-	}
-	source := "render"
-	if status == http.StatusNotFound {
-		logger.Log().Infof("render: request %s instance %s has no %s, use %s",
-			ctx.RequestId(), instanceID, renderPathSuffix, tokenizePath)
-		tokenizeBody, buildErr := tokenizeRequestBody(parsed)
-		if buildErr != nil {
-			logger.Log().Warnf("tokenize: request %s %v", ctx.RequestId(), buildErr)
-			return
-		}
-		body, status, err = postTokenEndpoint(renderCtx, instanceClient, header, tokenizePath,
-			bytes.NewReader(tokenizeBody), instanceID, ctx.RequestId())
-		if err != nil {
-			logger.Log().Warnf("tokenize: request %s instance %s failed: %v", ctx.RequestId(), instanceID, err)
-			return
-		}
-		source = "tokenize"
-	}
-	if status != http.StatusOK {
-		logger.Log().Warnf("%s: request %s instance %s status %d body %s",
-			source, ctx.RequestId(), instanceID, status, tokenResponseSnippet(body))
-		return
-	}
-	ids, err := parseRenderTokenIDs(body)
-	if err != nil {
-		logger.Log().Warnf("%s: request %s parse token ids: %v", source, ctx.RequestId(), err)
+		logger.Log().Warnf("render: request %s instance %s source=%s failed: %v",
+			ctx.RequestId(), instanceID, ctx.InferManager.tokenSource, err)
 		return
 	}
 
@@ -169,13 +141,53 @@ func resolveRenderedPrompt(ctx *PipelineContext) {
 	}
 	ctx.RequestContext.RenderedPrompt = prompt
 	logger.Log().Infof("render: request %s tokens=%d source=%s queried=%v instances=%d via %s",
-		ctx.RequestId(), len(ids), source, prompt.Queried, len(prompt.Remaining), instanceID)
+		ctx.RequestId(), len(ids), ctx.InferManager.tokenSource, prompt.Queried, len(prompt.Remaining), instanceID)
 }
 
-// postTokenEndpoint reads one tokenization response and closes its body.
-func postTokenEndpoint(ctx context.Context, client instanceclient.InstanceClient, header http.Header, path string, body io.Reader, instanceID, requestID string) ([]byte, int, error) {
+// tokenPoster is the slice of the instance client used to obtain token ids.
+type tokenPoster interface {
+	Generate(ctx context.Context, header http.Header, path string, body io.Reader, instanceId string, stage string, reqId string, isMessages bool) (*http.Response, *errs.RSError, *utils.InstanceFailureDetails)
+}
+
+// fetchPromptTokenIDs calls the tokenization endpoint named by tokenSource.
+// Generate reports a non-2xx response as an engine error and closes the body,
+// so the status is read from that error instead of from a live response.
+func fetchPromptTokenIDs(ctx context.Context, client tokenPoster, header http.Header, tokenSource, renderPath string, parsed *request.GenerateRequestImplV1, instanceID, requestID string) ([]int32, error) {
+	var path string
+	var body io.Reader
+	switch tokenSource {
+	case conductor.TokenSourceRender:
+		path = renderPath
+		body = bytes.NewReader(parsed.OriginBodyBytes)
+	case conductor.TokenSourceTokenize:
+		tokenizeBody, err := tokenizeRequestBody(parsed)
+		if err != nil {
+			return nil, err
+		}
+		path = tokenizePath
+		body = bytes.NewReader(tokenizeBody)
+	default:
+		return nil, fmt.Errorf("token source %q", tokenSource)
+	}
+	payload, status, err := postTokenEndpoint(ctx, client, header, path, body, instanceID, requestID)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("%s status %d body %s", path, status, tokenResponseSnippet(payload))
+	}
+	return parseRenderTokenIDs(payload)
+}
+
+// postTokenEndpoint reads one tokenization response.
+// A backend status is returned with the body. Only a transport failure is an error,
+// because Generate has already closed the body of a non-2xx response.
+func postTokenEndpoint(ctx context.Context, client tokenPoster, header http.Header, path string, body io.Reader, instanceID, requestID string) ([]byte, int, error) {
 	res, rsErr, _ := client.Generate(ctx, header, path, body, instanceID, constant.StagePrepare, requestID, false)
 	if rsErr != nil {
+		if rsErr.EngineErr != nil {
+			return rsErr.EngineErr.EngineErrBody, rsErr.EngineErr.EngineStatus, nil
+		}
 		return nil, 0, rsErr
 	}
 	if res == nil || res.Body == nil {

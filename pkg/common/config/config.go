@@ -273,6 +273,9 @@ type ConductorConfig struct {
 	// RegisterRoles lists which instance roles to register with Conductor, comma
 	// separated. Empty means "prefill".
 	RegisterRoles string `yaml:"register-roles"`
+	// TokenSource selects where chat token ids come from. "render" calls
+	// /v1/chat/completions/render. "tokenize" calls POST /tokenize. Empty means render.
+	TokenSource string `yaml:"token-source"`
 }
 
 type MetaCleanupConfig struct {

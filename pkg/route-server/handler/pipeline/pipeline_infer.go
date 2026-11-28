@@ -52,15 +52,18 @@ type PipelineInfer struct {
 	// prefixQuerier is set when Conductor is enabled. A chat request then renders
 	// once, and the token ids drive both the prefix-hit query and the backend body.
 	prefixQuerier conductor.HitQuerier
+	// tokenSource is conductor.TokenSourceRender or conductor.TokenSourceTokenize.
+	tokenSource string
 }
 
-// SetPrefixQuerier wires the Conductor prefix-hit client. Nil leaves prompt
-// length and request bodies on the existing path.
-func (pi *PipelineInfer) SetPrefixQuerier(querier conductor.HitQuerier) {
+// SetPrefixQuerier wires the Conductor prefix-hit client and the tokenization
+// endpoint. A nil querier leaves prompt length and request bodies on the existing path.
+func (pi *PipelineInfer) SetPrefixQuerier(querier conductor.HitQuerier, tokenSource string) {
 	if pi == nil {
 		return
 	}
 	pi.prefixQuerier = querier
+	pi.tokenSource = tokenSource
 }
 
 func (pi *PipelineInfer) RecordVllmAscendAbortedRequest(prefillerInstanceId string, requestId string) {

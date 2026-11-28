@@ -80,7 +80,7 @@ func buildConductorManager(cfg config.ConductorConfig, instanceManager instances
 
 	registrationManager.Start()
 	logger.Log().Infof("Conductor integration enabled: base_url=%s, block_size=%d, roles=%v, "+
-		"request_timeout=%s, query_timeout=%s", normalized.BaseURL, normalized.BlockSize,
-		normalized.Roles(), normalized.RequestTimeout, normalized.QueryTimeout)
+		"token_source=%s, request_timeout=%s, query_timeout=%s", normalized.BaseURL, normalized.BlockSize,
+		normalized.Roles(), normalized.TokenSource, normalized.RequestTimeout, normalized.QueryTimeout)
 	return registrationManager, hitQuerier, nil
 }

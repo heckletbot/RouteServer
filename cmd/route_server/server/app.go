@@ -252,9 +252,13 @@ func (a *App) initManagers() (*Managers, error) {
 	if err != nil {
 		return managers, fmt.Errorf("fail to create inference, err = %v", err)
 	}
+	tokenSource := ""
+	if conductorManager != nil {
+		tokenSource = conductorManager.TokenSource()
+	}
 	for _, inferHandler := range pdInferHandlers {
 		if pipelineInfer, ok := inferHandler.(*pipeline.PipelineInfer); ok {
-			pipelineInfer.SetPrefixQuerier(conductorQuerier)
+			pipelineInfer.SetPrefixQuerier(conductorQuerier, tokenSource)
 		}
 	}
 	instanceManager.InitHealthyModule(pdInferHandlers[options.GetConfig().ServerConfig.InferMode].TestInstance, clusterService, pdLinkBlacklistManager)

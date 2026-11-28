@@ -131,6 +131,11 @@ type RegistrationManager struct {
 	nowFn func() time.Time
 }
 
+// TokenSource 返回聊天请求取 token id 的接口名。
+func (m *RegistrationManager) TokenSource() string {
+	return m.cfg.TokenSource
+}
+
 // NewRegistrationManager 构造 manager。cfg.Enabled 为 false 时仍可构造，
 // 但所有 apply 都会被 applyOnce 的门禁挡住。
 func NewRegistrationManager(cfg Config, client Client, resolver ModelNameResolver) (*RegistrationManager, error) {

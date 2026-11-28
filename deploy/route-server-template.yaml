@@ -230,6 +230,7 @@ conductor:
   retry-interval-ms: 30000 # low-frequency retry period for failed registrations
   block-size: 128 # must equal the inference engine's actual KV cache block size
   register-roles: prefill # comma separated roles: prefill,decode
+  token-source: render # render: POST /v1/chat/completions/render; tokenize: POST /tokenize
 scheduler-manager:
   system-prompt-length: 100
   slo-scheduling:

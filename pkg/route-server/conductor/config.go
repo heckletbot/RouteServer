@@ -51,6 +51,8 @@ type Config struct {
 	// RegisterRoles 需要注册到 Conductor 的实例角色集合。
 	// 空配置解析为 {prefill}，与只支持 prefill 的历史行为一致。
 	RegisterRoles map[string]struct{}
+	// TokenSource 是聊天请求取 token id 的接口，render 或 tokenize。
+	TokenSource string
 }
 
 // RolePrefill / RoleDecode 可注册的角色。目前只允许这两个：encode 实例不持有
@@ -58,6 +60,11 @@ type Config struct {
 const (
 	RolePrefill = "prefill"
 	RoleDecode  = "decode"
+
+	// TokenSourceRender calls /v1/chat/completions/render with the original chat body.
+	TokenSourceRender = "render"
+	// TokenSourceTokenize calls POST /tokenize with the tokenization fields.
+	TokenSourceTokenize = "tokenize"
 )
 
 // Manages 判断该角色的实例是否需要注册到 Conductor。
@@ -174,6 +181,16 @@ func NormalizeConfig(raw config.ConductorConfig) (Config, error) {
 		return Config{}, err
 	}
 	out.RegisterRoles = roles
+
+	tokenSource := strings.TrimSpace(raw.TokenSource)
+	if tokenSource == "" {
+		tokenSource = TokenSourceRender
+	}
+	if tokenSource != TokenSourceRender && tokenSource != TokenSourceTokenize {
+		return Config{}, fmt.Errorf("conductor token-source must be %q or %q, got %q",
+			TokenSourceRender, TokenSourceTokenize, raw.TokenSource)
+	}
+	out.TokenSource = tokenSource
 
 	return out, nil
 }

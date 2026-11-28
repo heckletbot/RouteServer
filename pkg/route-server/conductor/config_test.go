@@ -62,6 +62,9 @@ func TestNormalizeConfigDefaults(t *testing.T) {
 	if !cfg.Manages(RolePrefill) || cfg.Manages(RoleDecode) {
 		t.Errorf("default roles = %v, want only prefill", cfg.Roles())
 	}
+	if cfg.TokenSource != TokenSourceRender {
+		t.Errorf("TokenSource = %q, want %q", cfg.TokenSource, TokenSourceRender)
+	}
 }
 
 func TestNormalizeConfigOverrides(t *testing.T) {
@@ -73,6 +76,7 @@ func TestNormalizeConfigOverrides(t *testing.T) {
 		RetryIntervalMs:  45000,
 		BlockSize:        1024,
 		RegisterRoles:    " decode, prefill ,decode ",
+		TokenSource:      " tokenize ",
 	})
 	if err != nil {
 		t.Fatalf("NormalizeConfig() error = %v", err)
@@ -94,6 +98,9 @@ func TestNormalizeConfigOverrides(t *testing.T) {
 	}
 	if !cfg.Manages(RolePrefill) || !cfg.Manages(RoleDecode) {
 		t.Errorf("roles = %v, want prefill and decode", cfg.Roles())
+	}
+	if cfg.TokenSource != TokenSourceTokenize {
+		t.Errorf("TokenSource = %q, want %q", cfg.TokenSource, TokenSourceTokenize)
 	}
 }
 
@@ -130,6 +137,10 @@ func TestNormalizeConfigRejectsInvalidValues(t *testing.T) {
 		"empty role list": {
 			Enabled:       true,
 			RegisterRoles: " , ",
+		},
+		"unknown token source": {
+			Enabled:     true,
+			TokenSource: "renderer",
 		},
 	}
 	for name, raw := range cases {
