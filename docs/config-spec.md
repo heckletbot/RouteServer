@@ -497,12 +497,11 @@ apc-manager:
 ## conductor
 
 The `conductor` section configures the optional [Mooncake Conductor](https://github.com/kvcache-ai/Mooncake) integration.
-When enabled, the RouteServer leader registers selected inference instances with Conductor and builds a
-prefix-cache hit query client. Conductor indexes the KV cache blocks published by every registered instance
-and answers which prefix each instance already holds.
+When enabled, RouteServer builds a prefix-cache hit query client. Inference instances publish their own
+KV cache to Conductor. RouteServer does not call `/register` or `/unregister`. Conductor indexes the KV
+cache blocks those instances publish and answers which prefix each instance already holds.
 
-This integration provides the registration and query capabilities only; it does not yet feed cache hits into
-scheduling decisions. The query is exposed as an ops-only diagnostics endpoint on the RouteServer ops port:
+The query is exposed as an ops-only diagnostics endpoint on the RouteServer ops port:
 
 ```
 POST /internal/conductor/query
@@ -528,13 +527,13 @@ conductor:
 
 | Parameter                    | Type   | Description                                                                                          | Constraints                                                                                  |
 | ---------------------------- | ------ | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `conductor.enabled`          | bool   | Enable Conductor registration and hit queries                                                        | Default:`false`; Template default:`false`                                                    |
+| `conductor.enabled`          | bool   | Enable Conductor prefix-hit queries                                                                   | Default:`false`; Template default:`false`                                                    |
 | `conductor.base-url`         | string | Absolute HTTP(S) URL of the Conductor service                                                        | Default:`http://127.0.0.1:13333`. Must include scheme and host, and must not carry userinfo, query or fragment |
-| `conductor.request-timeout-ms` | int  | Timeout of one `/register` or `/unregister` call                                                     | Default:`1000`; `0` uses the default, negative values are rejected                           |
+| `conductor.request-timeout-ms` | int  | Retained timeout. RouteServer does not call `/register` or `/unregister`                             | Default:`1000`; `0` uses the default, negative values are rejected                           |
 | `conductor.query-timeout-ms` | int    | Timeout of one `/query` call. Keep it short because the call sits on the request path                 | Default:`100`; `0` uses the default, negative values are rejected                            |
-| `conductor.retry-interval-ms` | int   | Low-frequency retry period after a failed registration with a non-transient error                    | Default:`30000`; `0` uses the default, negative values are rejected                          |
-| `conductor.block-size`       | int    | KV cache block size used for both registration and prefix queries                                     | Default:`128`. **Must equal the inference engine's actual block size**; mixed-attention models may use `1024` |
-| `conductor.register-roles`   | string | Comma-separated roles to register. Empty means `prefill`                                             | Allowed values:`prefill`,`decode`; unknown roles fail startup                               |
+| `conductor.retry-interval-ms` | int   | Retained retry period. RouteServer does not retry registration                                       | Default:`30000`; `0` uses the default, negative values are rejected                          |
+| `conductor.block-size`       | int    | KV cache block size used when splitting a prefix query                                                | Default:`128`. **Must equal the inference engine's actual block size**; mixed-attention models may use `1024` |
+| `conductor.register-roles`   | string | Retained role list. Empty means `prefill`. RouteServer does not register instances from this field   | Allowed values:`prefill`,`decode`; unknown roles fail startup                               |
 | `conductor.token-source`     | string | Endpoint that turns a chat request into token ids                                                    | `render` or `tokenize`. Empty means `render`. Any other value fails startup. `tokenize` sends only the tokenization fields |
 
 ---

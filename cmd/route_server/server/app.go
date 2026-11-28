@@ -228,10 +228,6 @@ func (a *App) initManagers() (*Managers, error) {
 	if err != nil {
 		return managers, err
 	}
-	if conductorManager != nil {
-		clusterService.RegisterStateApplier(conductorManager)
-		logger.Log().Infof("Cluster service registered appliers %v successfully.", clusterService.GetApplierNames())
-	}
 
 	workerEventSyncer := health.NewWorkerEventSyncer(options.GetConfig(), peerClient, managers.WorkerBootId, messageCenter, clusterService)
 	if stateApplier, ok := workerEventSyncer.(cluster.StateApplier); ok {

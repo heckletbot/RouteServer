@@ -44,12 +44,12 @@ func (r conductorModelNameResolver) ResolveModelName(instanceID string) (string,
 	return instanceClient.ModelName()
 }
 
-// buildConductorManager normalizes the conductor config and constructs the registration
-// manager and the hit querier. Both are nil when the integration is disabled.
+// buildConductorManager normalizes the conductor config and constructs the hit querier.
+// Both return values are nil when the integration is disabled.
 //
-// The registration manager is started here but only issues requests after it becomes
-// leader; callers must register it with the cluster service before Start() so the
-// initial state restoration is delivered.
+// The registration manager is kept for token-source and block size. It is not started
+// and must not be registered as a cluster applier: RouteServer does not register or
+// unregister inference instances with Conductor.
 func buildConductorManager(cfg config.ConductorConfig, instanceManager instances.Manager) (
 	*conductor.RegistrationManager, conductor.HitQuerier, error) {
 	normalized, err := conductor.NormalizeConfig(cfg)
@@ -78,9 +78,7 @@ func buildConductorManager(cfg config.ConductorConfig, instanceManager instances
 		return nil, nil, fmt.Errorf("build conductor hit querier failed: %w", err)
 	}
 
-	registrationManager.Start()
-	logger.Log().Infof("Conductor integration enabled: base_url=%s, block_size=%d, roles=%v, "+
-		"token_source=%s, request_timeout=%s, query_timeout=%s", normalized.BaseURL, normalized.BlockSize,
-		normalized.Roles(), normalized.TokenSource, normalized.RequestTimeout, normalized.QueryTimeout)
+	logger.Log().Infof("Conductor prefix query enabled: base_url=%s, block_size=%d, token_source=%s, query_timeout=%s",
+		normalized.BaseURL, normalized.BlockSize, normalized.TokenSource, normalized.QueryTimeout)
 	return registrationManager, hitQuerier, nil
 }
