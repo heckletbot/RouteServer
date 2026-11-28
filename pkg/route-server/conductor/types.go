@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"reflect"
 	"strconv"
 
@@ -39,15 +38,14 @@ const (
 	// vllm-ascend 会按 mamba state shape 重算并覆盖它（`patch_mamba_config.py`：
 	// attn_block_size = 128*cdiv(ssm_page, 128*attn_k_page)，且硬 assert 要求
 	// attention 与 ssm 的 page size 精确相等，所以压不回 128），Qwen3.6-35B-A3B
-	// 上实测是 1024。该值随模型结构变化，因此由 YAML 的 conductor.block-size 配置，
-	// 本常量只是未配置时的回退。
+	// 上实测是 1024。该值随模型结构变化，因此前缀查询用的切块大小由 YAML 的
+	// conductor.block-size 配置，本常量只是未配置时的回退。注册时的 block size
+	// 不读这里，而以 GET /services 公布的值为准。
 	DefaultBlockSize = 128
 	// DefaultDpRank 单实例部署下的 data parallel rank。
 	DefaultDpRank = 0
 	// DefaultTenantID 未启用多租户时的租户标识。
 	DefaultTenantID = "default"
-	// DefaultKVEventPort vLLM 发布 KV event 的 ZMQ 端口。
-	DefaultKVEventPort = 5557
 	// ContentTypeMsgpack Conductor 只接受 MessagePack，不提供 JSON 兼容路径。
 	ContentTypeMsgpack = "application/msgpack"
 )
@@ -64,7 +62,11 @@ const (
 const (
 	pathRegister         = "/register"
 	pathUnregister       = "/unregister"
+	pathServices         = "/services"
 	maxResponseBodyBytes = 64 * 1024
+	// maxServicesBodyBytes bounds GET /services. A cluster publishes one record
+	// per instance, which does not fit in the register response cap.
+	maxServicesBodyBytes = 4 << 20
 )
 
 // HashProfile 声明 prefix hash 的计算口径，Conductor 用它判断能否复用本实例的 cache。
@@ -192,10 +194,15 @@ func ClassOf(err error) ErrorClass {
 	return ClassTransient
 }
 
-// BuildKVEventEndpoint 构造 vLLM KV event 的 ZMQ 地址。
-// 用 net.JoinHostPort 而非字符串拼接，IPv6 字面量需要方括号包裹。
-func BuildKVEventEndpoint(ip string) string {
-	return "tcp://" + net.JoinHostPort(ip, strconv.Itoa(DefaultKVEventPort))
+// PublishedService is one record from GET /services.
+// Conductor publishes the KV event endpoint, block size, and dp rank that the
+// engine actually registered. RouteServer does not invent those values.
+type PublishedService struct {
+	InstanceID string
+	Endpoint   string
+	BlockSize  int
+	DPRank     int
+	TenantID   string
 }
 
 // newMsgpackHandle 返回收发 Conductor 报文用的 codec handle。

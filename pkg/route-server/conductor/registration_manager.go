@@ -78,6 +78,13 @@ type desiredEntry struct {
 	dirty      bool
 	conflict   bool
 	retry      retryState
+	// kvEndpoint、blockSize、dpRank、tenantID 来自最近一次 GET /services。
+	// kvEndpoint 为空表示该实例不在这份列表里，这一轮不注册。
+	// dpRank 和 tenantID 在实例从列表消失后仍保留，注销要用注册时的那一组。
+	kvEndpoint string
+	blockSize  int
+	dpRank     int
+	tenantID   string
 }
 
 // tombstone 待执行的注销任务，同时保存被删 entry 的快照，
@@ -180,9 +187,9 @@ func (m *RegistrationManager) Start() {
 
 	m.wg.Add(1)
 	go m.run()
-	// 打印 block_size 和注册角色：block_size 配错时全链路不报错、只是命中恒为 0，
-	// 启动日志是唯一的事前核对点（须与推理实例日志里的实际值一致，混合注意力模型
-	// 不等于命令行参数）。注册角色则决定哪些实例会出现在 Conductor 的索引里。
+	// 打印查询用的 block_size 和注册角色：查询切块配错时不报错、只是命中恒为 0。
+	// 注册的 endpoint、block size、dp rank 每轮从 GET /services 读取。
+	// 注册角色决定哪些实例会出现在 Conductor 的索引里。
 	logger.Log().Infof("Conductor registration manager started, enabled=%v, roles=%v, block_size=%d",
 		m.cfg.Enabled, m.cfg.Roles(), m.cfg.BlockSize)
 }
@@ -194,7 +201,8 @@ func (m *RegistrationManager) IsLeader() bool {
 	return m.isLeader
 }
 
-// BlockSize 返回注册和查询共用的 KV cache block size。
+// BlockSize 返回前缀查询切块用的 KV cache block size。
+// 注册使用的 block size 来自 GET /services，不读这个值。
 func (m *RegistrationManager) BlockSize() int {
 	return m.cfg.BlockSize
 }
@@ -394,7 +402,11 @@ func (m *RegistrationManager) removeLocked(id string) {
 		return
 	}
 	m.pending[id] = &tombstone{
-		key:            NewServiceKey(id),
+		key: ServiceKey{
+			InstanceID: id,
+			TenantID:   entry.tenantID,
+			DpRank:     entry.dpRank,
+		},
 		lastIP:         entry.ip,
 		lastPort:       entry.port,
 		lastGeneration: entry.generation,
@@ -505,6 +517,10 @@ type applyTask struct {
 	ip         string
 	generation uint64
 	modelName  string
+	endpoint   string
+	blockSize  int
+	dpRank     int
+	tenantID   string
 }
 
 // applyOnce 执行一轮收敛：先注销后注册，全部网络调用在锁外。
@@ -520,9 +536,27 @@ func (m *RegistrationManager) applyOnce() {
 	epoch := m.leaderEpoch
 	ctx := m.leaderCtx
 	now := m.nowFn()
+	m.mu.Unlock()
 
-	// 每轮重算：route 变化后冲突可能消失，一次性标记会让实例永久不注册。
-	m.markEndpointConflictsLocked()
+	services, servicesErr := m.client.Services(ctx)
+	var published map[string]PublishedService
+	if servicesErr == nil {
+		published, servicesErr = indexPublishedServices(services)
+	}
+	if servicesErr != nil {
+		logger.Log().Warnf("Fail to list conductor services: %v", servicesErr)
+	}
+
+	m.mu.Lock()
+	if m.leaderEpoch != epoch || !m.isLeader {
+		m.mu.Unlock()
+		return
+	}
+	if servicesErr == nil {
+		// 每轮重算：route 变化后冲突可能消失，一次性标记会让实例永久不注册。
+		m.notePublishedServicesLocked(published)
+		m.markEndpointConflictsLocked()
+	}
 
 	tombs := make([]ServiceKey, 0, len(m.pending))
 	for _, tomb := range m.pending {
@@ -532,24 +566,31 @@ func (m *RegistrationManager) applyOnce() {
 		tombs = append(tombs, tomb.key)
 	}
 
-	tasks := make([]applyTask, 0, len(m.desired))
-	for id, entry := range m.desired {
-		if !entry.dirty || entry.conflict {
-			continue
+	var tasks []applyTask
+	if servicesErr == nil {
+		tasks = make([]applyTask, 0, len(m.desired))
+		for id, entry := range m.desired {
+			if !entry.dirty || entry.conflict || entry.kvEndpoint == "" {
+				continue
+			}
+			if _, blocked := m.pending[id]; blocked {
+				// 同一 service key 上还有未兑现的注销：先注册会被随后的注销删掉。
+				continue
+			}
+			if now.Before(entry.retry.nextRetry) {
+				continue
+			}
+			tasks = append(tasks, applyTask{
+				instanceID: id,
+				ip:         entry.ip,
+				generation: entry.generation,
+				modelName:  entry.modelName,
+				endpoint:   entry.kvEndpoint,
+				blockSize:  entry.blockSize,
+				dpRank:     entry.dpRank,
+				tenantID:   entry.tenantID,
+			})
 		}
-		if _, blocked := m.pending[id]; blocked {
-			// 同一 service key 上还有未兑现的注销：先注册会被随后的注销删掉。
-			continue
-		}
-		if now.Before(entry.retry.nextRetry) {
-			continue
-		}
-		tasks = append(tasks, applyTask{
-			instanceID: id,
-			ip:         entry.ip,
-			generation: entry.generation,
-			modelName:  entry.modelName,
-		})
 	}
 	m.mu.Unlock()
 
@@ -561,17 +602,53 @@ func (m *RegistrationManager) applyOnce() {
 	}
 }
 
-// markEndpointConflictsLocked 标记推导出相同 KV endpoint 的实例，调用方必须持有 m.mu。
-// KV endpoint 只由 IP 推导（端口固定），同 IP 的两个 Prefill 会撞同一个 publisher；
+// indexPublishedServices 按 InstanceID 索引。同一 ID 出现两次时整份列表作废，
+// 否则后一条会盖住前一条，冲突检测会漏掉其中一个 endpoint。
+func indexPublishedServices(services []PublishedService) (map[string]PublishedService, error) {
+	byID := make(map[string]PublishedService, len(services))
+	for _, svc := range services {
+		if _, exists := byID[svc.InstanceID]; exists {
+			return nil, fmt.Errorf("conductor services lists instance %s more than once", svc.InstanceID)
+		}
+		byID[svc.InstanceID] = svc
+	}
+	return byID, nil
+}
+
+// notePublishedServicesLocked 把本轮 GET /services 写进 desired，调用方必须持有 m.mu。
+// 列表里没有的实例清空 kvEndpoint，这一轮不注册，也不另造端口。
+func (m *RegistrationManager) notePublishedServicesLocked(byID map[string]PublishedService) {
+	for _, entry := range m.desired {
+		svc, ok := byID[entry.instanceID]
+		if !ok {
+			entry.kvEndpoint = ""
+			continue
+		}
+		if entry.kvEndpoint != svc.Endpoint || entry.blockSize != svc.BlockSize ||
+			entry.dpRank != svc.DPRank || entry.tenantID != svc.TenantID {
+			entry.kvEndpoint = svc.Endpoint
+			entry.blockSize = svc.BlockSize
+			entry.dpRank = svc.DPRank
+			entry.tenantID = svc.TenantID
+			entry.dirty = true
+		}
+	}
+}
+
+// markEndpointConflictsLocked 标记公布了相同 KV endpoint 的实例，调用方必须持有 m.mu。
+// endpoint 来自 GET /services，同机的 prefill 和 decode 端口不同，不算冲突。
 // 此时注册任何一方都会让 Conductor 的索引指向错误的实例，只能双方都跳过并告警。
 func (m *RegistrationManager) markEndpointConflictsLocked() {
 	counts := make(map[string]int, len(m.desired))
 	for _, entry := range m.desired {
-		counts[BuildKVEventEndpoint(entry.ip)]++
+		if entry.kvEndpoint == "" {
+			continue
+		}
+		counts[entry.kvEndpoint]++
 	}
 	for _, entry := range m.desired {
-		endpoint := BuildKVEventEndpoint(entry.ip)
-		conflict := counts[endpoint] > 1
+		endpoint := entry.kvEndpoint
+		conflict := endpoint != "" && counts[endpoint] > 1
 		// 只在状态翻转时打日志，避免每轮刷屏。
 		if conflict && !entry.conflict {
 			// 措辞不绑定角色：注册范围可以同时包含 prefill 和 decode，冲突对可能是
@@ -604,13 +681,13 @@ func (m *RegistrationManager) applyRegister(ctx context.Context, epoch uint64, t
 	}
 
 	req := RegisterRequest{
-		Endpoint:    BuildKVEventEndpoint(task.ip),
+		Endpoint:    task.endpoint,
 		Type:        InstanceTypeVLLM,
 		ModelName:   modelName,
 		InstanceID:  task.instanceID,
-		BlockSize:   m.cfg.BlockSize,
-		DpRank:      DefaultDpRank,
-		TenantID:    DefaultTenantID,
+		BlockSize:   task.blockSize,
+		DpRank:      task.dpRank,
+		TenantID:    task.tenantID,
 		LoraName:    "",
 		HashProfile: NewDefaultHashProfile(),
 	}
@@ -624,7 +701,8 @@ func (m *RegistrationManager) applyRegister(ctx context.Context, epoch uint64, t
 	m.recordRegisterSuccess(epoch, task)
 	logger.Log().Infof("Instance %s registered to conductor, model=%s", task.instanceID, modelName)
 	// 完整 endpoint 含内部实例 IP 与 KV 事件端口，收敛到 Debug 避免在常规日志中放大网络拓扑暴露面。
-	logger.Log().Debugf("Instance %s KV event endpoint=%s", task.instanceID, req.Endpoint)
+	logger.Log().Debugf("Instance %s KV event endpoint=%s block_size=%d dp_rank=%d",
+		task.instanceID, req.Endpoint, req.BlockSize, req.DpRank)
 }
 
 // applyUnregister 注销单个 service key。client 已把 404 收敛为成功，

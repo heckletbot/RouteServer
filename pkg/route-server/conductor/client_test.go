@@ -145,6 +145,83 @@ func TestHTTPClientRejectsNonMsgpackSuccess(t *testing.T) {
 	}
 }
 
+func TestHTTPClientServices(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != pathServices {
+			t.Errorf("path = %q, want %q", r.URL.Path, pathServices)
+		}
+		if r.Header.Get("Accept") != ContentTypeMsgpack {
+			t.Errorf("Accept = %q", r.Header.Get("Accept"))
+		}
+		writeMsgpack(t, w, http.StatusOK, map[string]interface{}{
+			"count": 2,
+			"services": []interface{}{
+				map[string]interface{}{
+					"Endpoint":       "tcp://7.242.105.78:5657",
+					"ReplayEndpoint": "tcp://7.242.105.78:5667",
+					"Type":           "vLLM",
+					"ModelName":      "qwen3.6",
+					"TenantID":       "default",
+					"InstanceID":     "decode-0",
+					"BlockSize":      1152,
+					"DPRank":         0,
+					"HashProfile": map[string]interface{}{
+						"strategy":         "vllm_v1",
+						"algorithm":        "sha256",
+						"python_hash_seed": "0",
+						"index_projection": "low64_be",
+					},
+				},
+				map[string]interface{}{
+					"Endpoint":   "tcp://7.242.105.78:5557",
+					"InstanceID": "prefill-0",
+					"TenantID":   "default",
+					"BlockSize":  1152,
+					"DPRank":     2,
+				},
+			},
+		})
+	})
+
+	got, err := client.Services(context.Background())
+	if err != nil {
+		t.Fatalf("Services() error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(services) = %d, want 2", len(got))
+	}
+	if got[0].InstanceID != "decode-0" || got[0].Endpoint != "tcp://7.242.105.78:5657" ||
+		got[0].BlockSize != 1152 || got[0].DPRank != 0 || got[0].TenantID != "default" {
+		t.Errorf("decode service = %+v", got[0])
+	}
+	if got[1].InstanceID != "prefill-0" || got[1].Endpoint != "tcp://7.242.105.78:5557" || got[1].DPRank != 2 {
+		t.Errorf("prefill service = %+v", got[1])
+	}
+}
+
+func TestHTTPClientServicesRejectsMissingEndpoint(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		writeMsgpack(t, w, http.StatusOK, map[string]interface{}{
+			"count": 1,
+			"services": []interface{}{
+				map[string]interface{}{
+					"InstanceID": "decode-0",
+					"TenantID":   "default",
+					"BlockSize":  1152,
+					"DPRank":     0,
+				},
+			},
+		})
+	})
+
+	if _, err := client.Services(context.Background()); err == nil {
+		t.Fatal("Services() error = nil, want missing Endpoint")
+	}
+}
+
 func TestClassifyStatus(t *testing.T) {
 	cases := []struct {
 		status int

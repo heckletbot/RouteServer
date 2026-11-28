@@ -45,8 +45,8 @@ type Config struct {
 	// RequestTimeout，避免 Conductor 变慢时把延迟带到推理请求上。
 	QueryTimeout  time.Duration
 	RetryInterval time.Duration
-	// BlockSize 注册上报、且命中查询复用的 KV cache block size。
-	// 是全流程该值的唯一来源，见 DefaultBlockSize 的说明。
+	// BlockSize 前缀命中查询切块用的 KV cache block size。
+	// 注册时的 block size、KV endpoint 和 dp rank 来自 GET /services，不读这里。
 	BlockSize int
 	// RegisterRoles 需要注册到 Conductor 的实例角色集合。
 	// 空配置解析为 {prefill}，与只支持 prefill 的历史行为一致。
